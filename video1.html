@@ -131,29 +131,28 @@
                         <span class="mr-1">📋</span> 一键复制 AI 指令
                     </button>
                 </div>
-                <div class="flex items-center space-x-4">
-                <div class="flex items-center space-x-2 border-r pr-4 mr-2 border-gray-200">
-                    <input type="text" id="globalFolderName" placeholder="导出总文件夹名" class="px-3 py-1.5 text-sm border rounded w-32 focus:outline-none focus:border-[#002FA7]">
-                    <label class="flex items-center space-x-1 text-sm text-gray-600 cursor-pointer" title="勾选后如果画质损失严重，将允许超过指定的KB大小">
-                        <input type="checkbox" id="priorityQuality" class="rounded text-[#002FA7] focus:ring-[#002FA7]">
-                        <span>保清晰度(可超限)</span>
-                    </label>
-                </div>
-                <div class="relative" id="templateDownloadWrap">
-                    <button type="button" id="downloadTemplate" class="flex items-center px-4 py-2 text-sm text-[#002FA7] border border-[#002FA7] rounded hover:bg-blue-50 transition-colors">
-                        <i data-lucide="file-down" class="w-4 h-4 mr-2"></i> 下载配置模板
-                        <span id="downloadTemplateChevron" class="ml-1 flex items-center cursor-pointer">
-                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
-                        </span>
-                    </button>
-                    <div id="templateDownloadMenu" class="hidden absolute top-full left-0 pt-1 min-w-[190px] z-30">
-                        <div class="bg-white border border-gray-200 rounded-lg shadow-lg p-1">
-                            <button type="button" id="downloadTemplateExcel" class="w-full text-left px-3 py-2.5 text-sm rounded hover:bg-gray-50 text-gray-700">下载 Excel 模板</button>
-                            <button type="button" id="downloadTemplateTxt" class="w-full text-left px-3 py-2.5 text-sm rounded hover:bg-gray-50 text-gray-700">下载 TXT 模板</button>
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                    <div class="flex items-center space-x-2 border-r pr-4 mr-2 border-gray-200">
+                        <input type="text" id="globalFolderName" placeholder="导出总文件夹名" class="px-3 py-1.5 text-sm border rounded w-32 focus:outline-none focus:border-[#002FA7]">
+                        <label class="flex items-center space-x-1 text-sm text-gray-600 cursor-pointer" title="勾选后如果画质损失严重，将允许超过指定的KB大小">
+                            <input type="checkbox" id="priorityQuality" class="rounded text-[#002FA7] focus:ring-[#002FA7]">
+                            <span>保清晰度(可超限)</span>
+                        </label>
+                    </div>
+                    <div class="relative" id="templateDownloadWrap">
+                        <button type="button" id="downloadTemplate" class="flex items-center px-4 py-2 text-sm text-[#002FA7] border border-[#002FA7] rounded hover:bg-blue-50 transition-colors">
+                            <i data-lucide="file-down" class="w-4 h-4 mr-2"></i> 下载配置模板
+                            <span id="downloadTemplateChevron" class="ml-1 flex items-center cursor-pointer">
+                                <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                            </span>
+                        </button>
+                        <div id="templateDownloadMenu" class="hidden absolute top-full left-0 pt-1 min-w-[190px] z-30">
+                            <div class="bg-white border border-gray-200 rounded-lg shadow-lg p-1">
+                                <button type="button" id="downloadTemplateExcel" class="w-full text-left px-3 py-2.5 text-sm rounded hover:bg-gray-50 text-gray-700">下载 Excel 模板</button>
+                                <button type="button" id="downloadTemplateTxt" class="w-full text-left px-3 py-2.5 text-sm rounded hover:bg-gray-50 text-gray-700">下载 TXT 模板</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
                     <label class="flex items-center px-4 py-2 text-sm text-white bg-[#002FA7] rounded hover:bg-blue-800 cursor-pointer transition-colors shadow-sm">
                         <i data-lucide="file-up" class="w-4 h-4 mr-2"></i> 上传配置 (Excel/TXT)
                         <input type="file" id="configInput" accept=".xlsx, .xls, .txt" class="hidden">
@@ -161,12 +160,11 @@
                     <button type="button" id="openConfigModal" class="flex items-center px-4 py-2 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors shadow-sm">
                         <i data-lucide="archive" class="w-4 h-4 mr-2"></i> 导入以往配置
                     </button>
+                    <button id="downloadAll" class="flex items-center px-4 py-2 text-sm text-white bg-[#FF6B00] rounded hover:bg-[#e66000] transition-colors shadow-sm">
+                        <i data-lucide="download-cloud" class="w-4 h-4 mr-2"></i> 导出全部 (ZIP)
+                    </button>
                 </div>
-                <button id="downloadAll" class="flex items-center px-4 py-2 text-sm text-white bg-[#FF6B00] rounded hover:bg-[#e66000] transition-colors shadow-sm">
-                    <i data-lucide="download-cloud" class="w-4 h-4 mr-2"></i> 导出全部 (ZIP)
-                </button>
-                <div id="downloadAllProgress" class="w-full text-[12px] text-gray-600 mt-1"></div>
-                </div>
+                <div id="downloadAllProgress" class="w-full text-[12px] text-gray-600 mt-1 text-right"></div>
             </div>
         </header>
         <div id="configDropHint" class="hidden mx-6 mt-3 px-4 py-3 border-2 border-dashed border-[#002FA7] bg-blue-50 text-[#002FA7] text-sm rounded">
@@ -258,6 +256,7 @@
                             <span id="imgPagination" class="px-3 text-sm flex items-center font-medium border-x border-gray-200">1 / 1</span>
                             <button id="nextImgBtn" class="p-1 hover:bg-white rounded transition-all text-gray-600"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
                         </div>
+                        <select id="cropCfgSelect" class="text-sm border rounded px-2 py-1"></select>
                     </div>
                     <div class="flex items-center gap-2">
                         <button type="button" id="openLogoFromCropModal" class="inline-flex items-center px-3 py-1.5 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded-lg hover:bg-blue-50 transition-colors">
@@ -615,6 +614,8 @@
         /** 从配置库/文件导入的当前配置记录 id，用于“覆盖原配置” */
         let configLoadedFromId = null;
         let configSessionDirty = false;
+        let currentWorkingCfgId = null;
+        let cropTraceSeq = 0;
 
         function logDev(level, message, payload = null) {
             const row = {
@@ -627,6 +628,12 @@
             if (devLogs.length > 2000) devLogs = devLogs.slice(-1200);
             const fn = level === 'error' ? console.error : (level === 'warn' ? console.warn : console.log);
             try { fn('[video1]', message, payload || ''); } catch (e) {}
+        }
+
+        function logCropTrace(node, note, payload = null) {
+            cropTraceSeq += 1;
+            const text = `[CROP_TRACE#${cropTraceSeq}][${String(node || 'UNKNOWN')}] ${String(note || '')}`;
+            logDev('info', text, payload);
         }
 
         function downloadDevLogs() {
@@ -648,6 +655,25 @@
 
         function getTaskState(imgId, cfgId) {
             return processingState[`${imgId}__${cfgId}`];
+        }
+
+        function resolveWorkingCfgId() {
+            if (currentWorkingCfgId && config.some((c) => String(c.id) === String(currentWorkingCfgId))) {
+                return String(currentWorkingCfgId);
+            }
+            return config.length ? String(config[0].id) : '';
+        }
+
+        function openCropFromSourceItem(imgId) {
+            const cfgId = resolveWorkingCfgId();
+            if (!cfgId || !window.Modal) return;
+            selectImage(imgId).then(() => Modal.open(String(imgId), cfgId));
+        }
+
+        function openLogoFromSourceItem(imgId) {
+            const cfgId = resolveWorkingCfgId();
+            if (!cfgId || !window.LogoWorkbench) return;
+            selectImage(imgId).then(() => LogoWorkbench.openLayoutModal(cfgId));
         }
 
         function nextSpecTaskVersion(imgId, cfgId) {
@@ -695,14 +721,19 @@
         }
 
         function captureFrameFromVideo(videoEl) {
-            const w = Math.max(2, videoEl.videoWidth || 2);
-            const h = Math.max(2, videoEl.videoHeight || 2);
-            const cvs = document.createElement('canvas');
-            cvs.width = w;
-            cvs.height = h;
-            const c = cvs.getContext('2d');
-            c.drawImage(videoEl, 0, 0, w, h);
-            return cvs.toDataURL('image/jpeg', 0.92);
+            try {
+                const w = Math.max(2, videoEl.videoWidth || 2);
+                const h = Math.max(2, videoEl.videoHeight || 2);
+                const cvs = document.createElement('canvas');
+                cvs.width = w;
+                cvs.height = h;
+                const c = cvs.getContext('2d');
+                c.drawImage(videoEl, 0, 0, w, h);
+                return cvs.toDataURL('image/jpeg', 0.92);
+            } catch (e) {
+                logDev('warn', 'captureFrameFromVideo failed', { error: String(e && e.message || e) });
+                return '';
+            }
         }
 
         async function seekVideo(videoEl, t) {
@@ -818,8 +849,12 @@
             const outH = Math.max(2, outCfg.height | 0);
             const duration = Math.max(0.1, v.duration || sourceImgRef.duration || 1);
             const maxKb = Math.max(1, (cfg.maxSize | 0) || 1000);
-            const bitrate = Math.max(150000, Math.floor((maxKb * 1024 * 8) / duration));
-            const fps = 30;
+            const requestedKbps = Math.max(120, Math.floor((maxKb * 8) / duration));
+            const px = outW * outH;
+            const smoothFloorKbps = px >= 1920 * 1080 ? 2200 : (px >= 1280 * 720 ? 1200 : 700);
+            const targetKbps = Math.max(requestedKbps, smoothFloorKbps);
+            const bitrate = Math.max(220000, targetKbps * 1000);
+            const fps = 60;
 
             const canvas = document.createElement('canvas');
             canvas.width = outW;
@@ -926,21 +961,42 @@
             };
 
             await new Promise((resolve, reject) => {
-                const tick = () => {
-                    try {
-                        drawFrame();
-                        const ratio = Math.max(0, Math.min(1, (v.currentTime || 0) / duration));
-                        if (onProgress) onProgress(ratio);
-                        if (v.ended || (duration - (v.currentTime || 0)) < 0.05) {
-                            resolve();
-                            return;
-                        }
-                        requestAnimationFrame(tick);
-                    } catch (e) {
-                        reject(e);
-                    }
+                const finishIfEnded = () => {
+                    if (v.ended || (duration - (v.currentTime || 0)) < 0.05) resolve();
                 };
-                requestAnimationFrame(tick);
+                if (typeof v.requestVideoFrameCallback === 'function') {
+                    const cb = (_now, meta) => {
+                        try {
+                            drawFrame();
+                            const cur = Math.max(v.currentTime || 0, (meta && Number.isFinite(meta.mediaTime)) ? meta.mediaTime : 0);
+                            const ratio = Math.max(0, Math.min(1, cur / duration));
+                            if (onProgress) onProgress(ratio);
+                            if (v.ended || (duration - cur) < 0.05) {
+                                resolve();
+                                return;
+                            }
+                            v.requestVideoFrameCallback(cb);
+                        } catch (e) {
+                            reject(e);
+                        }
+                    };
+                    v.requestVideoFrameCallback(cb);
+                    v.onended = () => resolve();
+                } else {
+                    const tick = () => {
+                        try {
+                            drawFrame();
+                            const ratio = Math.max(0, Math.min(1, (v.currentTime || 0) / duration));
+                            if (onProgress) onProgress(ratio);
+                            finishIfEnded();
+                            if (!v.ended) requestAnimationFrame(tick);
+                        } catch (e) {
+                            reject(e);
+                        }
+                    };
+                    requestAnimationFrame(tick);
+                    v.onended = () => resolve();
+                }
             });
 
             try { recorder.stop(); } catch (e) {}
@@ -1702,10 +1758,53 @@
         }
 
         function getSourceCropRect(natW, natH, cfg, savedCrop) {
-            if (savedCrop && savedCrop.width > 0 && savedCrop.height > 0) {
-                return { x: savedCrop.x, y: savedCrop.y, width: savedCrop.width, height: savedCrop.height };
-            }
             const targetRatio = cfg.width / cfg.height;
+            logCropTrace('R_CROPRECT_ENTER', '计算最终源裁剪框 getSourceCropRect()', {
+                natW: Number(natW || 0),
+                natH: Number(natH || 0),
+                cfgW: Number(cfg && cfg.width || 0),
+                cfgH: Number(cfg && cfg.height || 0),
+                targetRatio: Number((targetRatio || 0).toFixed(6)),
+                hasSavedCrop: !!savedCrop
+            });
+            if (savedCrop && savedCrop.width > 0 && savedCrop.height > 0) {
+                const sw = Number(savedCrop.width) || 0;
+                const sh = Number(savedCrop.height) || 0;
+                const sx = Number(savedCrop.x) || 0;
+                const sy = Number(savedCrop.y) || 0;
+                const savedRatio = sw / Math.max(1, sh);
+                const ratioMatched = Math.abs(savedRatio - targetRatio) / Math.max(0.0001, targetRatio) < 0.08;
+                const sizeValid = sw <= natW + 0.5 && sh <= natH + 0.5;
+                logCropTrace('R_CROPRECT_CHECK_SAVED', '检查 savedCrop 是否可复用', {
+                    savedRatio: Number(savedRatio.toFixed(6)),
+                    ratioMatched,
+                    sizeValid,
+                    savedCrop: {
+                        x: Number(sx.toFixed(2)),
+                        y: Number(sy.toFixed(2)),
+                        width: Number(sw.toFixed(2)),
+                        height: Number(sh.toFixed(2))
+                    }
+                });
+                if (ratioMatched && sizeValid) {
+                    const used = {
+                        x: Math.max(0, Math.min(natW - sw, sx)),
+                        y: Math.max(0, Math.min(natH - sh, sy)),
+                        width: sw,
+                        height: sh
+                    };
+                    logCropTrace('R_CROPRECT_USE_SAVED', '使用 savedCrop 作为最终裁剪框', {
+                        usedRatio: Number((used.width / Math.max(1, used.height)).toFixed(6)),
+                        used
+                    });
+                    return {
+                        x: used.x,
+                        y: used.y,
+                        width: used.width,
+                        height: used.height
+                    };
+                }
+            }
             let sW, sH, sX, sY;
             if (natW / natH > targetRatio) {
                 sH = natH; sW = sH * targetRatio;
@@ -1714,6 +1813,15 @@
                 sW = natW; sH = sW / targetRatio;
                 sX = 0; sY = (natH - sH) / 2;
             }
+            logCropTrace('R_CROPRECT_FALLBACK', 'savedCrop 不可用，回退到居中比例裁切', {
+                fallback: {
+                    x: Number((sX || 0).toFixed(2)),
+                    y: Number((sY || 0).toFixed(2)),
+                    width: Number((sW || 0).toFixed(2)),
+                    height: Number((sH || 0).toFixed(2))
+                },
+                fallbackRatio: Number(((sW || 0) / Math.max(1, (sH || 0))).toFixed(6))
+            });
             return { x: sX, y: sY, width: sW, height: sH };
         }
 
@@ -1863,6 +1971,7 @@
             _liveFrameMode: false,
             _navImageIds: [],
             activeImageId: null,
+            _suppressCfgSelectChange: false,
             _cropOverlayGen: 0,
             activeConfig: null,
             activeImageIdx: -1,
@@ -1906,6 +2015,7 @@
                 document.getElementById('resetCrop').onclick = () => this.reset();
                 const playBtn = document.getElementById('cropVideoPlayBtn');
                 const applyBtn = document.getElementById('cropVideoApplyFrameBtn');
+                const cfgSel = document.getElementById('cropCfgSelect');
                 bindVideoPreviewControls(cropVideoSession, {
                     playBtnId: 'cropVideoPlayBtn',
                     seekId: 'cropVideoSeek',
@@ -1915,6 +2025,16 @@
                     applyBtn.onclick = () => {
                         if (!cropVideoSession.video || !cropVideoSession.applyFrame) return;
                         cropVideoSession.applyFrame(captureFrameFromVideo(cropVideoSession.video), { live: false });
+                    };
+                }
+                if (cfgSel) {
+                    cfgSel.onchange = () => {
+                        if (this._suppressCfgSelectChange) return;
+                        const img = sourceImages.find((x) => String(x.id) === String(this.activeImageId));
+                        const nextCfgId = String(cfgSel.value || '');
+                        if (!img || !nextCfgId) return;
+                        currentWorkingCfgId = nextCfgId;
+                        this.open(String(img.id), nextCfgId);
                     };
                 }
             },
@@ -1942,17 +2062,44 @@
                 this.activeConfig = getEffectiveConfig(cfg, img);
                 this._navImageIds = sourceImages.map((x) => x.id);
                 const openToken = ++this._openToken;
+                currentWorkingCfgId = String(cfg.id);
+                logCropTrace('M_OPEN_ENTER', '进入剪裁弹窗 open()', {
+                    imgId: String(imgId),
+                    cfgId: String(cfgId),
+                    activeCfgId: String(cfg.id),
+                    activeRatio: `${this.activeConfig.width}x${this.activeConfig.height}`,
+                    mime: String(img.mime || '')
+                });
 
                 const cropImg = document.getElementById('cropImg');
                 const cropOverlay = document.getElementById('cropOverlay');
                 const videoCtl = document.getElementById('cropVideoControls');
                 const bgVideo = document.getElementById('cropBgVideo');
+                const cfgSel = document.getElementById('cropCfgSelect');
                 this._pendingRectRestore = null;
                 this._liveFrameMode = false;
-                cropImg.onload = () => {
-                    if (openToken !== this._openToken) return;
+                const initializeCropBox = () => {
+                    logCropTrace('M_INIT_ENTER', '开始初始化取景框 initializeCropBox()', {
+                        openToken,
+                        currentToken: this._openToken,
+                        liveFrameMode: !!this._liveFrameMode
+                    });
+                    if (openToken !== this._openToken) {
+                        logCropTrace('M_INIT_SKIP_TOKEN', '跳过初始化：openToken 已过期');
+                        return;
+                    }
                     if (this._liveFrameMode) {
                         this._liveFrameMode = false;
+                        logCropTrace('M_INIT_SKIP_LIVE', '跳过初始化：实时帧模式');
+                        return;
+                    }
+                    if (!cropImg.naturalWidth || !cropImg.width) {
+                        logCropTrace('M_INIT_SKIP_SIZE', '跳过初始化：预览尺寸未就绪', {
+                            naturalWidth: Number(cropImg.naturalWidth || 0),
+                            naturalHeight: Number(cropImg.naturalHeight || 0),
+                            width: Number(cropImg.width || 0),
+                            height: Number(cropImg.height || 0)
+                        });
                         return;
                     }
                     this.imgInfo = {
@@ -1962,6 +2109,13 @@
                         dispH: cropImg.height,
                         scale: cropImg.naturalWidth / cropImg.width
                     };
+                    logCropTrace('M_INIT_IMGINFO', '已获取预览/原图尺寸', {
+                        natW: this.imgInfo.natW,
+                        natH: this.imgInfo.natH,
+                        dispW: this.imgInfo.dispW,
+                        dispH: this.imgInfo.dispH,
+                        scale: Number((this.imgInfo.scale || 0).toFixed(6))
+                    });
 
                     const targetRatio = this.activeConfig.width / this.activeConfig.height;
                     let mw = this.imgInfo.dispW;
@@ -1971,18 +2125,31 @@
                         mw = mh * targetRatio;
                     }
                     this.maxBox = { w: mw, h: mh };
+                    logCropTrace('M_INIT_MAXBOX', '计算最大取景框尺寸', {
+                        targetRatio: Number(targetRatio.toFixed(6)),
+                        maxBoxW: Number((this.maxBox.w || 0).toFixed(3)),
+                        maxBoxH: Number((this.maxBox.h || 0).toFixed(3))
+                    });
 
                     const restoreRect = this._pendingRectRestore;
                     this._pendingRectRestore = null;
                     const result = img.results[cfgId];
-                    if (restoreRect) {
+                    const ratioCloseEnough = (r) => {
+                        if (!r || !r.width || !r.height) return false;
+                        const rr = r.width / Math.max(1, r.height);
+                        return Math.abs(rr - targetRatio) / Math.max(0.0001, targetRatio) < 0.08;
+                    };
+                    let branch = 'reset';
+                    if (restoreRect && ratioCloseEnough(restoreRect)) {
+                        branch = 'restoreRect';
                         this.box.w = restoreRect.width / this.imgInfo.scale;
                         this.box.h = restoreRect.height / this.imgInfo.scale;
                         this.pos.x = restoreRect.x / this.imgInfo.scale;
                         this.pos.y = restoreRect.y / this.imgInfo.scale;
                         this.zoom = (this.box.w / this.maxBox.w) * 100;
                         this.constrain();
-                    } else if (result && result.cropRect) {
+                    } else if (result && result.cropRect && ratioCloseEnough(result.cropRect)) {
+                        branch = 'result.cropRect';
                         this.box.w = result.cropRect.width / this.imgInfo.scale;
                         this.box.h = result.cropRect.height / this.imgInfo.scale;
                         this.pos.x = result.cropRect.x / this.imgInfo.scale;
@@ -1991,16 +2158,71 @@
                     } else {
                         this.reset();
                     }
+                    logCropTrace('M_INIT_BRANCH', '初始化分支选择完成', {
+                        branch,
+                        hasRestoreRect: !!restoreRect,
+                        hasResultCropRect: !!(result && result.cropRect),
+                        boxW: Number((this.box.w || 0).toFixed(3)),
+                        boxH: Number((this.box.h || 0).toFixed(3)),
+                        posX: Number((this.pos.x || 0).toFixed(3)),
+                        posY: Number((this.pos.y || 0).toFixed(3))
+                    });
+                    logDev('info', 'crop box initialized', {
+                        cfgId: String(cfgId),
+                        branch,
+                        targetRatio: Number(targetRatio.toFixed(4)),
+                        boxW: Math.round(this.box.w || 0),
+                        boxH: Math.round(this.box.h || 0)
+                    });
                     this.updateUI();
                 };
+                cropImg.onload = initializeCropBox;
                 cropImg.onerror = () => {
                     if (openToken !== this._openToken) return;
+                    logCropTrace('M_IMG_ONERROR', '裁剪预览资源加载失败', {
+                        src: String(cropImg.currentSrc || cropImg.src || '')
+                    });
                     alert('裁剪预览加载失败，请重试');
                 };
                 document.getElementById('imgPagination').innerText = `${imgIdx + 1} / ${sourceImages.length}`;
                 document.getElementById('modalTitle').innerText = `${cfg.name} (${this.activeConfig.width}x${this.activeConfig.height})`;
+                if (cfgSel) {
+                    this._suppressCfgSelectChange = true;
+                    cfgSel.innerHTML = (config || []).map((c) => {
+                        const eff = getEffectiveConfig(c, img);
+                        return `<option value="${String(c.id)}">${String(c.name || '规格')} (${eff.width}x${eff.height})</option>`;
+                    }).join('');
+                    cfgSel.value = String(cfg.id);
+                    this._suppressCfgSelectChange = false;
+                    cfgSel.onchange = () => {
+                        const nextCfgId = String(cfgSel.value || '');
+                        logCropTrace('M_CFG_CHANGE', '规格下拉变更触发 onchange', {
+                            fromCfgId: String(cfg.id),
+                            toCfgId: nextCfgId,
+                            activeImageId: String(this.activeImageId || ''),
+                            suppressed: !!this._suppressCfgSelectChange
+                        });
+                        logDev('info', 'crop cfg select change', {
+                            fromCfgId: String(cfg.id),
+                            toCfgId: nextCfgId,
+                            suppressed: !!this._suppressCfgSelectChange
+                        });
+                        if (this._suppressCfgSelectChange) return;
+                        const curImg = sourceImages.find((x) => String(x.id) === String(this.activeImageId));
+                        if (!curImg || !nextCfgId) return;
+                        currentWorkingCfgId = nextCfgId;
+                        logCropTrace('M_CFG_CHANGE_OPEN', '规格变更后重新调用 open()', {
+                            reopenImgId: String(curImg.id),
+                            reopenCfgId: nextCfgId
+                        });
+                        this.open(String(curImg.id), nextCfgId);
+                    };
+                }
                 document.getElementById('cropModal').classList.remove('hidden');
                 if (String(img.mime || '').startsWith('video/')) {
+                    logCropTrace('M_VIDEO_BRANCH', '走视频分支，准备取帧', { imgName: String(img.name || '') });
+                    // 进入时先按当前规格预重建一次，避免用户看到旧规格的框。
+                    this.rebuildBoxByActiveRatio('video-open-preseed');
                     if (videoCtl) videoCtl.classList.remove('hidden');
                     stopVideoSession(cropVideoSession);
                     const src = img.file ? URL.createObjectURL(img.file) : img.url;
@@ -2012,13 +2234,32 @@
                     cropVideoSession.video = v;
                     cropVideoSession.objectUrl = img.file ? src : '';
                     cropVideoSession.applyFrame = (frame, ctx = {}) => {
+                        const prevSrc = cropImg.currentSrc || cropImg.src || '';
                         if (ctx && ctx.live) {
                             this._liveFrameMode = true;
+                            logCropTrace('M_VIDEO_APPLYFRAME_LIVE', '视频实时帧写入预览');
                         } else if (this.imgInfo && this.imgInfo.natW) {
                             this._pendingRectRestore = this.getNaturalRect();
+                            logCropTrace('M_VIDEO_APPLYFRAME_RESTORE', '视频静态帧写入预览并记录当前框', {
+                                pendingRect: this._pendingRectRestore
+                            });
                         }
-                        cropImg.src = frame;
-                        cropOverlay.src = frame;
+                        // 先清空再写入，避免同一帧 dataURL 导致 onload 不触发。
+                        cropImg.src = '';
+                        cropOverlay.src = '';
+                        requestAnimationFrame(() => {
+                            cropImg.src = frame;
+                            cropOverlay.src = frame;
+                            logCropTrace('M_VIDEO_APPLYFRAME_SET_SRC', '视频帧已写入预览 src', {
+                                prevSrc,
+                                nextSrcLen: String(frame || '').length,
+                                sameSrc: prevSrc === String(frame || '')
+                            });
+                            if (cropImg.complete && cropImg.naturalWidth > 0) {
+                                logCropTrace('M_VIDEO_APPLYFRAME_FORCE_INIT', '视频帧写入后触发兜底初始化');
+                                requestAnimationFrame(initializeCropBox);
+                            }
+                        });
                     };
                     if (bgVideo) {
                         bgVideo.classList.remove('hidden');
@@ -2031,16 +2272,49 @@
                         v.onloadedmetadata = () => resolve();
                         v.onerror = () => reject(new Error('视频预览加载失败'));
                     });
+                    logCropTrace('M_VIDEO_META_OK', '视频 metadata 已就绪', {
+                        videoWidth: Number(v.videoWidth || 0),
+                        videoHeight: Number(v.videoHeight || 0),
+                        duration: Number((v.duration || 0).toFixed(3))
+                    });
                     cropVideoSession.duration = Number.isFinite(v.duration) ? v.duration : 0;
                     await seekVideo(v, Math.min(0.8, Math.max(0, (cropVideoSession.duration || 0) * 0.2)));
-                    cropVideoSession.applyFrame(captureFrameFromVideo(v));
+                    logCropTrace('M_VIDEO_SEEK_OK', '视频 seek 完成并准备抓帧', {
+                        currentTime: Number((v.currentTime || 0).toFixed(3))
+                    });
+                    try {
+                        const openFrame = captureFrameFromVideo(v);
+                        if (openFrame) {
+                            cropVideoSession.applyFrame(openFrame);
+                        } else {
+                            logCropTrace('M_VIDEO_CAPTURE_EMPTY', '视频抓帧为空，直接按规格重建取景框');
+                            this.rebuildBoxByActiveRatio('video-capture-empty');
+                        }
+                        initializeCropBox();
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                logCropTrace('M_VIDEO_INIT_FALLBACK', '视频分支兜底触发初始化（双帧）');
+                                initializeCropBox();
+                                if (!this.box.w || !this.box.h) {
+                                    this.rebuildBoxByActiveRatio('video-init-fallback-empty-box');
+                                }
+                            });
+                        });
+                    } catch (e) {
+                        logCropTrace('M_VIDEO_POSTSEEK_ERROR', 'seek 后处理异常，回退到强制重建', {
+                            error: String(e && e.message || e)
+                        });
+                        this.rebuildBoxByActiveRatio('video-postseek-error');
+                    }
                     const timeEl = document.getElementById('cropVideoTime');
                     const seek = document.getElementById('cropVideoSeek');
                     const playBtn = document.getElementById('cropVideoPlayBtn');
                     if (timeEl) timeEl.textContent = `${formatSec(v.currentTime || 0)} / ${formatSec(cropVideoSession.duration)}`;
                     if (seek) seek.value = String(cropVideoSession.duration > 0 ? Math.floor(((v.currentTime || 0) / cropVideoSession.duration) * 1000) : 0);
                     if (playBtn) playBtn.textContent = '▶';
+                    logDev('info', 'crop modal open', { img: img.name, cfg: cfg.name, cfgId: String(cfg.id), ratio: `${this.activeConfig.width}x${this.activeConfig.height}`, page: `${imgIdx + 1}/${sourceImages.length}`, sourceCount: sourceImages.length });
                 } else {
+                    logCropTrace('M_IMAGE_BRANCH', '走图片分支，准备设置预览源', { imgName: String(img.name || '') });
                     stopVideoSession(cropVideoSession);
                     if (videoCtl) videoCtl.classList.add('hidden');
                     if (bgVideo) {
@@ -2050,8 +2324,25 @@
                     }
                     cropImg.style.opacity = '1';
                     cropOverlay.style.opacity = '1';
-                    cropImg.src = img.url;
-                    cropOverlay.src = img.url;
+                    const nextSrc = String(img.url || '');
+                    const prevSrc = cropImg.currentSrc || cropImg.src || '';
+                    cropImg.src = nextSrc;
+                    cropOverlay.src = nextSrc;
+                    logCropTrace('M_IMAGE_SRC_SET', '图片预览 src 已写入', {
+                        prevSrc,
+                        nextSrc,
+                        sameSrc: prevSrc === nextSrc,
+                        complete: !!cropImg.complete,
+                        naturalWidth: Number(cropImg.naturalWidth || 0),
+                        naturalHeight: Number(cropImg.naturalHeight || 0)
+                    });
+                    // When switching config on the same image, src may not change,
+                    // so onload won't fire and the crop box ratio won't refresh.
+                    if (prevSrc === nextSrc && cropImg.complete && cropImg.naturalWidth > 0) {
+                        logCropTrace('M_IMAGE_FORCE_INIT', '同图同src触发强制初始化', { reason: 'onload可能不触发' });
+                        requestAnimationFrame(initializeCropBox);
+                    }
+                    logDev('info', 'crop modal open', { img: img.name, cfg: cfg.name, cfgId: String(cfg.id), ratio: `${this.activeConfig.width}x${this.activeConfig.height}`, page: `${imgIdx + 1}/${sourceImages.length}`, sourceCount: sourceImages.length });
                 }
             },
 
@@ -2062,6 +2353,43 @@
                 this.pos.x = (this.imgInfo.dispW - this.box.w) / 2;
                 this.pos.y = (this.imgInfo.dispH - this.box.h) / 2;
                 this.updateUI();
+            },
+
+            rebuildBoxByActiveRatio(reason = 'manual') {
+                const cropImg = document.getElementById('cropImg');
+                if ((!this.imgInfo || !this.imgInfo.dispW || !this.imgInfo.dispH) && cropImg && cropImg.naturalWidth && cropImg.width) {
+                    this.imgInfo = {
+                        natW: cropImg.naturalWidth,
+                        natH: cropImg.naturalHeight,
+                        dispW: cropImg.width,
+                        dispH: cropImg.height,
+                        scale: cropImg.naturalWidth / cropImg.width
+                    };
+                }
+                if (!this.imgInfo || !this.imgInfo.dispW || !this.imgInfo.dispH || !this.activeConfig) {
+                    logCropTrace('M_FORCE_REBUILD_SKIP', '强制重建取景框失败：基础尺寸未就绪', {
+                        reason,
+                        hasImgInfo: !!this.imgInfo,
+                        hasActiveConfig: !!this.activeConfig
+                    });
+                    return false;
+                }
+                const targetRatio = this.activeConfig.width / this.activeConfig.height;
+                let mw = this.imgInfo.dispW;
+                let mh = mw / targetRatio;
+                if (mh > this.imgInfo.dispH) {
+                    mh = this.imgInfo.dispH;
+                    mw = mh * targetRatio;
+                }
+                this.maxBox = { w: mw, h: mh };
+                this.reset();
+                logCropTrace('M_FORCE_REBUILD_OK', '已按当前规格强制重建取景框', {
+                    reason,
+                    targetRatio: Number(targetRatio.toFixed(6)),
+                    boxW: Number((this.box.w || 0).toFixed(3)),
+                    boxH: Number((this.box.h || 0).toFixed(3))
+                });
+                return true;
             },
 
             applyZoom(z) {
@@ -2120,6 +2448,34 @@
                 };
                 const img = sourceImages.find((x) => String(x.id) === String(this.activeImageId));
                 if (!img) return;
+                logCropTrace('M_SAVE_ENTER', '点击保存，开始写入 cropRect', {
+                    activeImageId: String(this.activeImageId || ''),
+                    activeCfgId: String(this.activeConfig && this.activeConfig.id || ''),
+                    rect: {
+                        x: Number((rect.x || 0).toFixed(2)),
+                        y: Number((rect.y || 0).toFixed(2)),
+                        width: Number((rect.width || 0).toFixed(2)),
+                        height: Number((rect.height || 0).toFixed(2))
+                    },
+                    rectRatio: Number(((rect.width || 0) / Math.max(1, (rect.height || 0))).toFixed(6))
+                });
+                const saveTargetRatio = (this.activeConfig && this.activeConfig.width && this.activeConfig.height)
+                    ? (this.activeConfig.width / this.activeConfig.height)
+                    : 0;
+                const saveRectRatio = (rect.width || 0) / Math.max(1, (rect.height || 0));
+                const ratioDelta = saveTargetRatio > 0
+                    ? Math.abs(saveRectRatio - saveTargetRatio) / Math.max(0.0001, saveTargetRatio)
+                    : 0;
+                if (saveTargetRatio > 0 && ratioDelta > 0.08) {
+                    logCropTrace('M_SAVE_BLOCK_RATIO_MISMATCH', '阻止保存：当前框比例与规格不一致，先重算取景框', {
+                        targetRatio: Number(saveTargetRatio.toFixed(6)),
+                        rectRatio: Number(saveRectRatio.toFixed(6)),
+                        ratioDelta: Number(ratioDelta.toFixed(6))
+                    });
+                    this.rebuildBoxByActiveRatio('save-ratio-mismatch');
+                    alert('当前取景框比例尚未同步到所选规格，已自动重算，请确认后再保存。');
+                    return;
+                }
                 const btn = document.getElementById('saveCrop');
                 const oldText = btn ? btn.textContent : '';
                 if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
@@ -2385,7 +2741,9 @@
                 const duration = Math.max(1, sourceImgRef.duration || 1);
                 const totalKbps = Math.max(120, Math.floor((maxKb * 8) / duration));
                 const audioKbps = Math.min(128, Math.max(48, Math.floor(totalKbps * 0.18)));
-                const videoKbps = Math.max(90, totalKbps - audioKbps);
+                const px = outW * outH;
+                const smoothFloorKbps = px >= 1920 * 1080 ? 2200 : (px >= 1280 * 720 ? 1200 : 700);
+                const videoKbps = Math.max(smoothFloorKbps, totalKbps - audioKbps);
                 setTaskState(sourceImgRef.id, cfg.id, { status: 'processing', progress: 15, message: '加载转码引擎' });
                 if (currentImageId === sourceImgRef.id) renderResults();
                 let ff = null;
@@ -2682,6 +3040,7 @@
                     } catch (err) {
                         return;
                     }
+                    currentWorkingCfgId = String(cfgId);
                     if (window.Modal && imgId !== '' && cfgId !== '') window.Modal.open(imgId, cfgId);
                     return;
                 }
@@ -2697,6 +3056,7 @@
                     } catch (err) {
                         return;
                     }
+                    currentWorkingCfgId = String(cfgId);
                     if (!window.LogoWorkbench || imgId === '' || cfgId === '') return;
                     if (currentImageId !== imgId) {
                         currentImageId = imgId;
@@ -2716,14 +3076,13 @@
                 lucide.createIcons();
                 return;
             }
-            const firstCfgIdJs = config.length ? JSON.stringify(String(config[0].id)) : 'undefined';
             list.innerHTML = sourceImages.map(img => `
                 <div onclick="selectImage('${img.id}')" class="group relative rounded-lg border-2 p-1 transition-all cursor-pointer ${currentImageId === img.id ? 'border-[#002FA7] bg-blue-50' : 'border-transparent hover:bg-gray-100'}">
                     <div class="relative rounded overflow-hidden">
                         ${String(img.mime || '').startsWith('video/') ? `<video src="${img.url}" class="w-full h-16 object-cover rounded" muted preload="metadata"></video>` : `<img src="${img.url}" class="w-full h-16 object-cover rounded">`}
                         <div class="absolute inset-0 flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 pointer-events-none group-hover:pointer-events-auto">
-                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); selectImage('${img.id}'); ${config.length ? `Modal.open('${img.id}', ${firstCfgIdJs})` : ''}" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">裁剪</button>
-                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); selectImage('${img.id}'); ${config.length ? `LogoWorkbench.openLayoutModal(${firstCfgIdJs})` : ''}" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">Logo</button>
+                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); openCropFromSourceItem('${img.id}')" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">裁剪</button>
+                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); openLogoFromSourceItem('${img.id}')" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">Logo</button>
                         </div>
                     </div>
                     <div class="mt-1 flex items-center bg-white rounded px-1 shadow-sm">
@@ -2795,6 +3154,7 @@
             if (!currentImg) return;
 
             const cards = config.map((cfg) => {
+                if (!currentWorkingCfgId) currentWorkingCfgId = String(cfg.id);
                 const res = currentImg.results[cfg.id];
                 const task = getTaskState(currentImg.id, cfg.id);
                 const allowImageTools = true;
@@ -2826,7 +3186,6 @@
                                                 : `<video src="${res.url}" class="max-w-full max-h-full object-contain" controls preload="metadata"></video>`))
                                         : `<img src="${res.url}" class="max-w-full max-h-full object-contain">`
                                     }
-                                    ${res.pendingExport ? `<div class="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-white text-[10px]">已修改，导出时处理</div>` : ``}
                                     ${allowImageTools ? `<div class="absolute inset-0 bg-[#002FA7]/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto flex flex-col items-center justify-center gap-2">
                                         <button type="button" data-action="quick-crop" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">快速剪裁</button>
                                         <button type="button" data-action="logo-layout-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">Logo 排版</button>
@@ -2857,7 +3216,7 @@
                                     <div class="flex items-center justify-end flex-1 ml-2 min-w-0">
                                         ${res.warning ? `<span class="text-[10px] font-bold text-orange-500 flex items-center mr-2" title="为保证大小，画质/尺寸被大幅降低"><i data-lucide="alert-triangle" class="w-3 h-3 mr-0.5"></i>高压缩警告</span>` : ``}
                                         <div class="flex items-center space-x-2">
-                                            <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${res.pendingExport ? '待导出生成' : `${res.size} KB`}</span>
+                                            <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${res.size && res.size !== '--' ? `${res.size} KB` : '-'}</span>
                                             <a href="${res.url}" download="${sanitizeFileName(`${effW}x${effH}-${String(cfg.name || '').trim() || '未命名'}`, 'image')}.${res.ext || cfg.format}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors"><i data-lucide="download" class="w-4 h-4"></i></a>
                                         </div>
                                     </div>
