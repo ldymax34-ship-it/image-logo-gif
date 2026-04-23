@@ -232,7 +232,7 @@
                     <p class="text-xs font-semibold text-[#002FA7]">Logo 素材</p>
                     <label class="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white bg-[#FF6B00] rounded cursor-pointer hover:bg-[#e66000] transition-colors shadow-sm">
                         <i data-lucide="upload" class="w-4 h-4 mr-2"></i> 上传 Logo
-                        <input type="file" id="logoSidebarUpload" accept="video/mp4,video/quicktime,.mp4,.mov" multiple class="hidden">
+                        <input type="file" id="logoSidebarUpload" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple class="hidden">
                     </label>
                     <p class="text-[11px] text-gray-500 leading-snug">支持 PNG / JPG / WebP，可多选；透明 PNG 适合水印。</p>
                     <button type="button" id="openLogoLibraryModal" class="flex items-center justify-center w-full px-4 py-2.5 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors">
@@ -268,7 +268,7 @@
                 
                 <div class="flex-1 bg-zinc-900 flex items-center justify-center overflow-hidden relative canvas-container">
                     <div id="canvasWrapper" class="relative">
-                        <img id="cropImg" src="" alt="Base" class="max-w-full max-h-[60vh] object-contain opacity-40 select-none">
+                        <img id="cropImg" src="" alt="Base" class="max-w-full max-h-[60vh] object-contain select-none">
                         <div id="cropHighlight" class="absolute top-0 left-0 overflow-hidden pointer-events-none">
                              <img id="cropOverlay" src="" class="absolute top-0 left-0 max-w-none">
                         </div>
@@ -278,11 +278,19 @@
                 </div>
                 
                 <div class="px-8 py-6 border-t flex flex-col md:flex-row justify-between items-center gap-6 bg-white">
-                    <div class="flex items-center space-x-4 w-full md:w-1/2">
-                        <i data-lucide="minus" class="w-4 h-4 text-gray-300"></i>
-                        <input type="range" id="zoomSlider" min="5" max="100" value="100" class="flex-1">
-                        <i data-lucide="plus" class="w-4 h-4 text-gray-300"></i>
-                        <span id="zoomLabel" class="text-xs font-mono w-12 text-gray-400">100%</span>
+                    <div class="w-full md:w-1/2 space-y-2">
+                        <div class="flex items-center space-x-4 w-full">
+                            <i data-lucide="minus" class="w-4 h-4 text-gray-300"></i>
+                            <input type="range" id="zoomSlider" min="5" max="100" value="100" class="flex-1">
+                            <i data-lucide="plus" class="w-4 h-4 text-gray-300"></i>
+                            <span id="zoomLabel" class="text-xs font-mono w-12 text-gray-400">100%</span>
+                        </div>
+                        <div id="cropVideoControls" class="hidden flex items-center gap-2 text-xs">
+                            <button type="button" id="cropVideoPlayBtn" class="px-2 py-1 rounded border text-gray-700">▶</button>
+                            <input type="range" id="cropVideoSeek" min="0" max="1000" value="0" class="flex-1">
+                            <span id="cropVideoTime" class="font-mono text-gray-500 w-20 text-right">00:00</span>
+                            <button type="button" id="cropVideoApplyFrameBtn" class="hidden px-2 py-1 rounded border text-[#002FA7]">应用当前帧</button>
+                        </div>
                     </div>
                     <div class="flex space-x-3 w-full md:w-auto">
                         <button id="resetCrop" class="flex-1 md:flex-none px-6 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 rounded">重置</button>
@@ -421,7 +429,7 @@
                 <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center gap-2 shrink-0 bg-gray-50">
                     <label class="inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-[#FF6B00] rounded cursor-pointer hover:bg-[#e66000]">
                         <i data-lucide="upload" class="w-4 h-4 mr-2"></i> 上传 Logo
-                        <input type="file" id="logoLibraryUpload" accept="video/mp4,video/quicktime,.mp4,.mov" multiple class="hidden">
+                        <input type="file" id="logoLibraryUpload" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple class="hidden">
                     </label>
                     <button type="button" id="logoRestoreBuiltinBtn" class="inline-flex items-center px-3 py-2 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50">
                         <i data-lucide="rotate-ccw" class="w-4 h-4 mr-2"></i> 恢复默认 Logo 库
@@ -475,7 +483,7 @@
                         <div id="logoPreviewScroll" class="flex-1 overflow-auto flex items-center justify-center min-h-[220px] canvas-container">
                             <div id="logoPreviewStage" class="relative logo-preview-stage inline-block max-w-full max-h-[min(78vh,820px)] overflow-visible">
                                 <div id="logoModalCanvasWrapper" class="relative">
-                                    <img id="logoModalCropImg" src="" alt="" class="block max-w-full max-h-[min(78vh,820px)] w-auto h-auto object-contain opacity-40 select-none pointer-events-none">
+                                    <img id="logoModalCropImg" src="" alt="" class="block max-w-full max-h-[min(78vh,820px)] w-auto h-auto object-contain select-none pointer-events-none">
                                     <div id="logoModalCropHighlight" class="absolute top-0 left-0 overflow-hidden pointer-events-none">
                                         <img id="logoModalCropOverlay" src="" alt="" class="absolute top-0 left-0 max-w-none pointer-events-none">
                                     </div>
@@ -492,6 +500,12 @@
                                 <span id="logoModalZoomLabel" class="text-xs font-mono text-gray-400 w-11 text-right shrink-0">100%</span>
                             </div>
                             <button type="button" id="logoModalCropReset" class="text-xs px-4 py-2 rounded border border-white/25 text-white hover:bg-white/10 font-medium">重置裁切</button>
+                            <div id="logoVideoControls" class="hidden w-full flex items-center gap-2 text-xs text-white/90">
+                                <button type="button" id="logoVideoPlayBtn" class="px-2 py-1 rounded border border-white/25">▶</button>
+                                <input type="range" id="logoVideoSeek" min="0" max="1000" value="0" class="flex-1">
+                                <span id="logoVideoTime" class="font-mono w-20 text-right">00:00</span>
+                                <button type="button" id="logoVideoApplyFrameBtn" class="hidden px-2 py-1 rounded border border-blue-300 text-blue-200">应用当前帧</button>
+                            </div>
                         </div>
                     </div>
                     <div class="w-72 shrink-0 flex flex-col min-h-0 min-w-0 bg-white border-l border-gray-200">
@@ -667,7 +681,59 @@
             await Promise.all(runners);
         }
 
-        async function getVideoPosterDataUrl(fileOrUrl) {
+        const cropVideoSession = { video: null, objectUrl: '', raf: 0, duration: 0, isPlaying: false, applyFrame: null };
+        const logoVideoSession = { video: null, objectUrl: '', raf: 0, duration: 0, isPlaying: false, applyFrame: null };
+
+        function formatSec(sec) {
+            const s = Math.max(0, Math.floor(sec || 0));
+            const m = Math.floor(s / 60);
+            const r = s % 60;
+            return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+        }
+
+        function captureFrameFromVideo(videoEl) {
+            const w = Math.max(2, videoEl.videoWidth || 2);
+            const h = Math.max(2, videoEl.videoHeight || 2);
+            const cvs = document.createElement('canvas');
+            cvs.width = w;
+            cvs.height = h;
+            const c = cvs.getContext('2d');
+            c.drawImage(videoEl, 0, 0, w, h);
+            return cvs.toDataURL('image/jpeg', 0.92);
+        }
+
+        async function seekVideo(videoEl, t) {
+            const d = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+            const safe = Math.max(0, Math.min(Math.max(0, d - 0.01), t || 0));
+            await new Promise((resolve) => {
+                const onSeeked = () => {
+                    videoEl.removeEventListener('seeked', onSeeked);
+                    resolve();
+                };
+                videoEl.addEventListener('seeked', onSeeked);
+                try { videoEl.currentTime = safe; } catch (e) { resolve(); }
+            });
+        }
+
+        function stopVideoSession(session) {
+            if (!session) return;
+            if (session.raf) cancelAnimationFrame(session.raf);
+            session.raf = 0;
+            if (session.video) {
+                try { session.video.pause(); } catch (e) {}
+                session.video.src = '';
+            }
+            if (session.objectUrl) {
+                try { URL.revokeObjectURL(session.objectUrl); } catch (e) {}
+            }
+            session.video = null;
+            session.objectUrl = '';
+            session.duration = 0;
+            session.isPlaying = false;
+            session.applyFrame = null;
+        }
+
+        async function getVideoPosterDataUrl(fileOrUrl, hintTimeSec = 0.8) {
             const src = typeof fileOrUrl === 'string' ? fileOrUrl : URL.createObjectURL(fileOrUrl);
             const shouldRevoke = typeof fileOrUrl !== 'string';
             const v = document.createElement('video');
@@ -676,18 +742,15 @@
             v.muted = true;
             v.playsInline = true;
             await new Promise((resolve, reject) => {
-                v.onloadeddata = () => resolve();
+                v.onloadedmetadata = () => resolve();
                 v.onerror = () => reject(new Error('读取视频封面帧失败'));
             });
-            const w = Math.max(2, v.videoWidth || 2);
-            const h = Math.max(2, v.videoHeight || 2);
-            const cvs = document.createElement('canvas');
-            cvs.width = w;
-            cvs.height = h;
-            const c = cvs.getContext('2d');
-            c.drawImage(v, 0, 0, w, h);
+            const d = Number.isFinite(v.duration) ? v.duration : 0;
+            const t = d > 0.2 ? Math.min(Math.max(0.2, hintTimeSec || 0), Math.max(0.2, d * 0.2)) : 0;
+            if (t > 0) await seekVideo(v, t);
+            const out = captureFrameFromVideo(v);
             if (shouldRevoke) URL.revokeObjectURL(src);
-            return cvs.toDataURL('image/jpeg', 0.9);
+            return out;
         }
 
         async function transcodeVideoNative(sourceImgRef, cfg, customRect, outCfg, logos, onProgress) {
@@ -719,9 +782,11 @@
             if (!ctx) throw new Error('无法创建视频渲染上下文');
 
             const stream = canvas.captureStream(fps);
-            let mime = 'video/webm;codecs=vp9,opus';
-            if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8,opus';
-            if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+            const wantedExt = String((outCfg && outCfg.format) || 'mp4').toLowerCase();
+            const mimeCandidates = wantedExt === 'mov'
+                ? ['video/quicktime', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4']
+                : ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+            let mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
             if (!MediaRecorder.isTypeSupported(mime)) throw new Error('浏览器不支持本地视频录制');
 
             const chunks = [];
@@ -838,9 +903,12 @@
 
             const blob = new Blob(chunks, { type: mime.includes('webm') ? 'video/webm' : mime });
             if (!blob.size) throw new Error('浏览器本地编码结果为空');
+            if ((wantedExt === 'mp4' || wantedExt === 'mov') && mime.includes('webm')) {
+                throw new Error(`当前浏览器在此环境下无法输出 ${wantedExt.toUpperCase()}，请用本地服务打开页面后使用 FFmpeg 导出`);
+            }
             return {
                 blob,
-                ext: 'webm',
+                ext: mime.includes('webm') ? 'webm' : (wantedExt === 'mov' ? 'mov' : 'mp4'),
                 warning: (blob.size / 1024) > maxKb
             };
         }
@@ -952,13 +1020,7 @@
             const targets = scope === 'all'
                 ? (sourceImages || []).filter(Boolean)
                 : (sourceImages || []).filter((img) => img && String(img.id) === String(currentImageId));
-            for (const img of targets) {
-                if (img && img.results) {
-                    const pr = img.results[cfgId];
-                    if (pr && pr.url) { try { URL.revokeObjectURL(pr.url); } catch (e) {} }
-                    delete img.results[cfgId];
-                }
-            }
+            // 保留旧结果用于连续预览，避免编辑时整卡变灰闪烁
             renderResults();
             const tasks = targets.map((img) => (async () => {
                 if (!img) return;
@@ -975,7 +1037,11 @@
                         if (result && result.url) { try { URL.revokeObjectURL(result.url); } catch (e) {} }
                         return;
                     }
+                    const oldRes = img.results[cfgId];
                     img.results[cfgId] = result;
+                    if (oldRes && oldRes.url && oldRes.url !== result.url) {
+                        try { URL.revokeObjectURL(oldRes.url); } catch (e) {}
+                    }
                     setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '完成' });
                 } catch (e) {
                     if (!isLatestSpecTask(img.id, cfgId, taskVersion)) return;
@@ -1093,6 +1159,17 @@
             a.click();
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+
+        async function withBusyButton(btnId, busyText, fn) {
+            const btn = document.getElementById(btnId);
+            const oldText = btn ? btn.textContent : '';
+            if (btn) { btn.disabled = true; btn.textContent = busyText; }
+            try {
+                return await fn();
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = oldText; }
+            }
         }
 
         function copyAiPrompt() {
@@ -1647,6 +1724,7 @@
         // --- 裁剪逻辑对象 ---
         const Modal = {
             _openToken: 0,
+            _pendingRectRestore: null,
             _cropOverlayGen: 0,
             activeConfig: null,
             activeImageIdx: -1,
@@ -1688,6 +1766,55 @@
                 document.getElementById('prevImgBtn').onclick = () => this.navigate(-1);
                 document.getElementById('nextImgBtn').onclick = () => this.navigate(1);
                 document.getElementById('resetCrop').onclick = () => this.reset();
+                const playBtn = document.getElementById('cropVideoPlayBtn');
+                const seek = document.getElementById('cropVideoSeek');
+                const applyBtn = document.getElementById('cropVideoApplyFrameBtn');
+                if (playBtn) {
+                    playBtn.onclick = async () => {
+                        if (!cropVideoSession.video) return;
+                        if (cropVideoSession.isPlaying) {
+                            cropVideoSession.isPlaying = false;
+                            cropVideoSession.video.pause();
+                            playBtn.textContent = '▶';
+                            return;
+                        }
+                        cropVideoSession.isPlaying = true;
+                        playBtn.textContent = '⏸';
+                        try { await cropVideoSession.video.play(); } catch (e) {}
+                        let lastFrameTs = 0;
+                        const tick = () => {
+                            if (!cropVideoSession.isPlaying || !cropVideoSession.video) return;
+                            const v = cropVideoSession.video;
+                            const t = v.currentTime || 0;
+                            const d = cropVideoSession.duration || 0;
+                            const timeEl = document.getElementById('cropVideoTime');
+                            if (seek && d > 0) seek.value = String(Math.floor((t / d) * 1000));
+                            if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(d)}`;
+                            const now = performance.now();
+                            if (cropVideoSession.applyFrame && (now - lastFrameTs) > 120) {
+                                cropVideoSession.applyFrame(captureFrameFromVideo(v));
+                                lastFrameTs = now;
+                            }
+                            cropVideoSession.raf = requestAnimationFrame(tick);
+                        };
+                        tick();
+                    };
+                }
+                if (seek) {
+                    seek.oninput = async () => {
+                        if (!cropVideoSession.video || !cropVideoSession.duration) return;
+                        const t = (parseInt(seek.value, 10) / 1000) * cropVideoSession.duration;
+                        await seekVideo(cropVideoSession.video, t);
+                        const timeEl = document.getElementById('cropVideoTime');
+                        if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(cropVideoSession.duration)}`;
+                    };
+                }
+                if (applyBtn) {
+                    applyBtn.onclick = () => {
+                        if (!cropVideoSession.video || !cropVideoSession.applyFrame) return;
+                        cropVideoSession.applyFrame(captureFrameFromVideo(cropVideoSession.video));
+                    };
+                }
             },
 
             async navigate(dir) {
@@ -1709,6 +1836,7 @@
 
                 const cropImg = document.getElementById('cropImg');
                 const cropOverlay = document.getElementById('cropOverlay');
+                const videoCtl = document.getElementById('cropVideoControls');
                 cropImg.onload = () => {
                     if (openToken !== this._openToken) return;
                     this.imgInfo = {
@@ -1728,8 +1856,17 @@
                     }
                     this.maxBox = { w: mw, h: mh };
 
+                    const restoreRect = this._pendingRectRestore;
+                    this._pendingRectRestore = null;
                     const result = img.results[cfgId];
-                    if (result && result.cropRect) {
+                    if (restoreRect) {
+                        this.box.w = restoreRect.width / this.imgInfo.scale;
+                        this.box.h = restoreRect.height / this.imgInfo.scale;
+                        this.pos.x = restoreRect.x / this.imgInfo.scale;
+                        this.pos.y = restoreRect.y / this.imgInfo.scale;
+                        this.zoom = (this.box.w / this.maxBox.w) * 100;
+                        this.constrain();
+                    } else if (result && result.cropRect) {
                         this.box.w = result.cropRect.width / this.imgInfo.scale;
                         this.box.h = result.cropRect.height / this.imgInfo.scale;
                         this.pos.x = result.cropRect.x / this.imgInfo.scale;
@@ -1748,17 +1885,39 @@
                 document.getElementById('modalTitle').innerText = `${cfg.name} (${this.activeConfig.width}x${this.activeConfig.height})`;
                 document.getElementById('cropModal').classList.remove('hidden');
                 if (String(img.mime || '').startsWith('video/')) {
-                    try {
-                        const poster = await getVideoPosterDataUrl(img.file || img.url);
-                        if (openToken !== this._openToken) return;
-                        cropImg.src = poster;
-                        cropOverlay.src = poster;
-                    } catch (e) {
-                        if (openToken !== this._openToken) return;
-                        cropImg.src = img.url;
-                        cropOverlay.src = img.url;
-                    }
+                    if (videoCtl) videoCtl.classList.remove('hidden');
+                    stopVideoSession(cropVideoSession);
+                    const src = img.file ? URL.createObjectURL(img.file) : img.url;
+                    const v = document.createElement('video');
+                    v.src = src;
+                    v.preload = 'auto';
+                    v.muted = true;
+                    v.playsInline = true;
+                    cropVideoSession.video = v;
+                    cropVideoSession.objectUrl = img.file ? src : '';
+                    cropVideoSession.applyFrame = (frame) => {
+                        if (this.imgInfo && this.imgInfo.natW) {
+                            this._pendingRectRestore = this.getNaturalRect();
+                        }
+                        cropImg.src = frame;
+                        cropOverlay.src = frame;
+                    };
+                    await new Promise((resolve, reject) => {
+                        v.onloadedmetadata = () => resolve();
+                        v.onerror = () => reject(new Error('视频预览加载失败'));
+                    });
+                    cropVideoSession.duration = Number.isFinite(v.duration) ? v.duration : 0;
+                    await seekVideo(v, Math.min(0.8, Math.max(0, (cropVideoSession.duration || 0) * 0.2)));
+                    cropVideoSession.applyFrame(captureFrameFromVideo(v));
+                    const timeEl = document.getElementById('cropVideoTime');
+                    const seek = document.getElementById('cropVideoSeek');
+                    const playBtn = document.getElementById('cropVideoPlayBtn');
+                    if (timeEl) timeEl.textContent = `${formatSec(v.currentTime || 0)} / ${formatSec(cropVideoSession.duration)}`;
+                    if (seek) seek.value = String(cropVideoSession.duration > 0 ? Math.floor(((v.currentTime || 0) / cropVideoSession.duration) * 1000) : 0);
+                    if (playBtn) playBtn.textContent = '▶';
                 } else {
+                    stopVideoSession(cropVideoSession);
+                    if (videoCtl) videoCtl.classList.add('hidden');
                     cropImg.src = img.url;
                     cropOverlay.src = img.url;
                 }
@@ -1837,6 +1996,7 @@
                     revokeCropModalLogoOverlays();
                     const cropLogoHost = document.getElementById('cropModalLogoLayers');
                     if (cropLogoHost) cropLogoHost.innerHTML = '';
+                    stopVideoSession(cropVideoSession);
                     document.getElementById('cropModal').classList.add('hidden');
                 } catch (err) {
                     alert('保存失败：' + String(err && err.message || err));
@@ -2079,8 +2239,11 @@
                     try {
                         setTaskState(sourceImgRef.id, cfg.id, { status: 'processing', progress: 45, message: '使用浏览器本地编码' });
                         if (currentImageId === sourceImgRef.id) renderResults();
+                        let nativeProgress = 45;
                         const nativeOut = await transcodeVideoNative(sourceImgRef, cfg, customRect, outCfg, logos, (ratio) => {
-                            const p = Math.max(50, Math.min(99, Math.floor((ratio || 0) * 100)));
+                            const target = Math.max(46, Math.min(96, Math.floor(46 + (ratio || 0) * 50)));
+                            nativeProgress = Math.max(nativeProgress, target);
+                            const p = nativeProgress;
                             setTaskState(sourceImgRef.id, cfg.id, { status: 'processing', progress: p, message: `本地编码中 ${p}%` });
                             if (currentImageId === sourceImgRef.id) renderResults();
                         });
@@ -2121,8 +2284,11 @@
                     : `scale=w=${outW}:h=${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:black`;
                 logDev('info', 'video transcode start', { file: sourceImgRef.name, cfg: cfg.name, outW, outH, maxKb, videoKbps, audioKbps });
                 try {
+                    let ffProgress = 35;
                     ff.setProgress(({ ratio }) => {
-                        const p = Math.max(50, Math.min(99, Math.floor((ratio || 0) * 100)));
+                        const target = Math.max(36, Math.min(96, Math.floor(36 + (ratio || 0) * 60)));
+                        ffProgress = Math.max(ffProgress, target);
+                        const p = ffProgress;
                         setTaskState(sourceImgRef.id, cfg.id, { status: 'processing', progress: p, message: `转码中 ${p}%` });
                         if (currentImageId === sourceImgRef.id) renderResults();
                     });
@@ -2494,6 +2660,10 @@
                             <div class="w-full aspect-video bg-gray-50 rounded-lg flex items-center justify-center relative overflow-hidden border">
                                 ${res && !res.error ? `
                                     ${res.isVideo ? `<video src="${res.url}" class="max-w-full max-h-full object-contain" controls preload="metadata"></video>` : `<img src="${res.url}" class="max-w-full max-h-full object-contain">`}
+                                    ${task && task.status === 'processing' ? `<div class="absolute left-2 right-2 bottom-2 bg-black/60 rounded px-2 py-1.5 text-white text-[10px]">
+                                        <div class="flex items-center justify-between"><span>${escapeHtml(task.message || '处理中')}</span><span>${Math.max(0, Math.min(100, task.progress|0))}%</span></div>
+                                        <div class="mt-1 h-1.5 bg-white/20 rounded overflow-hidden"><div class="h-full bg-[#FF6B00]" style="width:${Math.max(0, Math.min(100, task.progress|0))}%;"></div></div>
+                                    </div>` : ``}
                                     ${allowImageTools ? `<div class="absolute inset-0 bg-[#002FA7]/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto flex flex-col items-center justify-center gap-2">
                                         <button type="button" data-action="quick-crop" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">快速剪裁</button>
                                         <button type="button" data-action="logo-layout-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">Logo 排版</button>
@@ -4494,93 +4664,99 @@
             },
 
             async saveLogoEditorSingle() {
-                const img = this.getCurrentImg();
-                const cfg = this.getPreviewCfg();
-                if (!img || !cfg || typeof LogoModalCrop === 'undefined' || !LogoModalCrop.imgInfo.natW) {
-                    alert('无法保存：请先打开 Logo 排版并等待预览加载完成');
-                    return;
-                }
-                const rect = LogoModalCrop.getNaturalRect();
-                try {
-                    img.results[cfg.id] = await processImage(img.url, cfg, rect, getEffectivePlacements(img), img);
-                } catch (err) {
-                    console.error(err);
-                    alert('保存失败，请查看控制台');
-                    return;
-                }
-                if (currentImageId === img.id) renderResults();
-                renderLogoStatusBadge();
-                LogoModalCrop.syncFromImgCfg(img, cfg);
-                this.renderPlacementList();
-                this.renderLayers();
-                this.updateCropSizeLabel();
-                this.clearLogoEditorDirty();
-            },
-
-            async saveLogoEditorCurrentImageAllSpecs() {
-                const img = this.getCurrentImg();
-                if (!img) return;
-                const selCfg = this.getPreviewCfg();
-                const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
-                const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
-                try {
-                    await runWithConcurrency(config, 4, async (c) => {
-                        const rect = liveCrop && selCfg && c.id === selCfg.id
-                            ? LogoModalCrop.getNaturalRect()
-                            : (img.results[c.id]?.cropRect || null);
-                        img.results[c.id] = await processImage(img.url, c, rect, getEffectivePlacements(img), img);
-                    });
-                } catch (err) {
-                    console.error(err);
-                    alert('本组保存失败，请查看控制台');
-                    return;
-                }
-                if (currentImageId === img.id) renderResults();
-                renderLogoStatusBadge();
-                if (modalOpen && selCfg) {
-                    LogoModalCrop.syncFromImgCfg(img, selCfg);
+                await withBusyButton('logoSaveSingleBtn', '保存中...', async () => {
+                    const img = this.getCurrentImg();
+                    const cfg = this.getPreviewCfg();
+                    if (!img || !cfg || typeof LogoModalCrop === 'undefined' || !LogoModalCrop.imgInfo.natW) {
+                        alert('无法保存：请先打开 Logo 排版并等待预览加载完成');
+                        return;
+                    }
+                    const rect = LogoModalCrop.getNaturalRect();
+                    try {
+                        img.results[cfg.id] = await processImage(img.url, cfg, rect, getEffectivePlacements(img), img);
+                    } catch (err) {
+                        console.error(err);
+                        alert('保存失败，请查看控制台');
+                        return;
+                    }
+                    if (currentImageId === img.id) renderResults();
+                    renderLogoStatusBadge();
+                    LogoModalCrop.syncFromImgCfg(img, cfg);
                     this.renderPlacementList();
                     this.renderLayers();
                     this.updateCropSizeLabel();
-                }
-                this.clearLogoEditorDirty();
+                    this.clearLogoEditorDirty();
+                });
             },
 
-            async saveLogoEditorAllImages() {
-                const selCfg = this.getPreviewCfg();
-                const curId = currentImageId;
-                const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
-                const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
-                try {
-                    const jobs = [];
-                    for (const img of sourceImages) {
-                        for (const c of config) {
-                            const rect = liveCrop && curId && img.id === curId && selCfg && c.id === selCfg.id
+            async saveLogoEditorCurrentImageAllSpecs() {
+                await withBusyButton('logoSaveGroupBtn', '本组保存中...', async () => {
+                    const img = this.getCurrentImg();
+                    if (!img) return;
+                    const selCfg = this.getPreviewCfg();
+                    const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
+                    const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
+                    try {
+                        await runWithConcurrency(config, 4, async (c) => {
+                            const rect = liveCrop && selCfg && c.id === selCfg.id
                                 ? LogoModalCrop.getNaturalRect()
                                 : (img.results[c.id]?.cropRect || null);
-                            jobs.push({ img, c, rect });
-                        }
+                            img.results[c.id] = await processImage(img.url, c, rect, getEffectivePlacements(img), img);
+                        });
+                    } catch (err) {
+                        console.error(err);
+                        alert('本组保存失败，请查看控制台');
+                        return;
                     }
-                    await runWithConcurrency(jobs, 4, async (job) => {
-                        job.img.results[job.c.id] = await processImage(job.img.url, job.c, job.rect, getEffectivePlacements(job.img), job.img);
-                    });
-                } catch (err) {
-                    console.error(err);
-                    alert('全部保存失败，请查看控制台');
-                    return;
-                }
-                if (currentImageId) renderResults();
-                renderLogoStatusBadge();
-                if (modalOpen && curId && selCfg) {
-                    const img = sourceImages.find((i) => i.id === curId);
-                    if (img) {
+                    if (currentImageId === img.id) renderResults();
+                    renderLogoStatusBadge();
+                    if (modalOpen && selCfg) {
                         LogoModalCrop.syncFromImgCfg(img, selCfg);
                         this.renderPlacementList();
                         this.renderLayers();
                         this.updateCropSizeLabel();
                     }
-                }
-                this.clearLogoEditorDirty();
+                    this.clearLogoEditorDirty();
+                });
+            },
+
+            async saveLogoEditorAllImages() {
+                await withBusyButton('logoSaveAllBtn', '全部保存中...', async () => {
+                    const selCfg = this.getPreviewCfg();
+                    const curId = currentImageId;
+                    const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
+                    const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
+                    try {
+                        const jobs = [];
+                        for (const img of sourceImages) {
+                            for (const c of config) {
+                                const rect = liveCrop && curId && img.id === curId && selCfg && c.id === selCfg.id
+                                    ? LogoModalCrop.getNaturalRect()
+                                    : (img.results[c.id]?.cropRect || null);
+                                jobs.push({ img, c, rect });
+                            }
+                        }
+                        await runWithConcurrency(jobs, 4, async (job) => {
+                            job.img.results[job.c.id] = await processImage(job.img.url, job.c, job.rect, getEffectivePlacements(job.img), job.img);
+                        });
+                    } catch (err) {
+                        console.error(err);
+                        alert('全部保存失败，请查看控制台');
+                        return;
+                    }
+                    if (currentImageId) renderResults();
+                    renderLogoStatusBadge();
+                    if (modalOpen && curId && selCfg) {
+                        const img = sourceImages.find((i) => i.id === curId);
+                        if (img) {
+                            LogoModalCrop.syncFromImgCfg(img, selCfg);
+                            this.renderPlacementList();
+                            this.renderLayers();
+                            this.updateCropSizeLabel();
+                        }
+                    }
+                    this.clearLogoEditorDirty();
+                });
             },
 
             layoutLogoModalCropFromResults() {
@@ -5244,7 +5420,7 @@
                 });
             },
 
-            openLayoutModal(preferredCfgId) {
+            async openLayoutModal(preferredCfgId) {
                 if (!currentImageId) {
                     alert('请先选择一张左侧图片');
                     return;
@@ -5263,6 +5439,7 @@
                 this.fillCfgSelect(preferredCfgId);
                 const imgEl = document.getElementById('logoModalCropImg');
                 const ovEl = document.getElementById('logoModalCropOverlay');
+                const videoCtl = document.getElementById('logoVideoControls');
                 const refreshPreview = () => {
                     this.renderPresetSidebar();
                     this.renderLayoutPicker();
@@ -5271,16 +5448,54 @@
                     this.renderLayers();
                     this.updateCropSizeLabel();
                 };
-                if (ovEl) ovEl.src = img.url;
-                imgEl.onload = () => {
-                    LogoModalCrop.syncFromImgCfg(img, this.getPreviewCfg());
-                    refreshPreview();
+                const applyLogoFrame = (frame, preserveCrop = true) => {
+                    const prev = preserveCrop && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW
+                        ? LogoModalCrop.getNaturalRect()
+                        : null;
+                    if (ovEl) ovEl.src = frame;
+                    imgEl.onload = () => {
+                        LogoModalCrop.syncFromImgCfg(img, this.getPreviewCfg());
+                        if (prev && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.scale > 0) {
+                            LogoModalCrop.box.w = prev.width / LogoModalCrop.imgInfo.scale;
+                            LogoModalCrop.box.h = prev.height / LogoModalCrop.imgInfo.scale;
+                            LogoModalCrop.pos.x = prev.x / LogoModalCrop.imgInfo.scale;
+                            LogoModalCrop.pos.y = prev.y / LogoModalCrop.imgInfo.scale;
+                            LogoModalCrop.constrain();
+                            LogoModalCrop.updateUI();
+                        }
+                        refreshPreview();
+                    };
+                    imgEl.src = frame;
                 };
-                if (imgEl.src === img.url && imgEl.naturalWidth > 0) {
-                    LogoModalCrop.syncFromImgCfg(img, this.getPreviewCfg());
-                    refreshPreview();
+                stopVideoSession(logoVideoSession);
+                if (String(img.mime || '').startsWith('video/')) {
+                    if (videoCtl) videoCtl.classList.remove('hidden');
+                    const src = img.file ? URL.createObjectURL(img.file) : img.url;
+                    const v = document.createElement('video');
+                    v.src = src;
+                    v.preload = 'auto';
+                    v.muted = true;
+                    v.playsInline = true;
+                    logoVideoSession.video = v;
+                    logoVideoSession.objectUrl = img.file ? src : '';
+                    logoVideoSession.applyFrame = (frame) => applyLogoFrame(frame, true);
+                    await new Promise((resolve, reject) => {
+                        v.onloadedmetadata = () => resolve();
+                        v.onerror = () => reject(new Error('视频预览加载失败'));
+                    });
+                    logoVideoSession.duration = Number.isFinite(v.duration) ? v.duration : 0;
+                    await seekVideo(v, Math.min(0.8, Math.max(0, (logoVideoSession.duration || 0) * 0.2)));
+                    logoVideoSession.applyFrame(captureFrameFromVideo(v));
+                    const timeEl = document.getElementById('logoVideoTime');
+                    const seek = document.getElementById('logoVideoSeek');
+                    const playBtn = document.getElementById('logoVideoPlayBtn');
+                    if (timeEl) timeEl.textContent = `${formatSec(v.currentTime || 0)} / ${formatSec(logoVideoSession.duration)}`;
+                    if (seek) seek.value = String(logoVideoSession.duration > 0 ? Math.floor(((v.currentTime || 0) / logoVideoSession.duration) * 1000) : 0);
+                    if (playBtn) playBtn.textContent = '▶';
                 } else {
-                    imgEl.src = img.url;
+                    if (videoCtl) videoCtl.classList.add('hidden');
+                    if (ovEl) ovEl.src = img.url;
+                    applyLogoFrame(img.url, false);
                 }
                 document.getElementById('logoLayoutModal').classList.remove('hidden');
                 const rejoin = document.getElementById('logoRejoinGlobalBtn');
@@ -5298,6 +5513,9 @@
                 if (this._logoEditorDirty) {
                     if (!confirm('有未保存的裁切或水印修改，确定关闭？')) return;
                 }
+                stopVideoSession(logoVideoSession);
+                const vc = document.getElementById('logoVideoControls');
+                if (vc) vc.classList.add('hidden');
                 document.getElementById('logoLayoutModal').classList.add('hidden');
                 this.clearLogoEditorDirty();
             },
@@ -5326,6 +5544,55 @@
                 document.getElementById('logoSaveSingleBtn').onclick = () => this.saveLogoEditorSingle();
                 document.getElementById('logoSaveGroupBtn').onclick = () => this.saveLogoEditorCurrentImageAllSpecs();
                 document.getElementById('logoSaveAllBtn').onclick = () => this.saveLogoEditorAllImages();
+                const logoPlayBtn = document.getElementById('logoVideoPlayBtn');
+                const logoSeek = document.getElementById('logoVideoSeek');
+                const logoApplyFrameBtn = document.getElementById('logoVideoApplyFrameBtn');
+                if (logoPlayBtn) {
+                    logoPlayBtn.onclick = async () => {
+                        if (!logoVideoSession.video) return;
+                        if (logoVideoSession.isPlaying) {
+                            logoVideoSession.isPlaying = false;
+                            logoVideoSession.video.pause();
+                            logoPlayBtn.textContent = '▶';
+                            return;
+                        }
+                        logoVideoSession.isPlaying = true;
+                        logoPlayBtn.textContent = '⏸';
+                        try { await logoVideoSession.video.play(); } catch (e) {}
+                        let lastFrameTs = 0;
+                        const tick = () => {
+                            if (!logoVideoSession.isPlaying || !logoVideoSession.video) return;
+                            const v = logoVideoSession.video;
+                            const t = v.currentTime || 0;
+                            const d = logoVideoSession.duration || 0;
+                            const timeEl = document.getElementById('logoVideoTime');
+                            if (logoSeek && d > 0) logoSeek.value = String(Math.floor((t / d) * 1000));
+                            if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(d)}`;
+                            const now = performance.now();
+                            if (logoVideoSession.applyFrame && (now - lastFrameTs) > 120) {
+                                logoVideoSession.applyFrame(captureFrameFromVideo(v));
+                                lastFrameTs = now;
+                            }
+                            logoVideoSession.raf = requestAnimationFrame(tick);
+                        };
+                        tick();
+                    };
+                }
+                if (logoSeek) {
+                    logoSeek.oninput = async () => {
+                        if (!logoVideoSession.video || !logoVideoSession.duration) return;
+                        const t = (parseInt(logoSeek.value, 10) / 1000) * logoVideoSession.duration;
+                        await seekVideo(logoVideoSession.video, t);
+                        const timeEl = document.getElementById('logoVideoTime');
+                        if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(logoVideoSession.duration)}`;
+                    };
+                }
+                if (logoApplyFrameBtn) {
+                    logoApplyFrameBtn.onclick = () => {
+                        if (!logoVideoSession.video || !logoVideoSession.applyFrame) return;
+                        logoVideoSession.applyFrame(captureFrameFromVideo(logoVideoSession.video));
+                    };
+                }
                 document.getElementById('logoPresetSaveBtn').onclick = async () => {
                     const nameEl = document.getElementById('logoPresetNewName');
                     const name = nameEl && nameEl.value.trim();
@@ -5684,9 +5951,12 @@
 
         document.getElementById('saveCrop').onclick = () => Modal.save();
         document.getElementById('closeModal').onclick = () => {
+            stopVideoSession(cropVideoSession);
             revokeCropModalLogoOverlays();
             const h = document.getElementById('cropModalLogoLayers');
             if (h) h.innerHTML = '';
+            const vc = document.getElementById('cropVideoControls');
+            if (vc) vc.classList.add('hidden');
             document.getElementById('cropModal').classList.add('hidden');
         };
         document.getElementById('cropModal').onclick = (e) => {
