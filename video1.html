@@ -165,6 +165,7 @@
                 <button id="downloadAll" class="flex items-center px-4 py-2 text-sm text-white bg-[#FF6B00] rounded hover:bg-[#e66000] transition-colors shadow-sm">
                     <i data-lucide="download-cloud" class="w-4 h-4 mr-2"></i> 导出全部 (ZIP)
                 </button>
+                <div id="downloadAllProgress" class="w-full text-[12px] text-gray-600 mt-1"></div>
                 </div>
             </div>
         </header>
@@ -268,6 +269,7 @@
                 
                 <div class="flex-1 bg-zinc-900 flex items-center justify-center overflow-hidden relative canvas-container">
                     <div id="canvasWrapper" class="relative">
+                        <video id="cropBgVideo" class="hidden absolute top-0 left-0 max-w-full max-h-[60vh] object-contain pointer-events-none" muted playsinline preload="metadata"></video>
                         <img id="cropImg" src="" alt="Base" class="max-w-full max-h-[60vh] object-contain select-none">
                         <div id="cropHighlight" class="absolute top-0 left-0 overflow-hidden pointer-events-none">
                              <img id="cropOverlay" src="" class="absolute top-0 left-0 max-w-none">
@@ -483,6 +485,7 @@
                         <div id="logoPreviewScroll" class="flex-1 overflow-auto flex items-center justify-center min-h-[220px] canvas-container">
                             <div id="logoPreviewStage" class="relative logo-preview-stage inline-block max-w-full max-h-[min(78vh,820px)] overflow-visible">
                                 <div id="logoModalCanvasWrapper" class="relative">
+                                    <video id="logoBgVideo" class="hidden absolute top-0 left-0 max-w-full max-h-[min(78vh,820px)] w-auto h-auto object-contain pointer-events-none" muted playsinline preload="metadata"></video>
                                     <img id="logoModalCropImg" src="" alt="" class="block max-w-full max-h-[min(78vh,820px)] w-auto h-auto object-contain select-none pointer-events-none">
                                     <div id="logoModalCropHighlight" class="absolute top-0 left-0 overflow-hidden pointer-events-none">
                                         <img id="logoModalCropOverlay" src="" alt="" class="absolute top-0 left-0 max-w-none pointer-events-none">
@@ -749,19 +752,13 @@
                     session.isPlaying = true;
                     playBtn.textContent = '⏸';
                     try { await session.video.play(); } catch (e) {}
-                    let lastFrameTs = 0;
-                    const tick = () => {
+                        const tick = () => {
                         if (!session.isPlaying || !session.video) return;
                         const v = session.video;
                         const t = v.currentTime || 0;
                         const d = session.duration || 0;
                         if (seek && d > 0) seek.value = String(Math.floor((t / d) * 1000));
                         if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(d)}`;
-                        const now = performance.now();
-                        if (session.applyFrame && (now - lastFrameTs) > 220) {
-                            session.applyFrame(captureFrameFromVideo(v), { live: true });
-                            lastFrameTs = now;
-                        }
                         if (v.ended) {
                             session.isPlaying = false;
                             playBtn.textContent = '▶';
@@ -778,7 +775,6 @@
                     const t = (parseInt(seek.value, 10) / 1000) * session.duration;
                     await seekVideo(session.video, t);
                     if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(session.duration)}`;
-                    if (session.applyFrame) session.applyFrame(captureFrameFromVideo(session.video), { live: false });
                 };
             }
         }
@@ -1075,24 +1071,27 @@
             const tasks = targets.map((img) => (async () => {
                 if (!img) return;
                 const taskVersion = nextSpecTaskVersion(img.id, cfgId);
-                setTaskState(img.id, cfgId, { status: 'processing', progress: 10, message: '开始渲染' });
-                renderResults();
                 try {
                     await ensureImageNatural(img);
                     if (!isLatestSpecTask(img.id, cfgId, taskVersion)) return;
-                    setTaskState(img.id, cfgId, { status: 'processing', progress: 45, message: '读取元数据' });
-                    renderResults();
-                    const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
-                    if (!isLatestSpecTask(img.id, cfgId, taskVersion)) {
-                        if (result && result.url) { try { URL.revokeObjectURL(result.url); } catch (e) {} }
-                        return;
+                    if (String(img.mime || '').startsWith('video/')) {
+                        markVideoResultDeferred(img, cfgId, (img.results[cfgId] && img.results[cfgId].cropRect) || null);
+                        setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '已更新，导出时处理' });
+                    } else {
+                        setTaskState(img.id, cfgId, { status: 'processing', progress: 45, message: '读取元数据' });
+                        renderResults();
+                        const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
+                        if (!isLatestSpecTask(img.id, cfgId, taskVersion)) {
+                            if (result && result.url) { try { URL.revokeObjectURL(result.url); } catch (e) {} }
+                            return;
+                        }
+                        const oldRes = img.results[cfgId];
+                        img.results[cfgId] = result;
+                        if (oldRes && oldRes.url && oldRes.url !== result.url) {
+                            try { URL.revokeObjectURL(oldRes.url); } catch (e) {}
+                        }
+                        setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '完成' });
                     }
-                    const oldRes = img.results[cfgId];
-                    img.results[cfgId] = result;
-                    if (oldRes && oldRes.url && oldRes.url !== result.url) {
-                        try { URL.revokeObjectURL(oldRes.url); } catch (e) {}
-                    }
-                    setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '完成' });
                 } catch (e) {
                     if (!isLatestSpecTask(img.id, cfgId, taskVersion)) return;
                     img.results[cfgId] = { error: String(e && e.message || e), ext: cfg.format || 'mp4' };
@@ -1209,6 +1208,92 @@
             a.click();
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+
+        function markVideoResultDeferred(img, cfgId, cropRect = null) {
+            if (!img || !String(img.mime || '').startsWith('video/')) return;
+            if (!img.results) img.results = {};
+            const prev = img.results[cfgId] || {};
+            img.results[cfgId] = {
+                ...prev,
+                isVideo: true,
+                url: img.url,
+                blob: null,
+                size: prev.size || '--',
+                ext: prev.ext || ((config.find((c) => String(c.id) === String(cfgId)) || {}).format || 'mp4'),
+                cropRect: cropRect || prev.cropRect || null,
+                pendingExport: true
+            };
+            setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '已更新，导出时处理' });
+            const cfg = config.find((c) => String(c.id) === String(cfgId));
+            if (cfg) {
+                buildDeferredVideoPreview(img, cfg, img.results[cfgId].cropRect).then((previewUrl) => {
+                    const cur = img.results && img.results[cfgId];
+                    if (!cur || !cur.pendingExport) return;
+                    cur.previewUrl = previewUrl || '';
+                    if (currentImageId === img.id) renderResults();
+                }).catch(() => {});
+            }
+        }
+
+        async function buildDeferredVideoPreview(img, cfg, cropRect) {
+            const src = img.file ? URL.createObjectURL(img.file) : img.url;
+            const shouldRevoke = !!img.file;
+            const v = document.createElement('video');
+            v.src = src;
+            v.preload = 'metadata';
+            v.muted = true;
+            v.playsInline = true;
+            await new Promise((resolve, reject) => {
+                v.onloadedmetadata = () => resolve();
+                v.onerror = () => reject(new Error('preview load fail'));
+            });
+            const d = Number.isFinite(v.duration) ? v.duration : 0;
+            const t = d > 0.2 ? Math.min(0.8, Math.max(0.2, d * 0.2)) : 0;
+            if (t > 0) await seekVideo(v, t);
+            const out = getEffectiveConfig(cfg, img);
+            const outW = Math.max(2, out.width | 0);
+            const outH = Math.max(2, out.height | 0);
+            const srcW = Math.max(2, v.videoWidth || img.naturalW || outW);
+            const srcH = Math.max(2, v.videoHeight || img.naturalH || outH);
+            const cvs = document.createElement('canvas');
+            cvs.width = outW;
+            cvs.height = outH;
+            const ctx = cvs.getContext('2d');
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, outW, outH);
+            if (cropRect && cropRect.width > 1 && cropRect.height > 1) {
+                const sx = Math.max(0, Math.floor(cropRect.x || 0));
+                const sy = Math.max(0, Math.floor(cropRect.y || 0));
+                const sw = Math.max(2, Math.floor(cropRect.width || srcW));
+                const sh = Math.max(2, Math.floor(cropRect.height || srcH));
+                ctx.drawImage(v, sx, sy, sw, sh, 0, 0, outW, outH);
+            } else {
+                const srcRatio = srcW / srcH;
+                const dstRatio = outW / outH;
+                let dW = outW, dH = outH, dX = 0, dY = 0;
+                if (srcRatio > dstRatio) {
+                    dH = Math.round(outW / srcRatio);
+                    dY = Math.floor((outH - dH) / 2);
+                } else {
+                    dW = Math.round(outH * srcRatio);
+                    dX = Math.floor((outW - dW) / 2);
+                }
+                ctx.drawImage(v, 0, 0, srcW, srcH, dX, dY, dW, dH);
+            }
+            if (shouldRevoke) URL.revokeObjectURL(src);
+            return cvs.toDataURL('image/jpeg', 0.88);
+        }
+
+        async function ensureResultForExport(img, cfg, onProgress) {
+            const cur = img && img.results ? img.results[cfg.id] : null;
+            if (cur && cur.blob && !cur.pendingExport) return cur;
+            const rect = cur && cur.cropRect ? cur.cropRect : null;
+            const res = await processImage(img.url, cfg, rect, getEffectivePlacements(img), img);
+            res.pendingExport = false;
+            if (onProgress) onProgress(res);
+            img.results[cfg.id] = res;
+            return res;
         }
 
         async function withBusyButton(btnId, busyText, fn) {
@@ -1775,6 +1860,9 @@
         const Modal = {
             _openToken: 0,
             _pendingRectRestore: null,
+            _liveFrameMode: false,
+            _navImageIds: [],
+            activeImageId: null,
             _cropOverlayGen: 0,
             activeConfig: null,
             activeImageIdx: -1,
@@ -1832,8 +1920,13 @@
             },
 
             async navigate(dir) {
-                const nextIdx = (this.activeImageIdx + dir + sourceImages.length) % sourceImages.length;
-                this.open(sourceImages[nextIdx].id, this.activeConfig.id);
+                const ids = (this._navImageIds && this._navImageIds.length) ? this._navImageIds : sourceImages.map((x) => x.id);
+                if (!ids.length) return;
+                const curId = this.activeImageId || (sourceImages[this.activeImageIdx] && sourceImages[this.activeImageIdx].id);
+                let curPos = ids.findIndex((x) => String(x) === String(curId));
+                if (curPos < 0) curPos = 0;
+                const nextPos = (curPos + dir + ids.length) % ids.length;
+                this.open(ids[nextPos], this.activeConfig.id);
             },
 
             async open(imgId, cfgId) {
@@ -1845,14 +1938,23 @@
                     return;
                 }
                 this.activeImageIdx = imgIdx;
+                this.activeImageId = img.id;
                 this.activeConfig = getEffectiveConfig(cfg, img);
+                this._navImageIds = sourceImages.map((x) => x.id);
                 const openToken = ++this._openToken;
 
                 const cropImg = document.getElementById('cropImg');
                 const cropOverlay = document.getElementById('cropOverlay');
                 const videoCtl = document.getElementById('cropVideoControls');
+                const bgVideo = document.getElementById('cropBgVideo');
+                this._pendingRectRestore = null;
+                this._liveFrameMode = false;
                 cropImg.onload = () => {
                     if (openToken !== this._openToken) return;
+                    if (this._liveFrameMode) {
+                        this._liveFrameMode = false;
+                        return;
+                    }
                     this.imgInfo = {
                         natW: cropImg.naturalWidth,
                         natH: cropImg.naturalHeight,
@@ -1902,20 +2004,29 @@
                     if (videoCtl) videoCtl.classList.remove('hidden');
                     stopVideoSession(cropVideoSession);
                     const src = img.file ? URL.createObjectURL(img.file) : img.url;
-                    const v = document.createElement('video');
+                    const v = bgVideo || document.createElement('video');
                     v.src = src;
                     v.preload = 'auto';
                     v.muted = true;
                     v.playsInline = true;
                     cropVideoSession.video = v;
                     cropVideoSession.objectUrl = img.file ? src : '';
-                    cropVideoSession.applyFrame = (frame) => {
-                        if (this.imgInfo && this.imgInfo.natW) {
+                    cropVideoSession.applyFrame = (frame, ctx = {}) => {
+                        if (ctx && ctx.live) {
+                            this._liveFrameMode = true;
+                        } else if (this.imgInfo && this.imgInfo.natW) {
                             this._pendingRectRestore = this.getNaturalRect();
                         }
                         cropImg.src = frame;
                         cropOverlay.src = frame;
                     };
+                    if (bgVideo) {
+                        bgVideo.classList.remove('hidden');
+                        bgVideo.style.width = '100%';
+                        bgVideo.style.height = '100%';
+                    }
+                    cropImg.style.opacity = '0';
+                    cropOverlay.style.opacity = '0';
                     await new Promise((resolve, reject) => {
                         v.onloadedmetadata = () => resolve();
                         v.onerror = () => reject(new Error('视频预览加载失败'));
@@ -1932,6 +2043,13 @@
                 } else {
                     stopVideoSession(cropVideoSession);
                     if (videoCtl) videoCtl.classList.add('hidden');
+                    if (bgVideo) {
+                        bgVideo.pause();
+                        bgVideo.src = '';
+                        bgVideo.classList.add('hidden');
+                    }
+                    cropImg.style.opacity = '1';
+                    cropOverlay.style.opacity = '1';
                     cropImg.src = img.url;
                     cropOverlay.src = img.url;
                 }
@@ -2000,18 +2118,42 @@
                     width: this.box.w * this.imgInfo.scale,
                     height: this.box.h * this.imgInfo.scale
                 };
-                const img = sourceImages[this.activeImageIdx];
+                const img = sourceImages.find((x) => String(x.id) === String(this.activeImageId));
+                if (!img) return;
                 const btn = document.getElementById('saveCrop');
                 const oldText = btn ? btn.textContent : '';
                 if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
                 try {
-                    img.results[this.activeConfig.id] = await processImage(img.url, this.activeConfig, rect, getEffectivePlacements(img), img);
-                    if (currentImageId === img.id) renderResults();
+                    const modal = document.getElementById('cropModal');
+                    if (modal) modal.classList.add('hidden');
+                    const cfg = config.find((c) => String(c.id) === String(this.activeConfig.id)) || this.activeConfig;
+                    if (String(img.mime || '').startsWith('video/')) {
+                        markVideoResultDeferred(img, cfg.id, rect);
+                        setTaskState(img.id, cfg.id, { status: 'done', progress: 100, message: '已保存，导出时处理' });
+                        if (currentImageId === img.id) renderResults();
+                    } else {
+                        setTaskState(img.id, cfg.id, { status: 'processing', progress: 20, message: '处理中' });
+                        renderResults();
+                        processImage(img.url, cfg, rect, getEffectivePlacements(img), img).then((res) => {
+                            img.results[cfg.id] = res;
+                            setTaskState(img.id, cfg.id, { status: 'done', progress: 100, message: '完成' });
+                            if (currentImageId === img.id) renderResults();
+                        }).catch((err) => {
+                            img.results[cfg.id] = { error: String(err && err.message || err), ext: cfg.format || 'mp4' };
+                            setTaskState(img.id, cfg.id, { status: 'error', progress: 100, message: '失败' });
+                            if (currentImageId === img.id) renderResults();
+                        });
+                    }
                     revokeCropModalLogoOverlays();
                     const cropLogoHost = document.getElementById('cropModalLogoLayers');
                     if (cropLogoHost) cropLogoHost.innerHTML = '';
                     stopVideoSession(cropVideoSession);
-                    document.getElementById('cropModal').classList.add('hidden');
+                    const bgVideo = document.getElementById('cropBgVideo');
+                    if (bgVideo) {
+                        bgVideo.pause();
+                        bgVideo.src = '';
+                        bgVideo.classList.add('hidden');
+                    }
                 } catch (err) {
                     alert('保存失败：' + String(err && err.message || err));
                 } finally {
@@ -2627,14 +2769,17 @@
             const pendingCfgs = config.filter((cfg) => !img.results[cfg.id]);
             const placements = getEffectivePlacements(img);
             await runWithConcurrency(pendingCfgs, 4, async (cfg) => {
-                    setTaskState(id, cfg.id, { status: 'processing', progress: 10, message: '开始渲染' });
-                    renderResults();
                     try {
-                        setTaskState(id, cfg.id, { status: 'processing', progress: 45, message: '读取元数据' });
-                        renderResults();
-                        const result = await processImage(img.url, cfg, null, placements, img);
-                        img.results[cfg.id] = result;
-                        setTaskState(id, cfg.id, { status: 'done', progress: 100, message: '完成' });
+                        if (String(img.mime || '').startsWith('video/')) {
+                            markVideoResultDeferred(img, cfg.id, (img.results[cfg.id] && img.results[cfg.id].cropRect) || null);
+                            setTaskState(id, cfg.id, { status: 'done', progress: 100, message: '已更新，导出时处理' });
+                        } else {
+                            setTaskState(id, cfg.id, { status: 'processing', progress: 45, message: '读取元数据' });
+                            renderResults();
+                            const result = await processImage(img.url, cfg, null, placements, img);
+                            img.results[cfg.id] = result;
+                            setTaskState(id, cfg.id, { status: 'done', progress: 100, message: '完成' });
+                        }
                     } catch (e) {
                         img.results[cfg.id] = { error: String(e && e.message || e), ext: cfg.format || 'mp4' };
                         setTaskState(id, cfg.id, { status: 'error', progress: 100, message: '失败' });
@@ -2657,7 +2802,7 @@
                 const effW = eff.width;
                 const effH = eff.height;
                 const maxKb = Math.max(1, (cfg.maxSize|0) || 1000);
-                const isOver = res && !res.error && parseFloat(res.size) > maxKb;
+                const isOver = res && !res.error && !res.pendingExport && parseFloat(res.size) > maxKb;
 
                 return `
                     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group" data-cfg-card="${escapeHtml(String(cfg.id))}">
@@ -2673,11 +2818,15 @@
                         <div class="p-4">
                             <div class="w-full aspect-video bg-gray-50 rounded-lg flex items-center justify-center relative overflow-hidden border">
                                 ${res && !res.error ? `
-                                    ${res.isVideo ? `<video src="${res.url}" class="max-w-full max-h-full object-contain" controls preload="metadata"></video>` : `<img src="${res.url}" class="max-w-full max-h-full object-contain">`}
-                                    ${task && task.status === 'processing' ? `<div class="absolute left-2 right-2 bottom-2 bg-black/60 rounded px-2 py-1.5 text-white text-[10px]">
-                                        <div class="flex items-center justify-between"><span>${escapeHtml(task.message || '处理中')}</span><span>${Math.max(0, Math.min(100, task.progress|0))}%</span></div>
-                                        <div class="mt-1 h-1.5 bg-white/20 rounded overflow-hidden"><div class="h-full bg-[#FF6B00]" style="width:${Math.max(0, Math.min(100, task.progress|0))}%;"></div></div>
-                                    </div>` : ``}
+                                    ${res.isVideo
+                                        ? (res.pendingExport && res.previewUrl
+                                            ? `<img src="${res.previewUrl}" class="max-w-full max-h-full object-contain">`
+                                            : (res.pendingExport
+                                                ? `<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">预览生成中...</div>`
+                                                : `<video src="${res.url}" class="max-w-full max-h-full object-contain" controls preload="metadata"></video>`))
+                                        : `<img src="${res.url}" class="max-w-full max-h-full object-contain">`
+                                    }
+                                    ${res.pendingExport ? `<div class="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-white text-[10px]">已修改，导出时处理</div>` : ``}
                                     ${allowImageTools ? `<div class="absolute inset-0 bg-[#002FA7]/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto flex flex-col items-center justify-center gap-2">
                                         <button type="button" data-action="quick-crop" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">快速剪裁</button>
                                         <button type="button" data-action="logo-layout-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">Logo 排版</button>
@@ -2708,7 +2857,7 @@
                                     <div class="flex items-center justify-end flex-1 ml-2 min-w-0">
                                         ${res.warning ? `<span class="text-[10px] font-bold text-orange-500 flex items-center mr-2" title="为保证大小，画质/尺寸被大幅降低"><i data-lucide="alert-triangle" class="w-3 h-3 mr-0.5"></i>高压缩警告</span>` : ``}
                                         <div class="flex items-center space-x-2">
-                                            <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${res.size} KB</span>
+                                            <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${res.pendingExport ? '待导出生成' : `${res.size} KB`}</span>
                                             <a href="${res.url}" download="${sanitizeFileName(`${effW}x${effH}-${String(cfg.name || '').trim() || '未命名'}`, 'image')}.${res.ext || cfg.format}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors"><i data-lucide="download" class="w-4 h-4"></i></a>
                                         </div>
                                     </div>
@@ -4224,7 +4373,8 @@
             await new Promise((resolve) => setTimeout(resolve, 0));
             try {
                 config = rec.configs.map((x) => ({ ...x }));
-                sourceImages.forEach((img) => { img.results = {}; });
+                const current = sourceImages.find((img) => String(img.id) === String(currentImageId));
+                if (current) current.results = {};
                 configLoadedFromId = rec.id || null;
                 clearConfigDirty();
                 if (currentImageId) await selectImage(currentImageId);
@@ -4686,12 +4836,16 @@
                         return;
                     }
                     const rect = LogoModalCrop.getNaturalRect();
-                    try {
-                        img.results[cfg.id] = await processImage(img.url, cfg, rect, getEffectivePlacements(img), img);
-                    } catch (err) {
-                        console.error(err);
-                        alert('保存失败，请查看控制台');
-                        return;
+                    if (String(img.mime || '').startsWith('video/')) {
+                        markVideoResultDeferred(img, cfg.id, rect);
+                    } else {
+                        try {
+                            img.results[cfg.id] = await processImage(img.url, cfg, rect, getEffectivePlacements(img), img);
+                        } catch (err) {
+                            console.error(err);
+                            alert('保存失败，请查看控制台');
+                            return;
+                        }
                     }
                     if (currentImageId === img.id) renderResults();
                     renderLogoStatusBadge();
@@ -4710,17 +4864,26 @@
                     const selCfg = this.getPreviewCfg();
                     const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
                     const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
-                    try {
-                        await runWithConcurrency(config, 4, async (c) => {
+                    if (String(img.mime || '').startsWith('video/')) {
+                        for (const c of config) {
                             const rect = liveCrop && selCfg && c.id === selCfg.id
                                 ? LogoModalCrop.getNaturalRect()
                                 : (img.results[c.id]?.cropRect || null);
-                            img.results[c.id] = await processImage(img.url, c, rect, getEffectivePlacements(img), img);
-                        });
-                    } catch (err) {
-                        console.error(err);
-                        alert('本组保存失败，请查看控制台');
-                        return;
+                            markVideoResultDeferred(img, c.id, rect);
+                        }
+                    } else {
+                        try {
+                            await runWithConcurrency(config, 4, async (c) => {
+                                const rect = liveCrop && selCfg && c.id === selCfg.id
+                                    ? LogoModalCrop.getNaturalRect()
+                                    : (img.results[c.id]?.cropRect || null);
+                                img.results[c.id] = await processImage(img.url, c, rect, getEffectivePlacements(img), img);
+                            });
+                        } catch (err) {
+                            console.error(err);
+                            alert('本组保存失败，请查看控制台');
+                            return;
+                        }
                     }
                     if (currentImageId === img.id) renderResults();
                     renderLogoStatusBadge();
@@ -4740,23 +4903,39 @@
                     const curId = currentImageId;
                     const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
                     const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
-                    try {
-                        const jobs = [];
+                    const allVideo = sourceImages.every((x) => String(x.mime || '').startsWith('video/'));
+                    if (allVideo) {
                         for (const img of sourceImages) {
                             for (const c of config) {
                                 const rect = liveCrop && curId && img.id === curId && selCfg && c.id === selCfg.id
                                     ? LogoModalCrop.getNaturalRect()
                                     : (img.results[c.id]?.cropRect || null);
-                                jobs.push({ img, c, rect });
+                                markVideoResultDeferred(img, c.id, rect);
                             }
                         }
-                        await runWithConcurrency(jobs, 4, async (job) => {
-                            job.img.results[job.c.id] = await processImage(job.img.url, job.c, job.rect, getEffectivePlacements(job.img), job.img);
-                        });
-                    } catch (err) {
-                        console.error(err);
-                        alert('全部保存失败，请查看控制台');
-                        return;
+                    } else {
+                        try {
+                            const jobs = [];
+                            for (const img of sourceImages) {
+                                for (const c of config) {
+                                    const rect = liveCrop && curId && img.id === curId && selCfg && c.id === selCfg.id
+                                        ? LogoModalCrop.getNaturalRect()
+                                        : (img.results[c.id]?.cropRect || null);
+                                    jobs.push({ img, c, rect });
+                                }
+                            }
+                            await runWithConcurrency(jobs, 4, async (job) => {
+                                if (String(job.img.mime || '').startsWith('video/')) {
+                                    markVideoResultDeferred(job.img, job.c.id, job.rect);
+                                } else {
+                                    job.img.results[job.c.id] = await processImage(job.img.url, job.c, job.rect, getEffectivePlacements(job.img), job.img);
+                                }
+                            });
+                        } catch (err) {
+                            console.error(err);
+                            alert('全部保存失败，请查看控制台');
+                            return;
+                        }
                     }
                     if (currentImageId) renderResults();
                     renderLogoStatusBadge();
@@ -5454,6 +5633,7 @@
                 const imgEl = document.getElementById('logoModalCropImg');
                 const ovEl = document.getElementById('logoModalCropOverlay');
                 const videoCtl = document.getElementById('logoVideoControls');
+                const bgVideo = document.getElementById('logoBgVideo');
                 const refreshPreview = () => {
                     this.renderPresetSidebar();
                     this.renderLayoutPicker();
@@ -5470,6 +5650,7 @@
                         : null;
                     if (ovEl) ovEl.src = frame;
                     imgEl.onload = () => {
+                        if (live) return;
                         LogoModalCrop.syncFromImgCfg(img, this.getPreviewCfg());
                         if (prev && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.scale > 0) {
                             LogoModalCrop.box.w = prev.width / LogoModalCrop.imgInfo.scale;
@@ -5487,7 +5668,7 @@
                 if (String(img.mime || '').startsWith('video/')) {
                     if (videoCtl) videoCtl.classList.remove('hidden');
                     const src = img.file ? URL.createObjectURL(img.file) : img.url;
-                    const v = document.createElement('video');
+                    const v = bgVideo || document.createElement('video');
                     v.src = src;
                     v.preload = 'auto';
                     v.muted = true;
@@ -5495,6 +5676,13 @@
                     logoVideoSession.video = v;
                     logoVideoSession.objectUrl = img.file ? src : '';
                     logoVideoSession.applyFrame = (frame, ctx = {}) => applyLogoFrame(frame, { preserveCrop: !ctx.live, live: !!ctx.live });
+                    if (bgVideo) {
+                        bgVideo.classList.remove('hidden');
+                        bgVideo.style.width = '100%';
+                        bgVideo.style.height = '100%';
+                    }
+                    imgEl.style.opacity = '0';
+                    if (ovEl) ovEl.style.opacity = '0';
                     await new Promise((resolve, reject) => {
                         v.onloadedmetadata = () => resolve();
                         v.onerror = () => reject(new Error('视频预览加载失败'));
@@ -5510,8 +5698,15 @@
                     if (playBtn) playBtn.textContent = '▶';
                 } else {
                     if (videoCtl) videoCtl.classList.add('hidden');
+                    if (bgVideo) {
+                        bgVideo.pause();
+                        bgVideo.src = '';
+                        bgVideo.classList.add('hidden');
+                    }
+                    imgEl.style.opacity = '1';
+                    if (ovEl) ovEl.style.opacity = '1';
                     if (ovEl) ovEl.src = img.url;
-                    applyLogoFrame(img.url, false);
+                    applyLogoFrame(img.url, { preserveCrop: false, live: false });
                 }
                 document.getElementById('logoLayoutModal').classList.remove('hidden');
                 const rejoin = document.getElementById('logoRejoinGlobalBtn');
@@ -5530,6 +5725,12 @@
                     if (!confirm('有未保存的裁切或水印修改，确定关闭？')) return;
                 }
                 stopVideoSession(logoVideoSession);
+                const bgVideo = document.getElementById('logoBgVideo');
+                if (bgVideo) {
+                    bgVideo.pause();
+                    bgVideo.src = '';
+                    bgVideo.classList.add('hidden');
+                }
                 const vc = document.getElementById('logoVideoControls');
                 if (vc) vc.classList.add('hidden');
                 document.getElementById('logoLayoutModal').classList.add('hidden');
@@ -5789,63 +5990,59 @@
         document.getElementById('downloadAll').onclick = async () => {
             if (sourceImages.length === 0) return;
             const zip = new JSZip();
+            const prog = document.getElementById('downloadAllProgress');
             
             const globalFolderName = sanitizeFileName(document.getElementById('globalFolderName').value.trim() || `批量导出_${new Date().getTime()}`, '批量导出');
             const rootFolder = zip.folder(globalFolderName);
             const groupByCfg = sourceImages.length > (config || []).length;
+            const totalJobs = sourceImages.length * config.length;
+            let doneJobs = 0;
+            if (prog) prog.textContent = `导出处理中 0/${totalJobs} (0%)`;
+            const bump = () => {
+                doneJobs++;
+                if (prog) prog.textContent = `导出处理中 ${doneJobs}/${totalJobs} (${Math.floor((doneJobs / Math.max(1, totalJobs)) * 100)}%)`;
+            };
+            const jobs = [];
             if (groupByCfg) {
-                // 素材数量远大于配置条数：按“配置/描述名称”分文件夹，避免每个素材一个文件夹
                 for (let cfg of config) {
                     const descFolder = sanitizeFileName(String(cfg.name || '').trim() || '未命名', '未命名');
                     const cfgFolder = rootFolder.folder(descFolder);
                     const fileNameUsed = {};
-                    for (let img of sourceImages) {
-                        const res = img.results[cfg.id];
-                        if (res && res.blob) {
-                            const ext = res.ext || cfg.format;
-                            const eff = getEffectiveConfig(cfg, img);
-                            const sizePart = `${eff.width}x${eff.height}`;
-                            const descPart = String(cfg.name || '').trim() || '未命名';
-                            const imgPart = sanitizeFileName((img.customName !== undefined ? img.customName : img.name.replace(/\.[^/.]+$/, "")).trim(), '未命名');
-                            const baseFile = sanitizeFileName(`${sizePart}-${descPart}-${imgPart}`, 'image');
-                            const uniqueBase = uniqueNameWithSuffix(baseFile, fileNameUsed, '-', 1);
-                            cfgFolder.file(`${uniqueBase}.${ext}`, res.blob);
-                        }
-                    }
+                    for (let img of sourceImages) jobs.push({ mode: 'cfg', img, cfg, cfgFolder, fileNameUsed });
                 }
             } else {
-                // 默认：每个素材一个文件夹
                 const nameMap = {};
                 for (let img of sourceImages) {
                     let baseName = sanitizeFileName((img.customName !== undefined ? img.customName : img.name.replace(/\.[^/.]+$/, "")).trim(), '未命名');
                     if (!baseName) baseName = "未命名";
-
-                    // 解决同名文件互相覆盖问题
-                    if (nameMap[baseName]) {
-                        nameMap[baseName]++;
-                        baseName = `${baseName}_${nameMap[baseName]}`;
-                    } else {
-                        nameMap[baseName] = 1;
-                    }
-
+                    if (nameMap[baseName]) { nameMap[baseName]++; baseName = `${baseName}_${nameMap[baseName]}`; } else { nameMap[baseName] = 1; }
                     const imgFolder = rootFolder.folder(baseName);
                     const fileNameUsed = {};
-                    for (let cfg of config) {
-                        const res = img.results[cfg.id];
-                        if (res && res.blob) {
-                            const ext = res.ext || cfg.format;
-                            const eff = getEffectiveConfig(cfg, img);
-                            const sizePart = `${eff.width}x${eff.height}`;
-                            const descPart = String(cfg.name || '').trim() || '未命名';
-                            const baseFile = sanitizeFileName(`${sizePart}-${descPart}`, 'image');
-                            const uniqueBase = uniqueNameWithSuffix(baseFile, fileNameUsed, '-', 1);
-                            imgFolder.file(`${uniqueBase}.${ext}`, res.blob);
-                        }
-                    }
+                    for (let cfg of config) jobs.push({ mode: 'img', img, cfg, imgFolder, fileNameUsed });
                 }
             }
+            await runWithConcurrency(jobs, 4, async (job) => {
+                const { img, cfg } = job;
+                let res = img.results[cfg.id];
+                if (!res || res.pendingExport || !res.blob) {
+                    res = await ensureResultForExport(img, cfg);
+                }
+                bump();
+                if (!res || !res.blob) return;
+                const ext = res.ext || cfg.format;
+                const eff = getEffectiveConfig(cfg, img);
+                const sizePart = `${eff.width}x${eff.height}`;
+                const descPart = String(cfg.name || '').trim() || '未命名';
+                const baseFile = job.mode === 'cfg'
+                    ? sanitizeFileName(`${sizePart}-${descPart}-${sanitizeFileName((img.customName !== undefined ? img.customName : img.name.replace(/\.[^/.]+$/, "")).trim(), '未命名')}`, 'image')
+                    : sanitizeFileName(`${sizePart}-${descPart}`, 'image');
+                const uniqueBase = uniqueNameWithSuffix(baseFile, job.fileNameUsed, '-', 1);
+                const folder = job.mode === 'cfg' ? job.cfgFolder : job.imgFolder;
+                folder.file(`${uniqueBase}.${ext}`, res.blob);
+            });
             const blob = await zip.generateAsync({ type: 'blob', compression: "DEFLATE", mimeType: 'application/zip' });
             triggerBlobDownload(blob, `${globalFolderName}.zip`);
+            if (prog) prog.textContent = '导出完成';
         };
 
         function removeImage(e, id) {
@@ -5935,6 +6132,12 @@
             revokeCropModalLogoOverlays();
             const h = document.getElementById('cropModalLogoLayers');
             if (h) h.innerHTML = '';
+            const bgVideo = document.getElementById('cropBgVideo');
+            if (bgVideo) {
+                bgVideo.pause();
+                bgVideo.src = '';
+                bgVideo.classList.add('hidden');
+            }
             const vc = document.getElementById('cropVideoControls');
             if (vc) vc.classList.add('hidden');
             document.getElementById('cropModal').classList.add('hidden');
