@@ -300,6 +300,15 @@
                     </div>
                     <button type="button" id="closeGalleryModal" class="p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
+                <div id="galleryHeavyDataBar" class="hidden flex flex-wrap items-center justify-between gap-2 px-4 py-2 mx-4 mt-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-950 shrink-0">
+                    <p class="text-[28px] font-semibold leading-snug text-amber-950 flex-1 min-w-0 pr-1">当前图片过多，加载速度较慢，建议清理以往图片</p>
+                    <div class="flex flex-wrap items-center justify-end gap-1.5 shrink-0 text-[20px]">
+                        <button type="button" id="galleryPurge30dBtn" class="px-2.5 py-1.5 rounded border border-amber-400 hover:bg-amber-100">清空 30 天前</button>
+                        <button type="button" id="galleryPurge7dBtn" class="px-2.5 py-1.5 rounded border border-amber-400 hover:bg-amber-100">清空 7 天前</button>
+                        <button type="button" id="galleryPurgeUntaggedBtn" class="px-2.5 py-1.5 rounded border border-amber-400 hover:bg-amber-100">清空无标签</button>
+                        <button type="button" id="galleryHeavyDataBarClose" class="p-1 rounded hover:bg-amber-100" title="关闭提示" aria-label="关闭"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                </div>
                 <div class="px-5 py-3 border-b border-gray-100 shrink-0">
                     <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <p class="text-xs font-medium text-gray-600">标签筛选（多选取交集）</p>
@@ -632,7 +641,11 @@
             const cfg = config.find((c) => String(c.id) === String(cfgId));
             if (!cfg) return;
             for (const img of sourceImages) {
-                if (img && img.results) delete img.results[cfgId];
+                if (img && img.results) {
+                    const pr = img.results[cfgId];
+                    if (pr && pr.url) { try { URL.revokeObjectURL(pr.url); } catch (e) {} }
+                    delete img.results[cfgId];
+                }
             }
             renderResults();
             const tasks = (sourceImages || []).map((img) => (async () => {
@@ -1945,12 +1958,12 @@
                     try {
                         const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
                         img.results[cfg.id] = result;
-                        if (currentImageId === id) renderResults();
                     } catch (e) {
                         console.error("处理出错:", e);
                     }
                 }
             }
+            if (currentImageId === id) renderResults();
         }
 
         function renderResults() {
@@ -2027,7 +2040,7 @@
 
         // --- 图库 IndexedDB（离线本地）---
         const GALLERY_DB = 'PhotoBatchGallery';
-        const GALLERY_VER = 3;
+        const GALLERY_VER = 4;
         const GALLERY_STORE = 'images';
         const CONFIG_STORE = 'configs';
         const LOGO_STORE = 'logos';
@@ -2116,7 +2129,22 @@
                 req.onupgradeneeded = (e) => {
                     const db = e.target.result;
                     if (!db.objectStoreNames.contains(GALLERY_STORE)) {
-                        db.createObjectStore(GALLERY_STORE, { keyPath: 'id' });
+                        const st = db.createObjectStore(GALLERY_STORE, { keyPath: 'id' });
+                        try {
+                            st.createIndex('byContentHash', 'contentHash', { unique: false });
+                        } catch (err) {
+                            console.warn('图库 byContentHash 索引创建', err);
+                        }
+                    } else if (e.oldVersion < 4) {
+                        const tx = e.target.transaction;
+                        const st = tx.objectStore(GALLERY_STORE);
+                        if (st && !st.indexNames.contains('byContentHash')) {
+                            try {
+                                st.createIndex('byContentHash', 'contentHash', { unique: false });
+                            } catch (err) {
+                                console.warn('图库 byContentHash 索引创建', err);
+                            }
+                        }
                     }
                     if (!db.objectStoreNames.contains(CONFIG_STORE)) {
                         db.createObjectStore(CONFIG_STORE, { keyPath: 'id' });
@@ -2296,8 +2324,46 @@
             localStorage.setItem(LS_CONFIG_CUSTOM_TAGS, JSON.stringify(list));
         }
 
+        async function sha256HexOfBuffer(buf) {
+            const u8 = new Uint8Array(buf);
+            const hash = await crypto.subtle.digest('SHA-256', u8);
+            return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function galleryGetFirstByContentHash(contentHash) {
+            const db = await openGalleryDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(GALLERY_STORE, 'readonly');
+                const st = tx.objectStore(GALLERY_STORE);
+                if (!st.indexNames.contains('byContentHash')) {
+                    const r0 = st.getAll();
+                    r0.onsuccess = () => {
+                        const arr = (r0.result || []).find((x) => x && x.contentHash === contentHash) || null;
+                        db.close();
+                        resolve(arr);
+                    };
+                    r0.onerror = () => { db.close(); reject(r0.error); };
+                    return;
+                }
+                const r = st.index('byContentHash').getAll(IDBKeyRange.only(contentHash));
+                r.onsuccess = () => { db.close(); const list = r.result; resolve((list && list[0]) || null); };
+                r.onerror = () => { db.close(); reject(r.error); };
+            });
+        }
+
         async function gallerySaveFromFile(file) {
             const buf = await file.arrayBuffer();
+            const contentHash = await sha256HexOfBuffer(buf);
+            const hit = await galleryGetFirstByContentHash(contentHash);
+            if (hit) {
+                hit.savedAt = Date.now();
+                hit.name = file.name;
+                hit.mime = file.type || hit.mime || 'image/jpeg';
+                hit.contentHash = contentHash;
+                if (!Array.isArray(hit.tags)) hit.tags = [];
+                await galleryPut(hit);
+                return;
+            }
             const id = galleryUuid();
             const record = {
                 id,
@@ -2305,9 +2371,61 @@
                 mime: file.type || 'image/jpeg',
                 data: buf,
                 tags: [],
-                savedAt: Date.now()
+                savedAt: Date.now(),
+                contentHash
             };
             await galleryPut(record);
+        }
+
+        const GALLERY_HEAVY_MIN_COUNT = 100;
+        const GALLERY_HEAVY_MIN_BYTES = 100 * 1024 * 1024;
+        let galleryHeavyDataBarClosedThisOpen = false;
+
+        function getGalleryListTotalBytes() {
+            return galleryListRecords.reduce((s, r) => s + (r && r.data && r.data.byteLength ? r.data.byteLength : 0), 0);
+        }
+
+        function isGalleryDataHeavy() {
+            return galleryListRecords.length >= GALLERY_HEAVY_MIN_COUNT || getGalleryListTotalBytes() >= GALLERY_HEAVY_MIN_BYTES;
+        }
+
+        function updateGalleryHeavyDataBar() {
+            const el = document.getElementById('galleryHeavyDataBar');
+            if (!el) return;
+            if (galleryHeavyDataBarClosedThisOpen || !isGalleryDataHeavy()) {
+                el.classList.add('hidden');
+            } else {
+                el.classList.remove('hidden');
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        async function galleryRefreshListAfterDelete() {
+            galleryListRecords = await galleryGetAll();
+            gallerySelectedIds = new Set(Array.from(gallerySelectedIds).filter((id) => galleryListRecords.some((r) => r.id === id)));
+            renderGalleryTagFilters();
+            renderGalleryGrid();
+            updateGalleryHeavyDataBar();
+        }
+
+        async function galleryPurgeBySavedAtMs(maxAgeMs) {
+            const cutoff = Date.now() - maxAgeMs;
+            const ids = galleryListRecords.filter((r) => (r.savedAt | 0) < cutoff).map((r) => r.id);
+            if (!ids.length) { alert('没有符合条件的图库图片'); return; }
+            if (!confirm(`将删除图库中 ${ids.length} 张早于期限的图片，且不可恢复。确定？`)) return;
+            await galleryDeleteIds(ids);
+            await galleryRefreshListAfterDelete();
+        }
+
+        async function galleryPurgeUntagged() {
+            const ids = galleryListRecords.filter((r) => {
+                const t = Array.isArray(r.tags) ? r.tags : [];
+                return t.length === 0;
+            }).map((r) => r.id);
+            if (!ids.length) { alert('没有无标签的图库图片'); return; }
+            if (!confirm(`将删除图库中 ${ids.length} 张无标签图片，且不可恢复。确定？`)) return;
+            await galleryDeleteIds(ids);
+            await galleryRefreshListAfterDelete();
         }
 
         let galleryFilterTags = new Set();
@@ -2468,6 +2586,28 @@
             panel.classList.add('hidden');
         }
 
+        function applyGalleryCardSelectionState(card) {
+            if (!card) return;
+            const id = card.getAttribute('data-gid');
+            if (!id) return;
+            const selected = gallerySelectedIds.has(id);
+            const base = 'gallery-card relative rounded-lg border-2 p-1.5 transition-all cursor-pointer';
+            if (selected) {
+                card.className = base + ' border-[#002FA7] ring-2 ring-[#002FA7]/30 hover:border-[#002FA7]';
+            } else {
+                card.className = base + ' border-gray-200 hover:border-[#002FA7]';
+            }
+            const cb = card.querySelector('.gallery-cb');
+            if (cb) cb.checked = selected;
+        }
+
+        function syncAllGalleryCardSelection() {
+            const grid = document.getElementById('galleryGrid');
+            if (!grid) return;
+            grid.querySelectorAll('.gallery-card[data-gid]').forEach((el) => applyGalleryCardSelectionState(el));
+            updateGallerySelectedCount();
+        }
+
         function renderGalleryGrid() {
             const grid = document.getElementById('galleryGrid');
             revokeGalleryThumbs();
@@ -2499,11 +2639,14 @@
             }).join('');
 
             grid.querySelectorAll('.gallery-cb').forEach((cb) => {
-                cb.onchange = (e) => {
+                cb.onchange = () => {
                     const id = cb.getAttribute('data-gid');
                     if (cb.checked) gallerySelectedIds.add(id);
                     else gallerySelectedIds.delete(id);
-                    renderGalleryGrid();
+                    const card = cb.closest('.gallery-card');
+                    if (card) applyGalleryCardSelectionState(card);
+                    else syncAllGalleryCardSelection();
+                    updateGallerySelectedCount();
                 };
             });
             grid.querySelectorAll('.gallery-card').forEach((card) => {
@@ -2512,7 +2655,8 @@
                     const id = card.getAttribute('data-gid');
                     if (gallerySelectedIds.has(id)) gallerySelectedIds.delete(id);
                     else gallerySelectedIds.add(id);
-                    renderGalleryGrid();
+                    applyGalleryCardSelectionState(card);
+                    updateGallerySelectedCount();
                 };
             });
             grid.querySelectorAll('.gallery-card-tag').forEach((btn) => {
@@ -2536,11 +2680,13 @@
 
         async function openGalleryModal() {
             document.getElementById('galleryModal').classList.remove('hidden');
+            galleryHeavyDataBarClosedThisOpen = false;
             galleryListRecords = await galleryGetAll();
             galleryFilterTags.clear();
             gallerySelectedIds = new Set();
             renderGalleryTagFilters();
             renderGalleryGrid();
+            updateGalleryHeavyDataBar();
             lucide.createIcons();
         }
 
@@ -2771,6 +2917,7 @@
             galleryListRecords = await galleryGetAll();
             renderGalleryTagFilters();
             renderGalleryGrid();
+            updateGalleryHeavyDataBar();
         }
 
         function restoreGalleryDefaultTags() {
@@ -2813,17 +2960,32 @@
         function initGalleryModal() {
             document.getElementById('openGalleryModal').onclick = () => openGalleryModal();
             document.getElementById('closeGalleryModal').onclick = () => closeGalleryModal();
+            const hClose = document.getElementById('galleryHeavyDataBarClose');
+            if (hClose) {
+                hClose.onclick = (e) => {
+                    e.stopPropagation();
+                    galleryHeavyDataBarClosedThisOpen = true;
+                    const el = document.getElementById('galleryHeavyDataBar');
+                    if (el) el.classList.add('hidden');
+                };
+            }
+            const p30 = document.getElementById('galleryPurge30dBtn');
+            if (p30) p30.onclick = (e) => { e.stopPropagation(); galleryPurgeBySavedAtMs(30 * 24 * 60 * 60 * 1000); };
+            const p7 = document.getElementById('galleryPurge7dBtn');
+            if (p7) p7.onclick = (e) => { e.stopPropagation(); galleryPurgeBySavedAtMs(7 * 24 * 60 * 60 * 1000); };
+            const pu = document.getElementById('galleryPurgeUntaggedBtn');
+            if (pu) pu.onclick = (e) => { e.stopPropagation(); galleryPurgeUntagged(); };
             document.getElementById('galleryModal').onclick = (e) => {
                 if (e.target.id === 'galleryModal') closeGalleryModal();
             };
             document.getElementById('gallerySelectAll').onclick = () => {
                 gallerySelectedIds.clear();
                 galleryFilteredRecords().forEach((r) => gallerySelectedIds.add(r.id));
-                renderGalleryGrid();
+                syncAllGalleryCardSelection();
             };
             document.getElementById('gallerySelectNone').onclick = () => {
                 gallerySelectedIds.clear();
-                renderGalleryGrid();
+                syncAllGalleryCardSelection();
             };
             document.getElementById('galleryQuickTagBar').addEventListener('click', (e) => {
                 const btn = e.target.closest('.gallery-quick-tag');
@@ -2867,6 +3029,7 @@
                 galleryListRecords = await galleryGetAll();
                 renderGalleryTagFilters();
                 renderGalleryGrid();
+                updateGalleryHeavyDataBar();
             };
             document.getElementById('galleryClearAll').onclick = async () => {
                 if (!galleryListRecords.length) return;
@@ -2876,6 +3039,7 @@
                 galleryListRecords = [];
                 renderGalleryTagFilters();
                 renderGalleryGrid();
+                updateGalleryHeavyDataBar();
             };
             document.getElementById('galleryImportSelected').onclick = () => galleryImportSelectedToWorkbench();
         }
@@ -3006,6 +3170,27 @@
             panel.classList.add('hidden');
         }
 
+        function applyConfigRowSelectionState(row) {
+            if (!row) return;
+            const id = row.getAttribute('data-config-row');
+            if (!id) return;
+            const selected = configSelectedIds.has(id);
+            const base = 'relative border rounded-xl p-3 bg-white pr-10';
+            row.className = selected
+                ? base + ' border-[#002FA7] ring-2 ring-[#002FA7]/20'
+                : base + ' border-gray-200';
+            const cb = row.querySelector('.config-cb');
+            if (cb) cb.checked = selected;
+        }
+
+        function syncAllConfigListSelection() {
+            const box = document.getElementById('configList');
+            if (!box) return;
+            box.querySelectorAll('[data-config-row]').forEach((row) => applyConfigRowSelectionState(row));
+            updateConfigSelectedCount();
+            updateConfigTagAddPanelVisibility();
+        }
+
         function renderConfigList() {
             const box = document.getElementById('configList');
             if (!box) return;
@@ -3023,7 +3208,7 @@
                 const top5 = cfgs.slice(0, 5).map((c) => `${c.id}.${c.name} ${c.format} ${c.width}x${c.height} ${c.maxSize}KB`).join(' | ');
                 const tags = (r.tags || []).map((t) => `<button type="button" class="config-row-tag text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-red-50 rounded border border-transparent hover:border-red-200" data-id="${escapeGalleryAttr(r.id)}" data-tag="${escapeGalleryAttr(t)}">${escapeHtml(t)}</button>`).join(' ');
                 return `
-                <div class="relative border rounded-xl p-3 ${configSelectedIds.has(r.id) ? 'border-[#002FA7] ring-2 ring-[#002FA7]/20' : 'border-gray-200'} bg-white pr-10">
+                <div class="relative border rounded-xl p-3 ${configSelectedIds.has(r.id) ? 'border-[#002FA7] ring-2 ring-[#002FA7]/20' : 'border-gray-200'} bg-white pr-10" data-config-row="${escapeGalleryAttr(r.id)}">
                     <button type="button" class="config-delete-one absolute top-2 right-2 z-10 p-1 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50" title="删除该配置" data-id="${escapeGalleryAttr(r.id)}"><i data-lucide="x" class="w-4 h-4"></i></button>
                     <div class="flex items-start gap-3">
                         <input type="checkbox" class="config-cb mt-1 w-4 h-4 accent-[#002FA7]" data-id="${escapeGalleryAttr(r.id)}" ${checked}>
@@ -3046,7 +3231,10 @@
                     const id = cb.getAttribute('data-id');
                     if (cb.checked) configSelectedIds.add(id);
                     else configSelectedIds.delete(id);
-                    renderConfigList();
+                    const row = cb.closest('[data-config-row]');
+                    if (row) applyConfigRowSelectionState(row);
+                    else syncAllConfigListSelection();
+                    updateConfigSelectedCount();
                 };
             });
             box.querySelectorAll('.config-row-tag').forEach((btn) => {
@@ -3340,11 +3528,11 @@
             document.getElementById('configSelectAll').onclick = () => {
                 configSelectedIds.clear();
                 configFilteredRecords().forEach((r) => configSelectedIds.add(r.id));
-                renderConfigList();
+                syncAllConfigListSelection();
             };
             document.getElementById('configSelectNone').onclick = () => {
                 configSelectedIds.clear();
-                renderConfigList();
+                syncAllConfigListSelection();
             };
             document.getElementById('configQuickTagBar').addEventListener('click', (e) => {
                 const btn = e.target.closest('.config-quick-tag');
