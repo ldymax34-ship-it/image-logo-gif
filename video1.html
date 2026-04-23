@@ -185,7 +185,7 @@
                         <input type="file" id="imageInput" multiple accept="video/mp4,video/quicktime,.mp4,.mov" class="hidden">
                     </label>
                     <button type="button" id="openGalleryModal" class="flex items-center justify-center w-full px-4 py-2.5 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors">
-                        <i data-lucide="images" class="w-4 h-4 mr-2"></i> 批量导入已上传图片
+                        <i data-lucide="images" class="w-4 h-4 mr-2"></i> 批量导入已上传素材
                     </button>
                 </div>
                 <div id="sourceImageList" class="flex-1 overflow-y-auto p-3 space-y-3">
@@ -292,13 +292,13 @@
             </div>
         </div>
 
-        <!-- 图库：历史已上传图片 -->
+        <!-- 图库：历史已上传素材 -->
         <div id="galleryModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center gallery-modal-overlay p-4">
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-200 flex justify-between items-center shrink-0">
                     <div>
-                        <h3 class="text-lg font-bold text-[#002FA7]">批量导入已上传图片</h3>
-                        <p class="text-xs text-gray-500 mt-0.5">本地保存的历史图片，可筛选标签、多选后加入当前处理列表</p>
+                        <h3 class="text-lg font-bold text-[#002FA7]">批量导入已上传素材</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">本地保存的历史视频素材，可筛选标签、多选后加入当前处理列表</p>
                     </div>
                     <button type="button" id="closeGalleryModal" class="p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
@@ -587,6 +587,8 @@
         let sourceImages = []; 
         let currentImageId = null;
         let processingState = {};
+        const specTaskVersion = {};
+        const specReprocessTimers = {};
         let ffmpegInstance = null;
         let ffmpegReady = false;
         let ffmpegLoadPromise = null;
@@ -629,6 +631,40 @@
 
         function getTaskState(imgId, cfgId) {
             return processingState[`${imgId}__${cfgId}`];
+        }
+
+        function nextSpecTaskVersion(imgId, cfgId) {
+            const k = `${imgId}__${cfgId}`;
+            const v = (specTaskVersion[k] || 0) + 1;
+            specTaskVersion[k] = v;
+            return v;
+        }
+
+        function isLatestSpecTask(imgId, cfgId, v) {
+            return specTaskVersion[`${imgId}__${cfgId}`] === v;
+        }
+
+        function scheduleReprocessCurrentSpec(cfgId, delayMs = 320) {
+            const key = String(cfgId);
+            if (specReprocessTimers[key]) clearTimeout(specReprocessTimers[key]);
+            specReprocessTimers[key] = setTimeout(() => {
+                reprocessSpecEverywhere(cfgId, { scope: 'current' });
+                delete specReprocessTimers[key];
+            }, Math.max(0, delayMs | 0));
+        }
+
+        async function runWithConcurrency(items, limit, worker) {
+            const list = Array.isArray(items) ? items : [];
+            const n = Math.max(1, limit | 0);
+            let idx = 0;
+            const runners = new Array(Math.min(n, list.length)).fill(0).map(async () => {
+                while (true) {
+                    const i = idx++;
+                    if (i >= list.length) return;
+                    await worker(list[i], i);
+                }
+            });
+            await Promise.all(runners);
         }
 
         async function getVideoPosterDataUrl(fileOrUrl) {
@@ -909,10 +945,14 @@
             clearConfigSessionDirtyUI();
         }
 
-        async function reprocessSpecEverywhere(cfgId) {
+        async function reprocessSpecEverywhere(cfgId, options = {}) {
             const cfg = config.find((c) => String(c.id) === String(cfgId));
             if (!cfg) return;
-            for (const img of sourceImages) {
+            const scope = options && options.scope === 'all' ? 'all' : 'current';
+            const targets = scope === 'all'
+                ? (sourceImages || []).filter(Boolean)
+                : (sourceImages || []).filter((img) => img && String(img.id) === String(currentImageId));
+            for (const img of targets) {
                 if (img && img.results) {
                     const pr = img.results[cfgId];
                     if (pr && pr.url) { try { URL.revokeObjectURL(pr.url); } catch (e) {} }
@@ -920,18 +960,25 @@
                 }
             }
             renderResults();
-            const tasks = (sourceImages || []).map((img) => (async () => {
+            const tasks = targets.map((img) => (async () => {
                 if (!img) return;
+                const taskVersion = nextSpecTaskVersion(img.id, cfgId);
                 setTaskState(img.id, cfgId, { status: 'processing', progress: 10, message: '开始渲染' });
                 renderResults();
                 try {
                     await ensureImageNatural(img);
+                    if (!isLatestSpecTask(img.id, cfgId, taskVersion)) return;
                     setTaskState(img.id, cfgId, { status: 'processing', progress: 45, message: '读取元数据' });
                     renderResults();
                     const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
+                    if (!isLatestSpecTask(img.id, cfgId, taskVersion)) {
+                        if (result && result.url) { try { URL.revokeObjectURL(result.url); } catch (e) {} }
+                        return;
+                    }
                     img.results[cfgId] = result;
                     setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '完成' });
                 } catch (e) {
+                    if (!isLatestSpecTask(img.id, cfgId, taskVersion)) return;
                     img.results[cfgId] = { error: String(e && e.message || e), ext: cfg.format || 'mp4' };
                     setTaskState(img.id, cfgId, { status: 'error', progress: 100, message: '失败' });
                     logDev('error', 'reprocessSpecEverywhere failed', { file: img.name, cfg: cfg.name, error: String(e && e.message || e) });
@@ -1028,6 +1075,13 @@
             used[b] = n + 1;
             used[candidate] = 1;
             return candidate;
+        }
+
+        function inferVideoMimeByName(name, fallback = 'video/mp4') {
+            const n = String(name || '').toLowerCase();
+            if (n.endsWith('.mov')) return 'video/quicktime';
+            if (n.endsWith('.mp4')) return 'video/mp4';
+            return fallback;
         }
 
         function triggerBlobDownload(blob, fileName) {
@@ -1592,6 +1646,7 @@
 
         // --- 裁剪逻辑对象 ---
         const Modal = {
+            _openToken: 0,
             _cropOverlayGen: 0,
             activeConfig: null,
             activeImageIdx: -1,
@@ -1650,27 +1705,12 @@
                 }
                 this.activeImageIdx = imgIdx;
                 this.activeConfig = getEffectiveConfig(cfg, img);
+                const openToken = ++this._openToken;
 
                 const cropImg = document.getElementById('cropImg');
                 const cropOverlay = document.getElementById('cropOverlay');
-                if (String(img.mime || '').startsWith('video/')) {
-                    getVideoPosterDataUrl(img.file || img.url).then((poster) => {
-                        cropImg.src = poster;
-                        cropOverlay.src = poster;
-                    }).catch(() => {
-                        cropImg.src = img.url;
-                        cropOverlay.src = img.url;
-                    });
-                } else {
-                    cropImg.src = img.url;
-                    cropOverlay.src = img.url;
-                }
-
-                document.getElementById('imgPagination').innerText = `${imgIdx + 1} / ${sourceImages.length}`;
-                document.getElementById('modalTitle').innerText = `${cfg.name} (${this.activeConfig.width}x${this.activeConfig.height})`;
-                document.getElementById('cropModal').classList.remove('hidden');
-
                 cropImg.onload = () => {
+                    if (openToken !== this._openToken) return;
                     this.imgInfo = {
                         natW: cropImg.naturalWidth,
                         natH: cropImg.naturalHeight,
@@ -1700,6 +1740,28 @@
                     }
                     this.updateUI();
                 };
+                cropImg.onerror = () => {
+                    if (openToken !== this._openToken) return;
+                    alert('裁剪预览加载失败，请重试');
+                };
+                document.getElementById('imgPagination').innerText = `${imgIdx + 1} / ${sourceImages.length}`;
+                document.getElementById('modalTitle').innerText = `${cfg.name} (${this.activeConfig.width}x${this.activeConfig.height})`;
+                document.getElementById('cropModal').classList.remove('hidden');
+                if (String(img.mime || '').startsWith('video/')) {
+                    try {
+                        const poster = await getVideoPosterDataUrl(img.file || img.url);
+                        if (openToken !== this._openToken) return;
+                        cropImg.src = poster;
+                        cropOverlay.src = poster;
+                    } catch (e) {
+                        if (openToken !== this._openToken) return;
+                        cropImg.src = img.url;
+                        cropOverlay.src = img.url;
+                    }
+                } else {
+                    cropImg.src = img.url;
+                    cropOverlay.src = img.url;
+                }
             },
 
             reset() {
@@ -1734,6 +1796,7 @@
                 const overlay = document.getElementById('cropOverlay');
                 const zoomLabel = document.getElementById('zoomLabel');
                 const zoomSlider = document.getElementById('zoomSlider');
+                if (!boxUI || !highlight || !overlay || !zoomLabel || !zoomSlider) return;
 
                 boxUI.style.left = `${this.pos.x}px`;
                 boxUI.style.top = `${this.pos.y}px`;
@@ -1765,12 +1828,21 @@
                     height: this.box.h * this.imgInfo.scale
                 };
                 const img = sourceImages[this.activeImageIdx];
-                img.results[this.activeConfig.id] = await processImage(img.url, this.activeConfig, rect, getEffectivePlacements(img), img);
-                if (currentImageId === img.id) renderResults();
-                revokeCropModalLogoOverlays();
-                const cropLogoHost = document.getElementById('cropModalLogoLayers');
-                if (cropLogoHost) cropLogoHost.innerHTML = '';
-                document.getElementById('cropModal').classList.add('hidden');
+                const btn = document.getElementById('saveCrop');
+                const oldText = btn ? btn.textContent : '';
+                if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+                try {
+                    img.results[this.activeConfig.id] = await processImage(img.url, this.activeConfig, rect, getEffectivePlacements(img), img);
+                    if (currentImageId === img.id) renderResults();
+                    revokeCropModalLogoOverlays();
+                    const cropLogoHost = document.getElementById('cropModalLogoLayers');
+                    if (cropLogoHost) cropLogoHost.innerHTML = '';
+                    document.getElementById('cropModal').classList.add('hidden');
+                } catch (err) {
+                    alert('保存失败：' + String(err && err.message || err));
+                } finally {
+                    if (btn) { btn.disabled = false; btn.textContent = oldText || '保存修改'; }
+                }
             }
         };
         window.Modal = Modal;
@@ -2251,7 +2323,7 @@
                     cfg.maxSize = n;
                     t.value = String(n);
                     markConfigDirty();
-                    reprocessSpecEverywhere(cfgId);
+                    scheduleReprocessCurrentSpec(cfgId, 220);
                     return;
                 }
                 if (field === 'width' || field === 'height') {
@@ -2265,7 +2337,7 @@
                     cfg.height = newH;
                     cfg.useNatural = false;
                     markConfigDirty();
-                    reprocessSpecEverywhere(cfgId);
+                    scheduleReprocessCurrentSpec(cfgId, 260);
                 }
             });
             grid.addEventListener('click', (e) => {
@@ -2372,14 +2444,15 @@
             renderSourceList();
             renderResults();
 
-            for (const cfg of config) {
-                if (!img.results[cfg.id]) {
+            const pendingCfgs = config.filter((cfg) => !img.results[cfg.id]);
+            const placements = getEffectivePlacements(img);
+            await runWithConcurrency(pendingCfgs, 4, async (cfg) => {
                     setTaskState(id, cfg.id, { status: 'processing', progress: 10, message: '开始渲染' });
                     renderResults();
                     try {
                         setTaskState(id, cfg.id, { status: 'processing', progress: 45, message: '读取元数据' });
                         renderResults();
-                        const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
+                        const result = await processImage(img.url, cfg, null, placements, img);
                         img.results[cfg.id] = result;
                         setTaskState(id, cfg.id, { status: 'done', progress: 100, message: '完成' });
                     } catch (e) {
@@ -2387,8 +2460,7 @@
                         setTaskState(id, cfg.id, { status: 'error', progress: 100, message: '失败' });
                         logDev('error', 'selectImage process failed', { file: img.name, cfg: cfg.name, error: String(e && e.message || e) });
                     }
-                }
-            }
+            });
             if (currentImageId === id) renderResults();
         }
 
@@ -2499,6 +2571,7 @@
         const PRESET_CONFIG_TAGS = PRESET_CHANNEL_TAGS;
         let configFilterTags = new Set();
         let configSelectedIds = new Set();
+        let importingConfigBusy = false;
         let configRecords = [];
 
         function galleryUuid() {
@@ -2790,11 +2863,12 @@
         async function gallerySaveFromFile(file) {
             const buf = await file.arrayBuffer();
             const contentHash = await sha256HexOfBuffer(buf);
+            const detectedMime = file.type || inferVideoMimeByName(file.name, 'video/mp4');
             const hit = await galleryGetFirstByContentHash(contentHash);
             if (hit) {
                 hit.savedAt = Date.now();
                 hit.name = file.name;
-                hit.mime = file.type || hit.mime || 'image/jpeg';
+                hit.mime = detectedMime || hit.mime || 'video/mp4';
                 hit.contentHash = contentHash;
                 if (!Array.isArray(hit.tags)) hit.tags = [];
                 await galleryPut(hit);
@@ -2804,7 +2878,7 @@
             const record = {
                 id,
                 name: file.name,
-                mime: file.type || 'image/jpeg',
+                mime: detectedMime,
                 data: buf,
                 tags: [],
                 savedAt: Date.now(),
@@ -3050,25 +3124,30 @@
             const rows = galleryFilteredRecords();
             if (rows.length === 0) {
                 const hasAny = galleryListRecords.length > 0;
-                const msg = hasAny ? '当前筛选下没有图片，可点「全部」或调整标签' : '暂无图片，请先用「批量导入本地图片」上传，会自动记入图库';
+                const msg = hasAny ? '当前筛选下没有素材，可点「全部」或调整标签' : '暂无素材，请先用「批量导入本地视频」上传，会自动记入图库';
                 grid.innerHTML = '<div class="col-span-full text-center text-gray-400 text-sm py-12">' + msg + '</div>';
                 updateGallerySelectedCount();
                 lucide.createIcons();
                 return;
             }
             grid.innerHTML = rows.map((r) => {
-                const blob = new Blob([r.data], { type: r.mime || 'image/jpeg' });
+                const effectiveMime = r.mime || inferVideoMimeByName(r.name, 'video/mp4');
+                const blob = new Blob([r.data], { type: effectiveMime });
                 const thumb = URL.createObjectURL(blob);
                 galleryThumbUrls.push(thumb);
                 const checked = gallerySelectedIds.has(r.id) ? 'checked' : '';
                 const tagStr = (r.tags || []).map((t) => `<button type="button" class="gallery-card-tag text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-red-50 rounded mr-0.5 border border-transparent hover:border-red-200" data-gid="${escapeGalleryAttr(r.id)}" data-tag="${escapeGalleryAttr(t)}" title="点击移除该标签">${escapeHtml(t)}</button>`).join('');
+                const isVideo = String(effectiveMime || '').startsWith('video/');
                 return `
                     <div class="gallery-card relative rounded-lg border-2 p-1.5 transition-all cursor-pointer border-gray-200 hover:border-[#002FA7] ${gallerySelectedIds.has(r.id) ? 'border-[#002FA7] ring-2 ring-[#002FA7]/30' : ''}" data-gid="${r.id}">
                         <label class="absolute top-1 left-1 z-10 bg-white/90 rounded p-0.5 shadow-sm cursor-pointer" onclick="event.stopPropagation()">
                             <input type="checkbox" class="gallery-cb w-4 h-4 accent-[#002FA7]" data-gid="${r.id}" ${checked}>
                         </label>
                         <button type="button" class="gallery-delete-one absolute top-1 right-1 z-10 p-0.5 rounded bg-white/90 text-gray-400 hover:text-red-600 shadow-sm" title="从图库删除" data-gid="${escapeGalleryAttr(r.id)}"><i data-lucide="x" class="w-4 h-4"></i></button>
-                        <img src="${thumb}" alt="" class="w-full h-24 object-cover rounded pointer-events-none">
+                        ${isVideo
+                            ? `<video src="${thumb}" class="w-full h-24 object-cover rounded pointer-events-none" muted preload="metadata"></video>`
+                            : `<img src="${thumb}" alt="" class="w-full h-24 object-cover rounded pointer-events-none">`
+                        }
                         <input type="text" value="${escapeGalleryAttr(r.name)}" class="w-full mt-1 px-1 py-0.5 text-[10px] border border-transparent rounded focus:border-blue-300 outline-none text-gray-700" onclick="event.stopPropagation()" onchange="galleryRenameRecord('${escapeGalleryAttr(r.id)}', this.value)">
                         <div class="flex flex-wrap gap-0.5 mt-0.5 min-h-[18px]">${tagStr || '<span class="text-[10px] text-gray-300">无标签</span>'}</div>
                     </div>`;
@@ -3369,17 +3448,21 @@
 
         async function galleryImportSelectedToWorkbench() {
             const ids = Array.from(gallerySelectedIds);
-            if (!ids.length) { alert('请先勾选要处理的图片'); return; }
+            if (!ids.length) { alert('请先勾选要处理的素材'); return; }
             for (const id of ids) {
                 const rec = galleryListRecords.find((x) => x.id === id);
                 if (!rec) continue;
-                const blob = new Blob([rec.data], { type: rec.mime || 'image/jpeg' });
+                const mime = rec.mime || inferVideoMimeByName(rec.name, 'video/mp4');
+                const blob = new Blob([rec.data], { type: mime });
                 const url = URL.createObjectURL(blob);
+                const file = new File([blob], rec.name || `import-${Date.now()}`, { type: mime });
                 const sid = 'sess-' + Math.random().toString(36).slice(2, 12);
                 sourceImages.push({
                     id: sid,
                     name: rec.name,
                     url,
+                    file,
+                    mime,
                     results: {},
                     logoIndependent: true,
                     logoHiddenPids: [],
@@ -3458,8 +3541,8 @@
             };
             document.getElementById('galleryDeleteSelected').onclick = async () => {
                 const ids = Array.from(gallerySelectedIds);
-                if (!ids.length) { alert('请先勾选要删除的图片'); return; }
-                if (!confirm('确定删除选中的 ' + ids.length + ' 张图库记录？不可恢复。')) return;
+                if (!ids.length) { alert('请先勾选要删除的素材'); return; }
+                if (!confirm('确定删除选中的 ' + ids.length + ' 个图库素材？不可恢复。')) return;
                 await galleryDeleteIds(ids);
                 gallerySelectedIds.clear();
                 galleryListRecords = await galleryGetAll();
@@ -3469,7 +3552,7 @@
             };
             document.getElementById('galleryClearAll').onclick = async () => {
                 if (!galleryListRecords.length) return;
-                if (!confirm('确定一键删除图库中的全部 ' + galleryListRecords.length + ' 张图片？不可恢复。')) return;
+                if (!confirm('确定一键删除图库中的全部 ' + galleryListRecords.length + ' 个素材？不可恢复。')) return;
                 await galleryClearAll();
                 gallerySelectedIds.clear();
                 galleryListRecords = [];
@@ -3940,19 +4023,37 @@
         }
 
         async function importSelectedConfigToCurrent() {
+            if (importingConfigBusy) return;
             const ids = Array.from(configSelectedIds);
             if (!ids.length) { alert('请先勾选配置'); return; }
             const rec = configRecords.find((x) => x.id === ids[0]);
             if (!rec || !Array.isArray(rec.configs) || !rec.configs.length) { alert('所选配置为空'); return; }
-            config = rec.configs.map((x) => ({ ...x }));
-            sourceImages.forEach((img) => { img.results = {}; });
-            configLoadedFromId = rec.id || null;
-            clearConfigDirty();
-            if (currentImageId) await selectImage(currentImageId);
-            const folderInp = document.getElementById('globalFolderName');
-            if (folderInp) folderInp.value = rec.name || '';
-            alert('已导入配置：' + rec.name);
             closeConfigModal();
+            const importBtn = document.getElementById('configImportSelected');
+            const oldText = importBtn ? importBtn.textContent : '';
+            importingConfigBusy = true;
+            if (importBtn) {
+                importBtn.disabled = true;
+                importBtn.textContent = '导入中...';
+            }
+            // 先让弹窗关闭完成，再进行重渲染，避免“难以关闭”的卡顿感
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            try {
+                config = rec.configs.map((x) => ({ ...x }));
+                sourceImages.forEach((img) => { img.results = {}; });
+                configLoadedFromId = rec.id || null;
+                clearConfigDirty();
+                if (currentImageId) await selectImage(currentImageId);
+                const folderInp = document.getElementById('globalFolderName');
+                if (folderInp) folderInp.value = rec.name || '';
+                alert('已导入配置：' + rec.name);
+            } finally {
+                importingConfigBusy = false;
+                if (importBtn) {
+                    importBtn.disabled = false;
+                    importBtn.textContent = oldText || '导入选中配置';
+                }
+            }
         }
 
         function initConfigModal() {
@@ -3961,6 +4062,11 @@
             document.getElementById('configModal').onclick = (e) => {
                 if (e.target.id === 'configModal') closeConfigModal();
             };
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const m = document.getElementById('configModal');
+                if (m && !m.classList.contains('hidden')) closeConfigModal();
+            });
             document.getElementById('configSelectAll').onclick = () => {
                 configSelectedIds.clear();
                 configFilteredRecords().forEach((r) => configSelectedIds.add(r.id));
@@ -4418,12 +4524,12 @@
                 const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
                 const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
                 try {
-                    for (const c of config) {
+                    await runWithConcurrency(config, 4, async (c) => {
                         const rect = liveCrop && selCfg && c.id === selCfg.id
                             ? LogoModalCrop.getNaturalRect()
                             : (img.results[c.id]?.cropRect || null);
                         img.results[c.id] = await processImage(img.url, c, rect, getEffectivePlacements(img), img);
-                    }
+                    });
                 } catch (err) {
                     console.error(err);
                     alert('本组保存失败，请查看控制台');
@@ -4446,14 +4552,18 @@
                 const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
                 const liveCrop = modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW;
                 try {
+                    const jobs = [];
                     for (const img of sourceImages) {
                         for (const c of config) {
                             const rect = liveCrop && curId && img.id === curId && selCfg && c.id === selCfg.id
                                 ? LogoModalCrop.getNaturalRect()
                                 : (img.results[c.id]?.cropRect || null);
-                            img.results[c.id] = await processImage(img.url, c, rect, getEffectivePlacements(img), img);
+                            jobs.push({ img, c, rect });
                         }
                     }
+                    await runWithConcurrency(jobs, 4, async (job) => {
+                        job.img.results[job.c.id] = await processImage(job.img.url, job.c, job.rect, getEffectivePlacements(job.img), job.img);
+                    });
                 } catch (err) {
                     console.error(err);
                     alert('全部保存失败，请查看控制台');
@@ -5410,7 +5520,7 @@
                     config.push(newCfg);
                     markConfigDirty();
                     mod.classList.add('hidden');
-                    await reprocessSpecEverywhere(newCfg.id);
+                    await reprocessSpecEverywhere(newCfg.id, { scope: 'all' });
                     renderSourceList();
                 };
             }
@@ -5579,6 +5689,19 @@
             if (h) h.innerHTML = '';
             document.getElementById('cropModal').classList.add('hidden');
         };
+        document.getElementById('cropModal').onclick = (e) => {
+            if (e.target && e.target.id === 'cropModal') {
+                document.getElementById('closeModal').click();
+            }
+        };
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const m = document.getElementById('cropModal');
+                if (m && !m.classList.contains('hidden')) {
+                    document.getElementById('closeModal').click();
+                }
+            }
+        });
         document.getElementById('openLogoFromCropModal').onclick = () => {
             if (Modal.activeImageIdx < 0 || !sourceImages[Modal.activeImageIdx]) return;
             const sid = sourceImages[Modal.activeImageIdx].id;
