@@ -733,6 +733,56 @@
             session.applyFrame = null;
         }
 
+        function bindVideoPreviewControls(session, opts) {
+            const playBtn = document.getElementById(opts.playBtnId);
+            const seek = document.getElementById(opts.seekId);
+            const timeEl = document.getElementById(opts.timeId);
+            if (playBtn) {
+                playBtn.onclick = async () => {
+                    if (!session.video) return;
+                    if (session.isPlaying) {
+                        session.isPlaying = false;
+                        session.video.pause();
+                        playBtn.textContent = '▶';
+                        return;
+                    }
+                    session.isPlaying = true;
+                    playBtn.textContent = '⏸';
+                    try { await session.video.play(); } catch (e) {}
+                    let lastFrameTs = 0;
+                    const tick = () => {
+                        if (!session.isPlaying || !session.video) return;
+                        const v = session.video;
+                        const t = v.currentTime || 0;
+                        const d = session.duration || 0;
+                        if (seek && d > 0) seek.value = String(Math.floor((t / d) * 1000));
+                        if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(d)}`;
+                        const now = performance.now();
+                        if (session.applyFrame && (now - lastFrameTs) > 220) {
+                            session.applyFrame(captureFrameFromVideo(v), { live: true });
+                            lastFrameTs = now;
+                        }
+                        if (v.ended) {
+                            session.isPlaying = false;
+                            playBtn.textContent = '▶';
+                            return;
+                        }
+                        session.raf = requestAnimationFrame(tick);
+                    };
+                    tick();
+                };
+            }
+            if (seek) {
+                seek.oninput = async () => {
+                    if (!session.video || !session.duration) return;
+                    const t = (parseInt(seek.value, 10) / 1000) * session.duration;
+                    await seekVideo(session.video, t);
+                    if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(session.duration)}`;
+                    if (session.applyFrame) session.applyFrame(captureFrameFromVideo(session.video), { live: false });
+                };
+            }
+        }
+
         async function getVideoPosterDataUrl(fileOrUrl, hintTimeSec = 0.8) {
             const src = typeof fileOrUrl === 'string' ? fileOrUrl : URL.createObjectURL(fileOrUrl);
             const shouldRevoke = typeof fileOrUrl !== 'string';
@@ -1767,52 +1817,16 @@
                 document.getElementById('nextImgBtn').onclick = () => this.navigate(1);
                 document.getElementById('resetCrop').onclick = () => this.reset();
                 const playBtn = document.getElementById('cropVideoPlayBtn');
-                const seek = document.getElementById('cropVideoSeek');
                 const applyBtn = document.getElementById('cropVideoApplyFrameBtn');
-                if (playBtn) {
-                    playBtn.onclick = async () => {
-                        if (!cropVideoSession.video) return;
-                        if (cropVideoSession.isPlaying) {
-                            cropVideoSession.isPlaying = false;
-                            cropVideoSession.video.pause();
-                            playBtn.textContent = '▶';
-                            return;
-                        }
-                        cropVideoSession.isPlaying = true;
-                        playBtn.textContent = '⏸';
-                        try { await cropVideoSession.video.play(); } catch (e) {}
-                        let lastFrameTs = 0;
-                        const tick = () => {
-                            if (!cropVideoSession.isPlaying || !cropVideoSession.video) return;
-                            const v = cropVideoSession.video;
-                            const t = v.currentTime || 0;
-                            const d = cropVideoSession.duration || 0;
-                            const timeEl = document.getElementById('cropVideoTime');
-                            if (seek && d > 0) seek.value = String(Math.floor((t / d) * 1000));
-                            if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(d)}`;
-                            const now = performance.now();
-                            if (cropVideoSession.applyFrame && (now - lastFrameTs) > 120) {
-                                cropVideoSession.applyFrame(captureFrameFromVideo(v));
-                                lastFrameTs = now;
-                            }
-                            cropVideoSession.raf = requestAnimationFrame(tick);
-                        };
-                        tick();
-                    };
-                }
-                if (seek) {
-                    seek.oninput = async () => {
-                        if (!cropVideoSession.video || !cropVideoSession.duration) return;
-                        const t = (parseInt(seek.value, 10) / 1000) * cropVideoSession.duration;
-                        await seekVideo(cropVideoSession.video, t);
-                        const timeEl = document.getElementById('cropVideoTime');
-                        if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(cropVideoSession.duration)}`;
-                    };
-                }
+                bindVideoPreviewControls(cropVideoSession, {
+                    playBtnId: 'cropVideoPlayBtn',
+                    seekId: 'cropVideoSeek',
+                    timeId: 'cropVideoTime'
+                });
                 if (applyBtn) {
                     applyBtn.onclick = () => {
                         if (!cropVideoSession.video || !cropVideoSession.applyFrame) return;
-                        cropVideoSession.applyFrame(captureFrameFromVideo(cropVideoSession.video));
+                        cropVideoSession.applyFrame(captureFrameFromVideo(cropVideoSession.video), { live: false });
                     };
                 }
             },
@@ -4216,7 +4230,7 @@
                 if (currentImageId) await selectImage(currentImageId);
                 const folderInp = document.getElementById('globalFolderName');
                 if (folderInp) folderInp.value = rec.name || '';
-                alert('已导入配置：' + rec.name);
+                logDev('info', 'config imported', { name: rec.name, count: (rec.configs || []).length });
             } finally {
                 importingConfigBusy = false;
                 if (importBtn) {
@@ -5448,8 +5462,10 @@
                     this.renderLayers();
                     this.updateCropSizeLabel();
                 };
-                const applyLogoFrame = (frame, preserveCrop = true) => {
-                    const prev = preserveCrop && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW
+                const applyLogoFrame = (frame, opts = {}) => {
+                    const live = !!opts.live;
+                    const preserveCrop = opts.preserveCrop !== false;
+                    const prev = preserveCrop && !live && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW
                         ? LogoModalCrop.getNaturalRect()
                         : null;
                     if (ovEl) ovEl.src = frame;
@@ -5478,14 +5494,14 @@
                     v.playsInline = true;
                     logoVideoSession.video = v;
                     logoVideoSession.objectUrl = img.file ? src : '';
-                    logoVideoSession.applyFrame = (frame) => applyLogoFrame(frame, true);
+                    logoVideoSession.applyFrame = (frame, ctx = {}) => applyLogoFrame(frame, { preserveCrop: !ctx.live, live: !!ctx.live });
                     await new Promise((resolve, reject) => {
                         v.onloadedmetadata = () => resolve();
                         v.onerror = () => reject(new Error('视频预览加载失败'));
                     });
                     logoVideoSession.duration = Number.isFinite(v.duration) ? v.duration : 0;
                     await seekVideo(v, Math.min(0.8, Math.max(0, (logoVideoSession.duration || 0) * 0.2)));
-                    logoVideoSession.applyFrame(captureFrameFromVideo(v));
+                    logoVideoSession.applyFrame(captureFrameFromVideo(v), { live: false });
                     const timeEl = document.getElementById('logoVideoTime');
                     const seek = document.getElementById('logoVideoSeek');
                     const playBtn = document.getElementById('logoVideoPlayBtn');
@@ -5545,52 +5561,16 @@
                 document.getElementById('logoSaveGroupBtn').onclick = () => this.saveLogoEditorCurrentImageAllSpecs();
                 document.getElementById('logoSaveAllBtn').onclick = () => this.saveLogoEditorAllImages();
                 const logoPlayBtn = document.getElementById('logoVideoPlayBtn');
-                const logoSeek = document.getElementById('logoVideoSeek');
                 const logoApplyFrameBtn = document.getElementById('logoVideoApplyFrameBtn');
-                if (logoPlayBtn) {
-                    logoPlayBtn.onclick = async () => {
-                        if (!logoVideoSession.video) return;
-                        if (logoVideoSession.isPlaying) {
-                            logoVideoSession.isPlaying = false;
-                            logoVideoSession.video.pause();
-                            logoPlayBtn.textContent = '▶';
-                            return;
-                        }
-                        logoVideoSession.isPlaying = true;
-                        logoPlayBtn.textContent = '⏸';
-                        try { await logoVideoSession.video.play(); } catch (e) {}
-                        let lastFrameTs = 0;
-                        const tick = () => {
-                            if (!logoVideoSession.isPlaying || !logoVideoSession.video) return;
-                            const v = logoVideoSession.video;
-                            const t = v.currentTime || 0;
-                            const d = logoVideoSession.duration || 0;
-                            const timeEl = document.getElementById('logoVideoTime');
-                            if (logoSeek && d > 0) logoSeek.value = String(Math.floor((t / d) * 1000));
-                            if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(d)}`;
-                            const now = performance.now();
-                            if (logoVideoSession.applyFrame && (now - lastFrameTs) > 120) {
-                                logoVideoSession.applyFrame(captureFrameFromVideo(v));
-                                lastFrameTs = now;
-                            }
-                            logoVideoSession.raf = requestAnimationFrame(tick);
-                        };
-                        tick();
-                    };
-                }
-                if (logoSeek) {
-                    logoSeek.oninput = async () => {
-                        if (!logoVideoSession.video || !logoVideoSession.duration) return;
-                        const t = (parseInt(logoSeek.value, 10) / 1000) * logoVideoSession.duration;
-                        await seekVideo(logoVideoSession.video, t);
-                        const timeEl = document.getElementById('logoVideoTime');
-                        if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(logoVideoSession.duration)}`;
-                    };
-                }
+                bindVideoPreviewControls(logoVideoSession, {
+                    playBtnId: 'logoVideoPlayBtn',
+                    seekId: 'logoVideoSeek',
+                    timeId: 'logoVideoTime'
+                });
                 if (logoApplyFrameBtn) {
                     logoApplyFrameBtn.onclick = () => {
                         if (!logoVideoSession.video || !logoVideoSession.applyFrame) return;
-                        logoVideoSession.applyFrame(captureFrameFromVideo(logoVideoSession.video));
+                        logoVideoSession.applyFrame(captureFrameFromVideo(logoVideoSession.video), { live: false });
                     };
                 }
                 document.getElementById('logoPresetSaveBtn').onclick = async () => {
