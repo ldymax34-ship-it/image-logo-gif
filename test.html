@@ -1,0 +1,739 @@
+
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'none'; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'">
+    <title>图片规格批量校验系统</title>
+    <!-- 引入 JSZip 用于处理压缩包 -->
+    <script src="assets/vendor/jszip.min.js"></script>
+    <script src="assets/vendor/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --klein-blue: #002FA7;
+            --orange: #FF6600;
+            --light-gray: #F5F5F5;
+            --white: #FFFFFF;
+            --success: #28a745;
+            --error: #dc3545;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--white);
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid var(--klein-blue);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: var(--klein-blue);
+            margin: 0;
+        }
+        h2 {
+            color: #1d2a57;
+            margin: 6px 0 0;
+            font-size: 22px;
+        }
+        .site-title {
+            color: var(--klein-blue);
+            margin: 0;
+            font-size: 28px;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .tab-link {
+            text-decoration: none;
+            color: var(--klein-blue);
+            border: 1px solid var(--klein-blue);
+            border-radius: 18px;
+            padding: 6px 12px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .tab-link.active {
+            background: var(--orange);
+            border-color: var(--orange);
+            color: #fff;
+        }
+        .tab-link:hover {
+            background: var(--klein-blue);
+            color: #fff;
+        }
+
+        .btn {
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary { background-color: var(--klein-blue); color: white; }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-orange { background-color: var(--orange); color: white; }
+        .btn-orange:hover { opacity: 0.9; }
+
+        .card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        .upload-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .upload-zone {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            background: var(--light-gray);
+            transition: border-color 0.3s;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--klein-blue);
+        }
+
+        .template-links {
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .template-links a {
+            color: var(--klein-blue);
+            text-decoration: none;
+            margin-right: 15px;
+            border-bottom: 1px solid transparent;
+        }
+
+        .template-links a:hover {
+            border-bottom: 1px solid var(--klein-blue);
+        }
+
+        .results-section {
+            margin-top: 40px;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-match { background: #e8f5e9; color: var(--success); }
+        .status-mismatch { background: #ffebee; color: var(--error); }
+        .status-missing { background: #fff3e0; color: var(--orange); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: var(--light-gray);
+            color: var(--klein-blue);
+        }
+
+        .img-preview {
+            width: 60px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            cursor: zoom-in;
+        }
+
+        .copy-banner {
+            background: #fff3e0;
+            border-left: 4px solid var(--orange);
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .hidden { display: none; }
+
+        /* 模态框预览 */
+        #modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #modal img { max-width: 90%; max-height: 90%; border: 5px solid white; }
+
+        .diff-tag {
+            display: inline-block;
+            margin-top: 4px;
+            font-size: 11px;
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        
+        .summary-box {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-item {
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div>
+            <h1 class="site-title">一站式渠道素材辅助工具</h1>
+            <p style="margin: 4px 0 0; color: #666; font-size: 13px;">一站式工具与提示词网站 V0.4.0.0</p>
+            <h2>图片尺寸核对</h2>
+            <p style="margin: 5px 0 0; color: #666;">本地运行 · 支持 ZIP/图片 · 自动智能匹配</p>
+            <nav class="tabs">
+                
+                <a class="tab-link active" href="test.html">图片尺寸核对</a>
+                <a class="tab-link" href="photo1.html">批量修改图片尺寸</a>
+            </nav>
+        </div>
+        <div style="text-align: right;">
+            <p style="margin: 0 0 8px; color: #666; font-size: 13px;">需求文档太复杂？用 AI 转化成可以核对规格的标准文档</p>
+            <button class="btn btn-orange" onclick="copyAiPrompt()">
+                <span>📋</span> 一键复制 AI 指令
+            </button>
+        </div>
+    </header>
+
+    <div class="copy-banner" id="copySuccess" style="display: none;">
+        <span>指令已复制！你可以将其粘贴给 AI (如飞书的知识问答)，让它帮你把杂乱的需求转换为标准 TXT 格式。</span>
+    </div>
+    <div class="copy-banner" id="configDropHint" style="display: none;">
+        <span>将配置文件拖到这里（支持 TXT / CSV / XLSX / XLS）</span>
+    </div>
+
+    <div class="card">
+        <div class="upload-grid">
+            <!-- 配置文件上传 -->
+            <div class="upload-zone" id="configZone">
+                <h3 style="color: var(--klein-blue);">1. 上传规格配置</h3>
+                <p>支持 .txt / .csv / .xlsx / .xls</p>
+                <input type="file" id="configFile" class="hidden" accept=".txt,.csv,.xlsx,.xls">
+                <button class="btn btn-primary" onclick="document.getElementById('configFile').click()">选择文件</button>
+                <div class="template-links">
+                    <a href="#" onclick="downloadTxtTemplate()">下载 TXT 模板</a>
+                    <a href="#" onclick="downloadCsvTemplate()">下载 CSV 模板</a>
+                    <a href="#" onclick="downloadXlsxTemplate()">下载 XLSX 模板</a>
+                </div>
+                <div id="configStatus" style="margin-top: 10px; font-weight: bold;"></div>
+            </div>
+
+            <!-- 图片/压缩包上传 -->
+            <div class="upload-zone" id="imageZone">
+                <h3 style="color: var(--orange);">2. 上传图片文件</h3>
+                <p>支持多选图片 或 上传 .zip 压缩包</p>
+                <input type="file" id="imageFiles" class="hidden" multiple accept="image/*,.zip">
+                <button class="btn btn-orange" onclick="document.getElementById('imageFiles').click()">选择图片/压缩包</button>
+                <div id="imageStatus" style="margin-top: 10px; font-weight: bold;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="resultsArea" class="results-section hidden">
+        <div class="card">
+            <h3 style="color: var(--klein-blue); border-bottom: 2px solid #eee; padding-bottom: 10px;">校验结果摘要</h3>
+            <div class="summary-box" id="summaryBox">
+                <!-- 摘要内容 -->
+            </div>
+
+            <h3 style="color: var(--klein-blue); margin-top: 30px;">详细对比清单</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>配置序号</th>
+                        <th>需求规格</th>
+                        <th>匹配状态</th>
+                        <th>对应实拍图</th>
+                        <th>实际规格</th>
+                        <th>示意图</th>
+                    </tr>
+                </thead>
+                <tbody id="resultTableBody">
+                    <!-- 动态生成 -->
+                </tbody>
+            </table>
+
+            <div id="extraImagesArea" class="hidden">
+                <h3 style="color: var(--orange); margin-top: 30px;">多余的图片 (未匹配到配置)</h3>
+                <table id="extraImagesTable">
+                    <thead>
+                        <tr>
+                            <th>文件名</th>
+                            <th>实际规格</th>
+                            <th>示意图</th>
+                        </tr>
+                    </thead>
+                    <tbody id="extraImagesBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 图片大图查看 -->
+<div id="modal" onclick="this.style.display='none'">
+    <img id="modalImg" src="">
+</div>
+
+<script>
+    let configItems = [];
+    let uploadedImages = [];
+
+    // --- 模板下载函数 ---
+    function downloadTxtTemplate() {
+        const content = `【序号】1\r\n【描述名称】示例1\r\n【格式(jpg/png)】jpg\r\n【宽】800\r\n【高】600\r\n【限制KB】500\r\n\r\n【序号】2\r\n【描述名称】示例2\r\n【格式(jpg/png)】png\r\n【宽】1920\r\n【高】1080\r\n【限制KB】1000`;
+        downloadBlob(content, '规格配置模板.txt', 'text/plain');
+    }
+
+    function downloadCsvTemplate() {
+        const content = `序号,描述名称,格式(jpg/png),宽,高,限制KB\n1,示例1,jpg,800,600,500\n2,示例2,png,1920,1080,1000`;
+        downloadBlob(content, '规格配置模板.csv', 'text/csv');
+    }
+
+    function downloadXlsxTemplate() {
+        const rows = [
+            ["序号", "描述名称", "格式(jpg/png)", "宽", "高", "限制KB"],
+            [1, "示例1", "jpg", 800, 600, 500],
+            [2, "示例2", "png", 1920, 1080, 1000]
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "配置模板");
+        XLSX.writeFile(wb, "规格配置模板.xlsx");
+    }
+
+    function downloadBlob(content, filename, contentType) {
+        const blob = new Blob([content], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // --- AI指令复制 ---
+    function copyAiPrompt() {
+        const prompt = `请帮我将以下图片规格需求整理成标准的格式。
+如果是多行描述，请严格按照以下格式输出（每个项目之间空一行）：
+
+【序号】数字
+【描述名称】名称（15字以内、不可重复）
+【格式(jpg/png)】jpg或png
+【宽】数字
+【高】数字
+【限制KB】数字
+
+要求：
+1. 只输出这个格式的内容，不要解释。
+2. 宽度、高度和KB必须是纯数字。
+3. 格式只能是 jpg 或 png；若未写格式，默认 jpg。
+4. 若未写限制KB，默认 1000。
+5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
+6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
+
+待处理数据如下：
+[在此粘贴你的原始数据]`;
+        
+        const textarea = document.createElement('textarea');
+        textarea.value = prompt;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+
+        const banner = document.getElementById('copySuccess');
+        banner.style.display = 'flex';
+        setTimeout(() => banner.style.display = 'none', 5000);
+    }
+
+    // --- 配置文件处理 ---
+    document.getElementById('configFile').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        await importConfigFile(file);
+    });
+
+    function parseTxtConfig(text) {
+        configItems = [];
+        const blocks = text.split(/【序号】/).filter(b => b.trim());
+        blocks.forEach((block, index) => {
+            const item = {
+                id: (index + 1).toString(),
+                name: extract(block, '【描述名称】'),
+                ext: extract(block, '【格式\\(jpg/png\\)】').toLowerCase(),
+                width: parseInt(extract(block, '【宽】')),
+                height: parseInt(extract(block, '【高】')),
+                sizeLimit: parseInt(extract(block, '【限制KB】'))
+            };
+            configItems.push(item);
+        });
+    }
+
+    function parseCsvConfig(text) {
+        configItems = [];
+        const lines = text.split('\n').filter(l => l.trim());
+        for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(',');
+            if (cols.length < 6) continue;
+            configItems.push({
+                id: String(cols[0]).trim(),
+                name: String(cols[1] || '').trim(),
+                ext: String(cols[2] || '').toLowerCase().trim().replace('jpeg', 'jpg'),
+                width: parseInt(cols[3], 10),
+                height: parseInt(cols[4], 10),
+                sizeLimit: parseInt(cols[5], 10)
+            });
+        }
+    }
+
+    async function parseExcelConfig(file) {
+        configItems = [];
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+        rows.slice(1).forEach((row) => {
+            if (!row || row.length < 6 || !row[0]) return;
+            configItems.push({
+                id: String(row[0]).trim(),
+                name: String(row[1] || '').trim(),
+                ext: String(row[2] || '').toLowerCase().trim().replace('jpeg', 'jpg'),
+                width: parseInt(row[3], 10),
+                height: parseInt(row[4], 10),
+                sizeLimit: parseInt(row[5], 10)
+            });
+        });
+    }
+
+    function extract(text, label) {
+        const reg = new RegExp(`${label}\\s*】?([^\\n【]+)`);
+        const match = text.match(reg);
+        return match ? match[1].trim() : '';
+    }
+
+    function getDropFileKind(file) {
+        if (!file) return '';
+        const name = String(file.name || '').toLowerCase();
+        if (/\.(txt|csv|xlsx|xls)$/i.test(name)) return 'config';
+        if ((file.type || '').startsWith('image/') || /\.zip$/i.test(name)) return 'image';
+        return '';
+    }
+
+    async function importConfigFile(file) {
+        if (!file) return;
+        const lowerName = file.name.toLowerCase();
+        if (lowerName.endsWith('.txt')) {
+            const text = await file.text();
+            parseTxtConfig(text);
+        } else if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+            await parseExcelConfig(file);
+        } else {
+            const text = await file.text();
+            parseCsvConfig(text);
+        }
+        document.getElementById('configStatus').innerText = `✅ 已加载 ${configItems.length} 条配置`;
+        checkAll();
+    }
+
+    async function importImageFiles(files) {
+        const list = Array.from(files || []).filter((f) => getDropFileKind(f) === 'image');
+        if (!list.length) return;
+        uploadedImages = [];
+        document.getElementById('imageStatus').innerText = "正在读取图片...";
+        for (const file of list) {
+            if (file.name.toLowerCase().endsWith('.zip')) {
+                await processZip(file);
+            } else if (file.type.startsWith('image/')) {
+                await processImageFile(file);
+            }
+        }
+        document.getElementById('imageStatus').innerText = `✅ 已加载 ${uploadedImages.length} 张图片`;
+        checkAll();
+    }
+
+    function initDragImport() {
+        const configZone = document.getElementById('configZone');
+        const imageZone = document.getElementById('imageZone');
+        const configDropHint = document.getElementById('configDropHint');
+        if (!configZone || !imageZone || !configDropHint) return;
+        let dragDepth = 0;
+
+        const resetUi = () => {
+            configDropHint.style.display = 'none';
+            configZone.style.borderColor = '#ccc';
+            imageZone.style.borderColor = '#ccc';
+            configZone.style.background = 'var(--light-gray)';
+            imageZone.style.background = 'var(--light-gray)';
+        };
+        const showByFiles = (files) => {
+            const arr = Array.from(files || []);
+            const hasConfig = arr.some((f) => getDropFileKind(f) === 'config');
+            const hasImage = arr.some((f) => getDropFileKind(f) === 'image');
+            configDropHint.style.display = hasConfig ? 'flex' : 'none';
+            if (hasImage) {
+                imageZone.style.borderColor = 'var(--orange)';
+                imageZone.style.background = '#fff3e0';
+            }
+            if (hasConfig) {
+                configZone.style.borderColor = 'var(--klein-blue)';
+                configZone.style.background = '#edf3ff';
+            }
+        };
+
+        document.addEventListener('dragenter', (e) => {
+            if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+            dragDepth += 1;
+            showByFiles(e.dataTransfer.files);
+        });
+        document.addEventListener('dragover', (e) => {
+            if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+            e.preventDefault();
+            showByFiles(e.dataTransfer.files);
+        });
+        document.addEventListener('dragleave', (e) => {
+            if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+            dragDepth = Math.max(0, dragDepth - 1);
+            if (dragDepth === 0) resetUi();
+        });
+        document.addEventListener('drop', (e) => {
+            if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+            e.preventDefault();
+            dragDepth = 0;
+            resetUi();
+        });
+
+        configDropHint.addEventListener('dragover', (e) => e.preventDefault());
+        configDropHint.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const cfg = Array.from(e.dataTransfer.files || []).find((f) => getDropFileKind(f) === 'config');
+            if (!cfg) return;
+            await importConfigFile(cfg);
+        });
+        configZone.addEventListener('dragover', (e) => e.preventDefault());
+        configZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const cfg = Array.from(e.dataTransfer.files || []).find((f) => getDropFileKind(f) === 'config');
+            if (!cfg) return;
+            await importConfigFile(cfg);
+        });
+        imageZone.addEventListener('dragover', (e) => e.preventDefault());
+        imageZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            await importImageFiles(Array.from(e.dataTransfer.files || []));
+        });
+    }
+
+    // --- 图片处理 ---
+    document.getElementById('imageFiles').addEventListener('change', async (e) => {
+        await importImageFiles(Array.from(e.target.files || []));
+    });
+
+    async function processZip(zipFile) {
+        const zip = await JSZip.loadAsync(zipFile);
+        const promises = [];
+        zip.forEach((relativePath, zipEntry) => {
+            if (!zipEntry.dir && /\.(jpg|jpeg|png)$/i.test(relativePath)) {
+                promises.push(zipEntry.async('blob').then(blob => {
+                    const file = new File([blob], relativePath.split('/').pop(), { type: "image/" + (relativePath.endsWith('png') ? 'png' : 'jpeg') });
+                    return processImageFile(file);
+                }));
+            }
+        });
+        await Promise.all(promises);
+    }
+
+    async function processImageFile(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    uploadedImages.push({
+                        name: file.name,
+                        width: img.width,
+                        height: img.height,
+                        size: Math.round(file.size / 1024),
+                        ext: file.name.split('.').pop().toLowerCase().replace('jpeg', 'jpg'),
+                        dataUrl: e.target.result,
+                        matched: false
+                    });
+                    resolve();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // --- 核心校验逻辑 ---
+    function checkAll() {
+        if (configItems.length === 0 || uploadedImages.length === 0) return;
+        document.getElementById('resultsArea').classList.remove('hidden');
+        
+        // 重置图片匹配状态
+        uploadedImages.forEach(img => img.matched = false);
+
+        const tableBody = document.getElementById('resultTableBody');
+        tableBody.innerHTML = '';
+
+        let matchedCount = 0;
+        let errorCount = 0;
+        let missingCount = 0;
+
+        configItems.forEach(config => {
+            // 查找完全匹配规格的图
+            let match = uploadedImages.find(img => 
+                !img.matched && 
+                img.width === config.width && 
+                img.height === config.height && 
+                img.ext === config.ext
+            );
+
+            const tr = document.createElement('tr');
+            
+            // 配置信息
+            const configSpec = `${config.width}x${config.height} (${config.ext})<br><small>${config.sizeLimit}KB</small>`;
+            
+            if (match) {
+                match.matched = true;
+                matchedCount++;
+                
+                const sizeError = match.size > config.sizeLimit;
+                if (sizeError) errorCount++;
+
+                tr.innerHTML = `
+                    <td>${config.id}</td>
+                    <td>${configSpec}</td>
+                    <td><span class="status-badge ${sizeError ? 'status-mismatch' : 'status-match'}">${sizeError ? '体积超标' : '完全匹配'}</span></td>
+                    <td>${match.name}</td>
+                    <td>${match.width}x${match.height} (${match.ext})<br><small style="${sizeError?'color:red':''}">${match.size}KB</small></td>
+                    <td><img src="${match.dataUrl}" class="img-preview" onclick="showModal('${match.dataUrl}')"></td>
+                `;
+            } else {
+                missingCount++;
+                tr.innerHTML = `
+                    <td>${config.id}</td>
+                    <td>${configSpec}</td>
+                    <td><span class="status-badge status-missing">未找到匹配图</span></td>
+                    <td colspan="3" style="color: #999; font-style: italic;">缺少此规格的图片</td>
+                `;
+            }
+            tableBody.appendChild(tr);
+        });
+
+        // 处理多余图片
+        const extraImages = uploadedImages.filter(img => !img.matched);
+        const extraArea = document.getElementById('extraImagesArea');
+        const extraBody = document.getElementById('extraImagesBody');
+        
+        if (extraImages.length > 0) {
+            extraArea.classList.remove('hidden');
+            extraBody.innerHTML = '';
+            extraImages.forEach(img => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${img.name}</td>
+                    <td>${img.width}x${img.height} (${img.ext})<br><small>${img.size}KB</small></td>
+                    <td><img src="${img.dataUrl}" class="img-preview" onclick="showModal('${img.dataUrl}')"></td>
+                `;
+                extraBody.appendChild(tr);
+            });
+        } else {
+            extraArea.classList.add('hidden');
+        }
+
+        // 更新摘要
+        const summary = document.getElementById('summaryBox');
+        summary.innerHTML = `
+            <div class="summary-item" style="background: #e3f2fd; color: var(--klein-blue);">
+                <div style="font-size: 24px; font-weight: bold;">${configItems.length}</div>
+                <div>目标总数</div>
+            </div>
+            <div class="summary-item" style="background: #e8f5e9; color: var(--success);">
+                <div style="font-size: 24px; font-weight: bold;">${matchedCount - errorCount}</div>
+                <div>完美匹配</div>
+            </div>
+            <div class="summary-item" style="background: #ffebee; color: var(--error);">
+                <div style="font-size: 24px; font-weight: bold;">${errorCount}</div>
+                <div>参数超标</div>
+            </div>
+            <div class="summary-item" style="background: #fff3e0; color: var(--orange);">
+                <div style="font-size: 24px; font-weight: bold;">${missingCount}</div>
+                <div>缺少规格</div>
+            </div>
+            <div class="summary-item" style="background: #eee; color: #666;">
+                <div style="font-size: 24px; font-weight: bold;">${extraImages.length}</div>
+                <div>多余文件</div>
+            </div>
+        `;
+    }
+
+    function showModal(src) {
+        document.getElementById('modalImg').src = src;
+        document.getElementById('modal').style.display = 'flex';
+    }
+
+    initDragImport();
+</script>
+
+</body>
+</html>
