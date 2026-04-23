@@ -90,6 +90,16 @@
             font-size: 6px;
             line-height: 1.05;
         }
+        /* 规格内联/新建弹窗：隐藏 number 步进箭头，避免误点；尺寸以直接输入为主 */
+        .spec-num-input::-webkit-outer-spin-button,
+        .spec-num-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .spec-num-input {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-gray-800 font-sans antialiased">
@@ -196,6 +206,15 @@
                                 <i data-lucide="stamp" class="w-4 h-4 mr-2"></i> 水印 / Logo 排版
                             </button>
                             <span id="logoStatusBadge" class="text-xs text-gray-500 max-w-xs"></span>
+                        </div>
+                    </div>
+
+                    <div id="configSessionDirtyBar" class="hidden flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-[13px] text-amber-950">
+                        <span>当前配置已修改，可保存到配置库</span>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" id="configSaveAsNewBtn" class="px-2 py-1 rounded border border-amber-400 text-[12px] hover:bg-amber-100">配置另存为</button>
+                            <button type="button" id="configOverwriteBtn" class="px-2 py-1 rounded border border-amber-400 text-[12px] hover:bg-amber-100">覆盖原配置</button>
+                            <button type="button" id="configDirtyCloseBtn" class="p-1 rounded hover:bg-amber-100" title="关闭提示" aria-label="关闭"><i data-lucide="x" class="w-4 h-4"></i></button>
                         </div>
                     </div>
 
@@ -508,17 +527,175 @@
                 </div>
             </div>
         </div>
+
+        <div id="createSpecModal" class="hidden fixed inset-0 z-[75] flex items-center justify-center p-4" style="background: rgba(15, 23, 42, 0.5);" onclick="if (event.target === this) document.getElementById('createSpecModal').classList.add('hidden')">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-5" onclick="event.stopPropagation()">
+                <h3 class="text-[20px] font-bold text-[#002FA7]">新建规格</h3>
+                <p class="text-[12px] text-gray-500 mt-1">仅作用于当前会话，保存后才写入配置库</p>
+                <div class="mt-4 space-y-3">
+                    <div>
+                        <label class="block text-[12px] text-gray-600 mb-0.5">描述名称</label>
+                        <input type="text" id="createSpecName" class="w-full border rounded px-2 py-1.5 text-[14px]" placeholder="例如：主图" maxlength="32">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[12px] text-gray-600 mb-0.5">宽 (px)</label>
+                            <input type="number" id="createSpecW" class="spec-num-input w-full border rounded px-2 py-1.5 text-[14px]" min="1" value="800">
+                        </div>
+                        <div>
+                            <label class="block text-[12px] text-gray-600 mb-0.5">高 (px)</label>
+                            <input type="number" id="createSpecH" class="spec-num-input w-full border rounded px-2 py-1.5 text-[14px]" min="1" value="800">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[12px] text-gray-600 mb-0.5">限制 KB</label>
+                            <input type="number" id="createSpecMax" class="spec-num-input w-full border rounded px-2 py-1.5 text-[14px]" min="1" value="1000">
+                        </div>
+                        <div>
+                            <label class="block text-[12px] text-gray-600 mb-0.5">格式</label>
+                            <select id="createSpecFmt" class="w-full border rounded px-2 py-1.5 text-[14px]">
+                                <option value="jpg">jpg</option>
+                                <option value="png">png</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 flex justify-end gap-2">
+                    <button type="button" id="createSpecCancel" class="px-3 py-1.5 text-[14px] border rounded">取消</button>
+                    <button type="button" id="createSpecOk" class="px-3 py-1.5 text-[14px] rounded bg-[#FF6B00] text-white">添加</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="assets/builtin-logos/builtin-data.js"></script>
     <script>
-        // --- 核心状态 ---
-        let config = [
-            { id: 1, name: '主图', format: 'jpg', width: 800, height: 800, maxSize: 200 },
-            { id: 2, name: '详情图', format: 'jpg', width: 1200, height: 800, maxSize: 400 }
-        ];
+        // --- 核心状态（未上传配置时为空；选图后若无配置会自动生成「原图 useNatural」）---
+        let config = [];
         let sourceImages = []; 
         let currentImageId = null;
+        /** 从配置库/文件导入的当前配置记录 id，用于“覆盖原配置” */
+        let configLoadedFromId = null;
+        let configSessionDirty = false;
+
+        function nextConfigId() {
+            return 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+        }
+
+        function defaultOriginalSpec() {
+            return { id: nextConfigId(), name: '原图', format: 'jpg', maxSize: 1000, useNatural: true, width: 0, height: 0 };
+        }
+
+        function getNaturalSizeFromUrl(url) {
+            return new Promise((resolve) => {
+                const i = new Image();
+                i.onload = () => resolve({ w: i.naturalWidth || 0, h: i.naturalHeight || 0 });
+                i.onerror = () => resolve({ w: 0, h: 0 });
+                i.src = url;
+            });
+        }
+
+        async function ensureImageNatural(img) {
+            if (!img) return;
+            if ((img.naturalW|0) > 0 && (img.naturalH|0) > 0) return;
+            const { w, h } = await getNaturalSizeFromUrl(img.url);
+            img.naturalW = w;
+            img.naturalH = h;
+        }
+
+        function getEffectiveConfig(cfg, sourceImg) {
+            if (!cfg) return null;
+            if (cfg.useNatural && sourceImg && (sourceImg.naturalW|0) > 0 && (sourceImg.naturalH|0) > 0) {
+                return { ...cfg, width: sourceImg.naturalW, height: sourceImg.naturalH };
+            }
+            return { ...cfg, width: Math.max(1, (cfg.width|0) || 1), height: Math.max(1, (cfg.height|0) || 1) };
+        }
+
+        function markConfigDirty() {
+            configSessionDirty = true;
+            const bar = document.getElementById('configSessionDirtyBar');
+            if (bar) bar.classList.remove('hidden');
+        }
+
+        function clearConfigSessionDirtyUI() {
+            const bar = document.getElementById('configSessionDirtyBar');
+            if (bar) bar.classList.add('hidden');
+        }
+
+        function clearConfigDirty() {
+            configSessionDirty = false;
+            clearConfigSessionDirtyUI();
+        }
+
+        async function reprocessSpecEverywhere(cfgId) {
+            const cfg = config.find((c) => String(c.id) === String(cfgId));
+            if (!cfg) return;
+            for (const img of sourceImages) {
+                if (img && img.results) delete img.results[cfgId];
+            }
+            renderResults();
+            const tasks = (sourceImages || []).map((img) => (async () => {
+                if (!img) return;
+                try {
+                    await ensureImageNatural(img);
+                    const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
+                    img.results[cfgId] = result;
+                } catch (e) {
+                    console.error('reprocessSpecEverywhere', e);
+                }
+            })());
+            await Promise.all(tasks);
+            renderResults();
+            if (window.LogoWorkbench && typeof LogoWorkbench.syncOpenModals === 'function') {
+                LogoWorkbench.syncOpenModals();
+            }
+        }
+
+        function openCreateSpecModal() {
+            const m = document.getElementById('createSpecModal');
+            if (!m) return;
+            const img = sourceImages.find((i) => i.id === currentImageId) || sourceImages[0];
+            let defW = 800, defH = 800;
+            if (img && (img.naturalW | 0) > 0 && (img.naturalH | 0) > 0) {
+                defW = img.naturalW;
+                defH = img.naturalH;
+            }
+            const wEl = document.getElementById('createSpecW');
+            const hEl = document.getElementById('createSpecH');
+            if (wEl) wEl.value = defW;
+            if (hEl) hEl.value = defH;
+            const nEl = document.getElementById('createSpecName');
+            if (nEl) nEl.value = '';
+            m.classList.remove('hidden');
+        }
+
+        function cleanCfgForStore(rows) {
+            return (Array.isArray(rows) ? rows : []).map((c) => ({
+                id: c.id,
+                name: c.name,
+                format: c.format,
+                width: c.width|0,
+                height: c.height|0,
+                maxSize: c.maxSize|0,
+                useNatural: !!c.useNatural
+            }));
+        }
+
+        async function updateConfigRecordById(id) {
+            if (!id) return;
+            const all = await configGetAll();
+            const rec = all.find((x) => x.id === id);
+            if (!rec) {
+                alert('未找到要覆盖的配置库记录，请用「另存为」');
+                return;
+            }
+            rec.configs = cleanCfgForStore(config);
+            rec.savedAt = Date.now();
+            await configPut(rec);
+            configRecords = await configGetAll();
+            clearConfigDirty();
+        }
 
         /** @type {{ pid: string, logoId: string, cx: number, cy: number, wNorm: number, opacity: number, syncRefCropW?: number }[]} */
         let globalLogoPlacements = [];
@@ -643,11 +820,13 @@
                 } else {
                     config = newCfg;
                     sourceImages.forEach(img => img.results = {});
-                    if (currentImageId) selectImage(currentImageId);
                     const cfgBaseName = file.name.replace(/\.[^/.]+$/, '');
                     const folderInp = document.getElementById('globalFolderName');
                     if (folderInp) folderInp.value = cfgBaseName;
-                    await saveConfigRecord(cfgBaseName, lowerName.endsWith('.txt') ? 'txt' : 'xlsx', newCfg);
+                    const rid = await saveConfigRecord(cfgBaseName, lowerName.endsWith('.txt') ? 'txt' : 'xlsx', newCfg);
+                    configLoadedFromId = rid || null;
+                    clearConfigDirty();
+                    if (currentImageId) await selectImage(currentImageId);
                 }
             } catch (err) {
                 console.error("配置解析失败:", err);
@@ -955,7 +1134,7 @@
             if (!document.getElementById('logoLayoutModal').classList.contains('hidden') && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
                 wNat = LogoModalCrop.getNaturalRect().width;
             } else {
-                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, cfg, img.results[cfg.id]?.cropRect);
+                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, img), img.results[cfg.id]?.cropRect);
                 wNat = cr.width;
             }
             if (wNat > 0) p.syncRefCropW = wNat;
@@ -1175,7 +1354,7 @@
                     return;
                 }
                 this.activeImageIdx = imgIdx;
-                this.activeConfig = cfg;
+                this.activeConfig = getEffectiveConfig(cfg, img);
 
                 const cropImg = document.getElementById('cropImg');
                 const cropOverlay = document.getElementById('cropOverlay');
@@ -1183,7 +1362,7 @@
                 cropOverlay.src = img.url;
 
                 document.getElementById('imgPagination').innerText = `${imgIdx + 1} / ${sourceImages.length}`;
-                document.getElementById('modalTitle').innerText = `${cfg.name} (${cfg.width}x${cfg.height})`;
+                document.getElementById('modalTitle').innerText = `${cfg.name} (${this.activeConfig.width}x${this.activeConfig.height})`;
                 document.getElementById('cropModal').classList.remove('hidden');
 
                 cropImg.onload = () => {
@@ -1195,7 +1374,7 @@
                         scale: cropImg.naturalWidth / cropImg.width
                     };
 
-                    const targetRatio = cfg.width / cfg.height;
+                    const targetRatio = this.activeConfig.width / this.activeConfig.height;
                     let mw = this.imgInfo.dispW;
                     let mh = mw / targetRatio;
                     if (mh > this.imgInfo.dispH) {
@@ -1372,6 +1551,7 @@
             syncFromImgCfg(img, cfg) {
                 const cropImg = document.getElementById('logoModalCropImg');
                 if (!cropImg || !img || !cfg || !cropImg.naturalWidth) return;
+                const eff = getEffectiveConfig(cfg, img);
                 this.imgInfo = {
                     natW: cropImg.naturalWidth,
                     natH: cropImg.naturalHeight,
@@ -1379,7 +1559,7 @@
                     dispH: cropImg.height,
                     scale: cropImg.naturalWidth / cropImg.width
                 };
-                const targetRatio = cfg.width / cfg.height;
+                const targetRatio = eff.width / eff.height;
                 let mw = this.imgInfo.dispW;
                 let mh = mw / targetRatio;
                 if (mh > this.imgInfo.dispH) {
@@ -1483,9 +1663,13 @@
                 const img = new Image();
                 img.src = url;
                 img.onload = async () => {
+                    const outCfg = getEffectiveConfig(cfg, sourceImgRef);
+                    const outW = outCfg.width;
+                    const outH = outCfg.height;
+                    const maxKb = Math.max(1, (cfg.maxSize|0) || 1000);
                     const canvas = document.createElement('canvas');
-                    canvas.width = cfg.width;
-                    canvas.height = cfg.height;
+                    canvas.width = outW;
+                    canvas.height = outH;
                     const ctx = canvas.getContext('2d');
 
                     let sX, sY, sW, sH;
@@ -1493,7 +1677,7 @@
                         sX = customRect.x; sY = customRect.y;
                         sW = customRect.width; sH = customRect.height;
                     } else {
-                        const targetRatio = cfg.width / cfg.height;
+                        const targetRatio = outW / outH;
                         if (img.width / img.height > targetRatio) {
                             sH = img.height; sW = sH * targetRatio;
                             sX = (img.width - sW) / 2; sY = 0;
@@ -1505,25 +1689,25 @@
 
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(img, sX, sY, sW, sH, 0, 0, cfg.width, cfg.height);
+                    ctx.drawImage(img, sX, sY, sW, sH, 0, 0, outW, outH);
 
                     const logos = Array.isArray(logoPlacementsForExport) ? logoPlacementsForExport : [];
                     const useSyncScale = sourceImgRef && !sourceImgRef.logoIndependent;
                     if (logos.length) {
-                        await drawLogosOnCanvas(ctx, cfg, logos, useSyncScale ? { useSyncScale: true, sourceImg: sourceImgRef, cropNatW: sW } : null);
+                        await drawLogosOnCanvas(ctx, outCfg, logos, useSyncScale ? { useSyncScale: true, sourceImg: sourceImgRef, cropNatW: sW } : null);
                     }
 
-                    const requestedPng = cfg.format === 'png';
+                    const requestedPng = outCfg.format === 'png';
                     const outputAsPng = requestedPng;
                     if (!outputAsPng) {
                         const solidCanvas = document.createElement('canvas');
-                        solidCanvas.width = cfg.width;
-                        solidCanvas.height = cfg.height;
+                        solidCanvas.width = outW;
+                        solidCanvas.height = outH;
                         const solidCtx = solidCanvas.getContext('2d');
                         solidCtx.fillStyle = '#FFFFFF';
-                        solidCtx.fillRect(0, 0, cfg.width, cfg.height);
+                        solidCtx.fillRect(0, 0, outW, outH);
                         solidCtx.drawImage(canvas, 0, 0);
-                        ctx.clearRect(0, 0, cfg.width, cfg.height);
+                        ctx.clearRect(0, 0, outW, outH);
                         ctx.drawImage(solidCanvas, 0, 0);
                     }
                     const mime = outputAsPng ? 'image/png' : 'image/jpeg';
@@ -1541,7 +1725,7 @@
                         finalBlob = await getBlob(canvas, mime, maxQ);
                         finalSizeKb = finalBlob.size / 1024;
                         
-                        if (finalSizeKb > cfg.maxSize) {
+                        if (finalSizeKb > maxKb) {
                             let bestBlob = finalBlob;
                             let bestSize = finalSizeKb;
                             let bestQ = maxQ;
@@ -1551,7 +1735,7 @@
                                 let testBlob = await getBlob(canvas, mime, midQ);
                                 let testSize = testBlob.size / 1024;
 
-                                if (testSize <= cfg.maxSize) {
+                                if (testSize <= maxKb) {
                                     bestBlob = testBlob; bestSize = testSize; bestQ = midQ;
                                     minQ = midQ; 
                                 } else {
@@ -1559,7 +1743,7 @@
                                 }
                             }
                             
-                            if (bestSize > cfg.maxSize && !prioritizeQuality) {
+                            if (bestSize > maxKb && !prioritizeQuality) {
                                 finalBlob = await getBlob(canvas, mime, 0.1);
                                 isWarning = true;
                             } else {
@@ -1575,8 +1759,8 @@
                         let bestSize = bestBlob.size / 1024;
                         for (const step of quantSteps) {
                             const testCanvas = document.createElement('canvas');
-                            testCanvas.width = cfg.width;
-                            testCanvas.height = cfg.height;
+                            testCanvas.width = outW;
+                            testCanvas.height = outH;
                             const testCtx = testCanvas.getContext('2d');
                             testCtx.drawImage(canvas, 0, 0);
                             if (step > 1) {
@@ -1595,11 +1779,11 @@
                                 bestBlob = testBlob;
                                 bestSize = testSize;
                             }
-                            if (testSize <= cfg.maxSize) break;
+                            if (testSize <= maxKb) break;
                         }
                         finalBlob = bestBlob;
                         finalSizeKb = bestSize;
-                        if (finalSizeKb > cfg.maxSize) isWarning = true;
+                        if (finalSizeKb > maxKb) isWarning = true;
                     }
 
                     if (!finalBlob) { reject("生成失败"); return; }
@@ -1621,7 +1805,45 @@
             const grid = document.getElementById('resultsGrid');
             if (!grid || grid.dataset.delegationBound === '1') return;
             grid.dataset.delegationBound = '1';
+            grid.addEventListener('change', (e) => {
+                const t = e.target;
+                if (!t || t.tagName !== 'INPUT' || !t.getAttribute('data-spec-field')) return;
+                const field = t.getAttribute('data-spec-field');
+                const card = t.closest('[data-cfg-card]');
+                if (!card) return;
+                const cfgId = card.getAttribute('data-cfg-card');
+                const cfg = config.find((c) => String(c.id) === String(cfgId));
+                if (!cfg) return;
+                if (field === 'maxSize') {
+                    const n = Math.max(1, parseInt(t.value, 10) || 1);
+                    cfg.maxSize = n;
+                    t.value = String(n);
+                    markConfigDirty();
+                    reprocessSpecEverywhere(cfgId);
+                    return;
+                }
+                if (field === 'width' || field === 'height') {
+                    const wInp = card.querySelector('[data-spec-field="width"]');
+                    const hInp = card.querySelector('[data-spec-field="height"]');
+                    const newW = Math.max(1, parseInt(wInp && wInp.value, 10) || 1);
+                    const newH = Math.max(1, parseInt(hInp && hInp.value, 10) || 1);
+                    if (wInp) wInp.value = String(newW);
+                    if (hInp) hInp.value = String(newH);
+                    cfg.width = newW;
+                    cfg.height = newH;
+                    cfg.useNatural = false;
+                    markConfigDirty();
+                    reprocessSpecEverywhere(cfgId);
+                }
+            });
             grid.addEventListener('click', (e) => {
+                if (e.target.closest && e.target.closest('#addSpecCard')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openCreateSpecModal();
+                    if (window.lucide) lucide.createIcons();
+                    return;
+                }
                 const cropBtn = e.target.closest('[data-action="quick-crop"]');
                 if (cropBtn) {
                     e.preventDefault();
@@ -1668,14 +1890,14 @@
                 lucide.createIcons();
                 return;
             }
-            const firstCfgId = config.length ? config[0].id : 1;
+            const firstCfgIdJs = config.length ? JSON.stringify(String(config[0].id)) : 'undefined';
             list.innerHTML = sourceImages.map(img => `
                 <div onclick="selectImage('${img.id}')" class="group relative rounded-lg border-2 p-1 transition-all cursor-pointer ${currentImageId === img.id ? 'border-[#002FA7] bg-blue-50' : 'border-transparent hover:bg-gray-100'}">
                     <div class="relative rounded overflow-hidden">
                         <img src="${img.url}" class="w-full h-16 object-cover rounded">
                         <div class="absolute inset-0 flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 pointer-events-none group-hover:pointer-events-auto">
-                            <button type="button" onclick="event.stopPropagation(); selectImage('${img.id}'); Modal.open('${img.id}', ${firstCfgId})" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow">裁剪</button>
-                            <button type="button" onclick="event.stopPropagation(); selectImage('${img.id}'); LogoWorkbench.openLayoutModal(${firstCfgId})" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow">Logo</button>
+                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); selectImage('${img.id}'); ${config.length ? `Modal.open('${img.id}', ${firstCfgIdJs})` : ''}" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">裁剪</button>
+                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); selectImage('${img.id}'); ${config.length ? `LogoWorkbench.openLayoutModal(${firstCfgIdJs})` : ''}" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">Logo</button>
                         </div>
                     </div>
                     <div class="mt-1 flex items-center bg-white rounded px-1 shadow-sm">
@@ -1703,20 +1925,26 @@
             const img = sourceImages.find(i => i.id === id);
             if (!img) return;
 
+            if (!config.length) {
+                config = [defaultOriginalSpec()];
+            }
+            await ensureImageNatural(img);
+            for (const c of config) {
+                if (c.useNatural) delete img.results[c.id];
+            }
+
             document.getElementById('currentImageName').innerText = img.name;
             document.getElementById('emptyState').classList.add('hidden');
             document.getElementById('editorView').classList.remove('hidden');
             
             renderSourceList();
-            renderResults(); // 先渲染容器（带骨架屏）
+            renderResults();
 
-            // 异步处理尚未生成的结果
-            for (let cfg of config) {
+            for (const cfg of config) {
                 if (!img.results[cfg.id]) {
                     try {
                         const result = await processImage(img.url, cfg, null, getEffectivePlacements(img), img);
                         img.results[cfg.id] = result;
-                        // 局部更新 UI 避免全量重绘闪烁
                         if (currentImageId === id) renderResults();
                     } catch (e) {
                         console.error("处理出错:", e);
@@ -1730,17 +1958,24 @@
             const currentImg = sourceImages.find(i => i.id === currentImageId);
             if (!currentImg) return;
 
-            grid.innerHTML = config.map(cfg => {
+            const cards = config.map((cfg) => {
                 const res = currentImg.results[cfg.id];
-                const isOver = res && parseFloat(res.size) > cfg.maxSize;
-                
+                const eff = getEffectiveConfig(cfg, currentImg);
+                const effW = eff.width;
+                const effH = eff.height;
+                const maxKb = Math.max(1, (cfg.maxSize|0) || 1000);
+                const isOver = res && parseFloat(res.size) > maxKb;
+
                 return `
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group">
-                        <div class="bg-gray-50 border-b px-4 py-2 flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-600">${cfg.name}</span>
-                            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${isOver ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-500'} uppercase">
-                                ${cfg.format} / ${cfg.maxSize}KB
-                            </span>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group" data-cfg-card="${escapeHtml(String(cfg.id))}">
+                        <div class="bg-gray-50 border-b px-4 py-2 flex justify-between items-center gap-2">
+                            <span class="text-xs font-bold text-gray-600">${escapeHtml(cfg.name || '规格')}</span>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <span class="text-[9px] font-bold text-gray-500 uppercase">${cfg.format}</span>
+                                <span class="text-[9px] text-gray-400">/</span>
+                                <input type="number" min="1" step="1" class="spec-num-input w-12 text-[9px] border border-gray-200 rounded px-0.5 py-0.5 text-right" data-spec-field="maxSize" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${maxKb}">
+                                <span class="text-[9px] text-gray-500">KB</span>
+                            </div>
                         </div>
                         <div class="p-4">
                             <div class="w-full aspect-video bg-gray-50 rounded-lg flex items-center justify-center relative overflow-hidden border">
@@ -1757,22 +1992,35 @@
                                     </div>
                                 `}
                             </div>
-                            <div class="mt-3 flex justify-between items-end">
-                                <span class="text-[10px] text-gray-400 font-mono tracking-tighter">${cfg.width} × ${cfg.height}</span>
+                            <div class="mt-3 flex justify-between items-end gap-2 flex-wrap">
+                                <div class="flex items-center gap-1 min-w-0">
+                                    <input type="number" min="1" class="spec-num-input w-12 text-[10px] border border-gray-200 rounded px-1 py-0.5 font-mono" data-spec-field="width" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${effW}">
+                                    <span class="text-[10px] text-gray-400">×</span>
+                                    <input type="number" min="1" class="spec-num-input w-12 text-[10px] border border-gray-200 rounded px-1 py-0.5 font-mono" data-spec-field="height" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${effH}">
+                                    ${cfg.useNatural ? '<span class="text-[9px] text-gray-400 ml-0.5" title="按当前原图尺寸导出，改数值将变为固定尺寸">原图</span>' : ''}
+                                </div>
                                 ${res ? `
-                                    <div class="flex items-center justify-end flex-1 ml-2">
+                                    <div class="flex items-center justify-end flex-1 ml-2 min-w-0">
                                         ${res.warning ? `<span class="text-[10px] font-bold text-orange-500 flex items-center mr-2" title="为保证大小，画质/尺寸被大幅降低"><i data-lucide="alert-triangle" class="w-3 h-3 mr-0.5"></i>高压缩警告</span>` : ``}
                                         <div class="flex items-center space-x-2">
                                             <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${res.size} KB</span>
-                                            <a href="${res.url}" download="${sanitizeFileName(`${cfg.width}x${cfg.height}-${String(cfg.name || '').trim() || '未命名'}`, 'image')}.${res.ext || cfg.format}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors"><i data-lucide="download" class="w-4 h-4"></i></a>
+                                            <a href="${res.url}" download="${sanitizeFileName(`${effW}x${effH}-${String(cfg.name || '').trim() || '未命名'}`, 'image')}.${res.ext || cfg.format}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors"><i data-lucide="download" class="w-4 h-4"></i></a>
                                         </div>
                                     </div>
-                                ` : ''}
+                                ` : '<span></span>'}
                             </div>
                         </div>
                     </div>
                 `;
             }).join('');
+
+            const addCard = `
+                <div id="addSpecCard" class="bg-white rounded-xl border-2 border-dashed border-gray-300 min-h-[200px] flex flex-col items-center justify-center cursor-pointer hover:border-[#FF6B00] hover:bg-amber-50/30 text-gray-500 transition-colors" title="添加规格" role="button">
+                    <i data-lucide="plus" class="w-8 h-8 mb-1"></i>
+                    <span class="text-[13px]">添加规格</span>
+                </div>`;
+
+            grid.innerHTML = cards + addCard;
             lucide.createIcons();
             renderLogoStatusBadge();
         }
@@ -2825,6 +3073,7 @@
                 savedAt: Date.now()
             };
             await configPut(rec);
+            return rec.id;
         }
 
         async function openConfigModal() {
@@ -3073,7 +3322,9 @@
             if (!rec || !Array.isArray(rec.configs) || !rec.configs.length) { alert('所选配置为空'); return; }
             config = rec.configs.map((x) => ({ ...x }));
             sourceImages.forEach((img) => { img.results = {}; });
-            if (currentImageId) selectImage(currentImageId);
+            configLoadedFromId = rec.id || null;
+            clearConfigDirty();
+            if (currentImageId) await selectImage(currentImageId);
             const folderInp = document.getElementById('globalFolderName');
             if (folderInp) folderInp.value = rec.name || '';
             alert('已导入配置：' + rec.name);
@@ -3479,6 +3730,7 @@
             getPreviewCfg() {
                 const sel = document.getElementById('logoPreviewCfgSelect');
                 const id = sel && sel.value;
+                if (!config.length) return null;
                 return config.find((c) => String(c.id) === String(id)) || config[0];
             },
 
@@ -3487,15 +3739,16 @@
                 const cfg = this.getPreviewCfg();
                 const img = this.getCurrentImg();
                 if (!base || !cfg || !img || !base.naturalWidth) return null;
+                const eff = getEffectiveConfig(cfg, img);
                 const modalOpen = !document.getElementById('logoLayoutModal').classList.contains('hidden');
                 let saved = img.results[cfg.id]?.cropRect;
                 if (modalOpen && typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
                     saved = LogoModalCrop.getNaturalRect();
                 }
-                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, cfg, saved);
+                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, eff, saved);
                 const sx = base.clientWidth / base.naturalWidth;
                 const sy = base.clientHeight / base.naturalHeight;
-                return { l: cr.x * sx, t: cr.y * sy, w: cr.width * sx, h: cr.height * sy, cw: cfg.width, ch: cfg.height };
+                return { l: cr.x * sx, t: cr.y * sy, w: cr.width * sx, h: cr.height * sy, cw: eff.width, ch: eff.height };
             },
 
             markLogoEditorDirty() {
@@ -3617,7 +3870,7 @@
                 if (!document.getElementById('logoLayoutModal').classList.contains('hidden') && LogoModalCrop.imgInfo.natW) {
                     nat = LogoModalCrop.getNaturalRect();
                 } else {
-                    nat = getSourceCropRect(base.naturalWidth, base.naturalHeight, cfg, img.results[cfg.id]?.cropRect);
+                    nat = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, img), img.results[cfg.id]?.cropRect);
                 }
                 if (!nat || nat.width <= 0) {
                     el.textContent = '';
@@ -3718,10 +3971,18 @@
             fillCfgSelect(preferredCfgId) {
                 const sel = document.getElementById('logoPreviewCfgSelect');
                 if (!sel) return;
+                if (!config.length) {
+                    sel.innerHTML = '<option value="">（无规格）</option>';
+                    return;
+                }
                 const cur = sel.value;
-                sel.innerHTML = config.map((c) =>
-                    `<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.name)} (${c.width}×${c.height})</option>`
-                ).join('');
+                const img = this.getCurrentImg();
+                sel.innerHTML = config.map((c) => {
+                    const eff = getEffectiveConfig(c, img) || c;
+                    const w = (eff && eff.width) | 0;
+                    const h = (eff && eff.height) | 0;
+                    return `<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.name)} (${w}×${h})</option>`;
+                }).join('');
                 const ok = config.some((c) => String(c.id) === String(cur));
                 sel.value = ok ? cur : String(config[0].id);
                 if (preferredCfgId != null) {
@@ -3816,7 +4077,7 @@
                     const w = LogoModalCrop.getNaturalRect().width;
                     return w > 0 ? w : null;
                 }
-                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, cfg, img.results[cfg.id]?.cropRect);
+                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, img), img.results[cfg.id]?.cropRect);
                 return cr.width > 0 ? cr.width : null;
             },
 
@@ -4050,7 +4311,7 @@
                         typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
                         cropNatW = LogoModalCrop.getNaturalRect().width;
                     } else {
-                        const crNat = getSourceCropRect(base.naturalWidth, base.naturalHeight, cfg, curImg.results[cfg.id]?.cropRect);
+                        const crNat = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, curImg), curImg.results[cfg.id]?.cropRect);
                         cropNatW = crNat.width;
                     }
                 }
@@ -4161,7 +4422,7 @@
                                     typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
                                     cropNatWMv = LogoModalCrop.getNaturalRect().width;
                                 } else {
-                                    const crNat = getSourceCropRect(baseImg.naturalWidth, baseImg.naturalHeight, cfgMv, curImg.results[cfgMv.id]?.cropRect);
+                                    const crNat = getSourceCropRect(baseImg.naturalWidth, baseImg.naturalHeight, getEffectiveConfig(cfgMv, curImg), curImg.results[cfgMv.id]?.cropRect);
                                     cropNatWMv = crNat.width;
                                 }
                             }
@@ -4206,7 +4467,7 @@
                                     typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
                                     cropNatW = LogoModalCrop.getNaturalRect().width;
                                 } else {
-                                    const crNat = getSourceCropRect(baseImg.naturalWidth, baseImg.naturalHeight, cfg, curImg.results[cfg.id]?.cropRect);
+                                    const crNat = getSourceCropRect(baseImg.naturalWidth, baseImg.naturalHeight, getEffectiveConfig(cfg, curImg), curImg.results[cfg.id]?.cropRect);
                                     cropNatW = crNat.width;
                                 }
                             }
@@ -4476,6 +4737,61 @@
         };
         window.LogoWorkbench = LogoWorkbench;
 
+        function initConfigSessionBarAndCreateSpec() {
+            const saveAs = document.getElementById('configSaveAsNewBtn');
+            const over = document.getElementById('configOverwriteBtn');
+            const closeB = document.getElementById('configDirtyCloseBtn');
+            const mod = document.getElementById('createSpecModal');
+            const cancel = document.getElementById('createSpecCancel');
+            const ok = document.getElementById('createSpecOk');
+            if (saveAs) {
+                saveAs.onclick = async () => {
+                    const name = prompt('另存为：请输入配置在库中的名称', '我的配置');
+                    if (name == null) return;
+                    const trimmed = String(name).trim() || '我的配置';
+                    const id = await saveConfigRecord(trimmed, 'txt', cleanCfgForStore(config));
+                    configLoadedFromId = id;
+                    try { configRecords = await configGetAll(); } catch (e) {}
+                    clearConfigDirty();
+                };
+            }
+            if (over) {
+                over.onclick = async () => {
+                    if (!configLoadedFromId) {
+                        alert('当前未关联配置库中的记录。请先使用「另存为」，或从配置库选择一条。');
+                        return;
+                    }
+                    if (!confirm('用当前规则覆盖该条库内配置？')) return;
+                    await updateConfigRecordById(configLoadedFromId);
+                };
+            }
+            if (closeB) {
+                closeB.onclick = () => {
+                    clearConfigSessionDirtyUI();
+                };
+            }
+            if (cancel && mod) {
+                cancel.onclick = () => {
+                    mod.classList.add('hidden');
+                };
+            }
+            if (ok && mod) {
+                ok.onclick = async () => {
+                    const name = (document.getElementById('createSpecName').value || '').trim() || '新规格';
+                    const w = Math.max(1, parseInt(document.getElementById('createSpecW').value, 10) || 800);
+                    const h = Math.max(1, parseInt(document.getElementById('createSpecH').value, 10) || 800);
+                    const maxSize = Math.max(1, parseInt(document.getElementById('createSpecMax').value, 10) || 1000);
+                    const fmt = (document.getElementById('createSpecFmt').value || 'jpg') === 'png' ? 'png' : 'jpg';
+                    const newCfg = { id: nextConfigId(), name, format: fmt, width: w, height: h, maxSize, useNatural: false };
+                    config.push(newCfg);
+                    markConfigDirty();
+                    mod.classList.add('hidden');
+                    await reprocessSpecEverywhere(newCfg.id);
+                    renderSourceList();
+                };
+            }
+        }
+
         // --- 事件监听 ---
         document.getElementById('imageInput').onchange = async (e) => {
             await importSourceImages(Array.from(e.target.files || []));
@@ -4506,7 +4822,8 @@
                         const res = img.results[cfg.id];
                         if (res && res.blob) {
                             const ext = res.ext || cfg.format;
-                            const sizePart = `${cfg.width}x${cfg.height}`;
+                            const eff = getEffectiveConfig(cfg, img);
+                            const sizePart = `${eff.width}x${eff.height}`;
                             const descPart = String(cfg.name || '').trim() || '未命名';
                             const imgPart = sanitizeFileName((img.customName !== undefined ? img.customName : img.name.replace(/\.[^/.]+$/, "")).trim(), '未命名');
                             const baseFile = sanitizeFileName(`${sizePart}-${descPart}-${imgPart}`, 'image');
@@ -4536,7 +4853,8 @@
                         const res = img.results[cfg.id];
                         if (res && res.blob) {
                             const ext = res.ext || cfg.format;
-                            const sizePart = `${cfg.width}x${cfg.height}`;
+                            const eff = getEffectiveConfig(cfg, img);
+                            const sizePart = `${eff.width}x${eff.height}`;
                             const descPart = String(cfg.name || '').trim() || '未命名';
                             const baseFile = sanitizeFileName(`${sizePart}-${descPart}`, 'image');
                             const uniqueBase = uniqueNameWithSuffix(baseFile, fileNameUsed, '-', 1);
@@ -4673,6 +4991,7 @@
         window.onload = async () => {
             lucide.createIcons();
             initResultsGridActionDelegation();
+            initConfigSessionBarAndCreateSpec();
             Modal.init();
             LogoModalCrop.init();
             initGalleryModal();
