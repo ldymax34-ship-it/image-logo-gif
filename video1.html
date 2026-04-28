@@ -134,7 +134,7 @@
                 <div class="flex flex-wrap items-center justify-end gap-2">
                     <div class="flex items-center space-x-2 border-r pr-4 mr-2 border-gray-200">
                         <input type="text" id="globalFolderName" placeholder="导出总文件夹名" class="px-3 py-1.5 text-sm border rounded w-32 focus:outline-none focus:border-[#002FA7]">
-                        <label class="flex items-center space-x-1 text-sm text-gray-600 cursor-pointer" title="勾选后如果画质损失严重，将允许超过指定的KB大小">
+                        <label class="flex items-center space-x-1 text-sm text-gray-600 cursor-pointer" title="勾选后如果画质损失严重，将允许超过指定的MB大小">
                             <input type="checkbox" id="priorityQuality" class="rounded text-[#002FA7] focus:ring-[#002FA7]">
                             <span>保清晰度(可超限)</span>
                         </label>
@@ -576,8 +576,8 @@
                     </div>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
-                            <label class="block text-[12px] text-gray-600 mb-0.5">限制 KB</label>
-                            <input type="number" id="createSpecMax" class="spec-num-input w-full border rounded px-2 py-1.5 text-[14px]" min="1" value="1000">
+                            <label class="block text-[12px] text-gray-600 mb-0.5">限制 MB</label>
+                            <input type="number" id="createSpecMax" class="spec-num-input w-full border rounded px-2 py-1.5 text-[14px]" min="0.1" step="0.1" value="20">
                         </div>
                         <div>
                             <label class="block text-[12px] text-gray-600 mb-0.5">格式</label>
@@ -816,7 +816,7 @@
             const v = document.createElement('video');
             v.src = src;
             v.preload = 'metadata';
-            v.muted = true;
+            v.muted = false;
             v.playsInline = true;
             await new Promise((resolve, reject) => {
                 v.onloadedmetadata = () => resolve();
@@ -848,7 +848,7 @@
             const outW = Math.max(2, outCfg.width | 0);
             const outH = Math.max(2, outCfg.height | 0);
             const duration = Math.max(0.1, v.duration || sourceImgRef.duration || 1);
-            const maxKb = Math.max(1, (cfg.maxSize | 0) || 1000);
+            const maxKb = getConfigMaxSizeKb(cfg, 20);
             const requestedKbps = Math.max(120, Math.floor((maxKb * 8) / duration));
             const px = outW * outH;
             const smoothFloorKbps = px >= 1920 * 1080 ? 2200 : (px >= 1280 * 720 ? 1200 : 700);
@@ -863,6 +863,15 @@
             if (!ctx) throw new Error('无法创建视频渲染上下文');
 
             const stream = canvas.captureStream(fps);
+            try {
+                const mediaStream = typeof v.captureStream === 'function' ? v.captureStream() : null;
+                const audioTracks = mediaStream ? mediaStream.getAudioTracks() : [];
+                if (audioTracks && audioTracks.length) {
+                    audioTracks.forEach((track) => {
+                        try { stream.addTrack(track); } catch (e) {}
+                    });
+                }
+            } catch (e) {}
             const wantedExt = String((outCfg && outCfg.format) || 'mp4').toLowerCase();
             const mimeCandidates = wantedExt === 'mov'
                 ? ['video/quicktime', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4']
@@ -1062,7 +1071,7 @@
         }
 
         function defaultOriginalSpec() {
-            return { id: nextConfigId(), name: '原图', format: 'mp4', maxSize: 1000, useNatural: true, width: 0, height: 0 };
+            return { id: nextConfigId(), name: '原图', format: 'mp4', maxSize: 20, useNatural: true, width: 0, height: 0 };
         }
 
         function getNaturalSizeFromUrl(url, mime = '') {
@@ -1187,7 +1196,7 @@
                 format: c.format,
                 width: c.width|0,
                 height: c.height|0,
-                maxSize: c.maxSize|0,
+                maxSize: getConfigMaxSizeMb(c, 20),
                 useNatural: !!c.useNatural
             }));
         }
@@ -1255,6 +1264,37 @@
             return fallback;
         }
 
+        function normalizeMaxSizeMb(raw, fallbackMb = 20) {
+            const n = Number(raw);
+            if (!Number.isFinite(n) || n <= 0) return fallbackMb;
+            // 兼容旧数据：此前存的是 KB，新逻辑改为 MB
+            if (n > 200) return Math.max(0.1, Number((n / 1024).toFixed(2)));
+            return Math.max(0.1, Number(n.toFixed(2)));
+        }
+
+        function getConfigMaxSizeMb(cfg, fallbackMb = 20) {
+            return normalizeMaxSizeMb(cfg && cfg.maxSize, fallbackMb);
+        }
+
+        function getConfigMaxSizeKb(cfg, fallbackMb = 20) {
+            return Math.max(1, Math.round(getConfigMaxSizeMb(cfg, fallbackMb) * 1024));
+        }
+
+        function estimateVideoSizeKb(img, cfg) {
+            if (!img || !cfg) return null;
+            const outCfg = getEffectiveConfig(cfg, img);
+            const outW = Math.max(2, outCfg.width | 0);
+            const outH = Math.max(2, outCfg.height | 0);
+            const duration = Math.max(1, Number(img.duration) || 1);
+            const maxKb = getConfigMaxSizeKb(cfg, 20);
+            const requestedKbps = Math.max(120, Math.floor((maxKb * 8) / duration));
+            const px = outW * outH;
+            const smoothFloorKbps = px >= 1920 * 1080 ? 2200 : (px >= 1280 * 720 ? 1200 : 700);
+            const targetKbps = Math.max(requestedKbps, smoothFloorKbps);
+            const estimated = Math.max(1, (targetKbps * duration) / 8);
+            return Number.isFinite(estimated) ? estimated.toFixed(1) : null;
+        }
+
         function triggerBlobDownload(blob, fileName) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1270,18 +1310,20 @@
             if (!img || !String(img.mime || '').startsWith('video/')) return;
             if (!img.results) img.results = {};
             const prev = img.results[cfgId] || {};
+            const cfg = config.find((c) => String(c.id) === String(cfgId));
+            const estSize = estimateVideoSizeKb(img, cfg);
             img.results[cfgId] = {
                 ...prev,
                 isVideo: true,
                 url: img.url,
                 blob: null,
-                size: prev.size || '--',
-                ext: prev.ext || ((config.find((c) => String(c.id) === String(cfgId)) || {}).format || 'mp4'),
+                size: '--',
+                estimatedSize: estSize || prev.estimatedSize || null,
+                ext: prev.ext || ((cfg || {}).format || 'mp4'),
                 cropRect: cropRect || prev.cropRect || null,
                 pendingExport: true
             };
             setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '已更新，导出时处理' });
-            const cfg = config.find((c) => String(c.id) === String(cfgId));
             if (cfg) {
                 buildDeferredVideoPreview(img, cfg, img.results[cfgId].cropRect).then((previewUrl) => {
                     const cur = img.results && img.results[cfgId];
@@ -1347,6 +1389,7 @@
             const rect = cur && cur.cropRect ? cur.cropRect : null;
             const res = await processImage(img.url, cfg, rect, getEffectivePlacements(img), img);
             res.pendingExport = false;
+            if (cur && cur.estimatedSize && !res.estimatedSize) res.estimatedSize = cur.estimatedSize;
             if (onProgress) onProgress(res);
             img.results[cfg.id] = res;
             return res;
@@ -1363,6 +1406,30 @@
             }
         }
 
+        async function downloadSingleProcessedResult(imgId, cfgId) {
+            const img = sourceImages.find((x) => String(x.id) === String(imgId));
+            const cfg = config.find((x) => String(x.id) === String(cfgId));
+            if (!img || !cfg) return;
+            try {
+                setTaskState(img.id, cfg.id, { status: 'processing', progress: 5, message: '准备下载 5%' });
+                if (currentImageId === img.id) renderResults();
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const res = await ensureResultForExport(img, cfg, () => {});
+                if (!res || !res.blob) throw new Error('导出结果为空');
+                setTaskState(img.id, cfg.id, { status: 'processing', progress: 98, message: '生成下载文件 98%' });
+                if (currentImageId === img.id) renderResults();
+                const eff = getEffectiveConfig(cfg, img);
+                const fileBase = sanitizeFileName(`${eff.width}x${eff.height}-${String(cfg.name || '').trim() || '未命名'}`, 'image');
+                triggerBlobDownload(res.blob, `${fileBase}.${res.ext || cfg.format}`);
+                setTaskState(img.id, cfg.id, { status: 'done', progress: 100, message: '下载完成' });
+            } catch (err) {
+                setTaskState(img.id, cfg.id, { status: 'error', progress: 100, message: '下载失败' });
+                alert(`下载失败：${String(err && err.message || err)}`);
+            } finally {
+                if (currentImageId === img.id) renderResults();
+            }
+        }
+
         function copyAiPrompt() {
             const prompt = `请帮我将以下图片规格需求整理成标准的格式。
 如果是多行描述，请严格按照以下格式输出（每个项目之间空一行）：
@@ -1372,13 +1439,13 @@
 【格式(mov/mp4)】mov或mp4
 【宽】数字
 【高】数字
-【限制KB】数字
+【限制MB】数字
 
 要求：
 1. 只输出这个格式的内容，不要解释。
-2. 宽度、高度和KB必须是纯数字。
+2. 宽度、高度和MB必须是纯数字。
 3. 格式只能是 mov 或 mp4；若未写格式，默认 mp4。
-4. 若未写限制KB，默认 1000。
+4. 若未写限制MB，默认 20。
 5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
 6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
 
@@ -1936,7 +2003,7 @@
                     format: normalizeFormat(r[2]),
                     width: parseInt(r[3], 10) || 500,
                     height: parseInt(r[4], 10) || 500,
-                    maxSize: parseInt(r[5], 10) || 1000
+                    maxSize: normalizeMaxSizeMb(r[5], 20)
                 }));
         }
 
@@ -1953,7 +2020,7 @@
                 extractTxtValue(block, '【格式\\(jpg/png\\)】') || 'jpg',
                 extractTxtValue(block, '【宽】') || '500',
                 extractTxtValue(block, '【高】') || '500',
-                extractTxtValue(block, '【限制KB】') || '1000'
+                extractTxtValue(block, '【限制MB】') || extractTxtValue(block, '【限制KB】') || '20'
             ]));
             return normalizeConfigRows(rows);
         }
@@ -2737,7 +2804,7 @@
                 const outCfg = getEffectiveConfig(cfg, sourceImgRef);
                 const outW = outCfg.width;
                 const outH = outCfg.height;
-                const maxKb = Math.max(1, (cfg.maxSize | 0) || 1000);
+                const maxKb = getConfigMaxSizeKb(cfg, 20);
                 const duration = Math.max(1, sourceImgRef.duration || 1);
                 const totalKbps = Math.max(120, Math.floor((maxKb * 8) / duration));
                 const audioKbps = Math.min(128, Math.max(48, Math.floor(totalKbps * 0.18)));
@@ -2850,7 +2917,7 @@
                     const outCfg = getEffectiveConfig(cfg, sourceImgRef);
                     const outW = outCfg.width;
                     const outH = outCfg.height;
-                    const maxKb = Math.max(1, (cfg.maxSize|0) || 1000);
+                    const maxKb = getConfigMaxSizeKb(cfg, 20);
                     const canvas = document.createElement('canvas');
                     canvas.width = outW;
                     canvas.height = outH;
@@ -2999,7 +3066,7 @@
                 const cfg = config.find((c) => String(c.id) === String(cfgId));
                 if (!cfg) return;
                 if (field === 'maxSize') {
-                    const n = Math.max(1, parseInt(t.value, 10) || 1);
+                    const n = normalizeMaxSizeMb(t.value, 20);
                     cfg.maxSize = n;
                     t.value = String(n);
                     markConfigDirty();
@@ -3065,6 +3132,21 @@
                     }
                     const cfg = config.find((c) => String(c.id) === String(cfgId));
                     if (cfg) window.LogoWorkbench.openLayoutModal(cfg.id);
+                    return;
+                }
+                const downloadBtn = e.target.closest('[data-action="download-result"]');
+                if (downloadBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    let imgId;
+                    let cfgId;
+                    try {
+                        imgId = decodeURIComponent(downloadBtn.getAttribute('data-img-id') || '');
+                        cfgId = decodeURIComponent(downloadBtn.getAttribute('data-cfg-id') || '');
+                    } catch (err) {
+                        return;
+                    }
+                    if (imgId !== '' && cfgId !== '') downloadSingleProcessedResult(imgId, cfgId);
                 }
             });
         }
@@ -3161,8 +3243,16 @@
                 const eff = getEffectiveConfig(cfg, currentImg);
                 const effW = eff.width;
                 const effH = eff.height;
-                const maxKb = Math.max(1, (cfg.maxSize|0) || 1000);
+                const maxKb = getConfigMaxSizeKb(cfg, 20);
+                const maxMb = getConfigMaxSizeMb(cfg, 20);
                 const isOver = res && !res.error && !res.pendingExport && parseFloat(res.size) > maxKb;
+                const displaySizeText = (() => {
+                    if (!res || res.error) return '-';
+                    if (res.size && res.size !== '--') return `${(parseFloat(res.size) / 1024).toFixed(2)} MB`;
+                    if (res.estimatedSize && res.estimatedSize !== '--') return `约 ${(parseFloat(res.estimatedSize) / 1024).toFixed(2)} MB`;
+                    return '-';
+                })();
+                const showTaskOverlay = task && task.status === 'processing';
 
                 return `
                     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group" data-cfg-card="${escapeHtml(String(cfg.id))}">
@@ -3171,8 +3261,8 @@
                             <div class="flex items-center gap-1 shrink-0">
                                 <span class="text-[9px] font-bold text-gray-500 uppercase">${cfg.format}</span>
                                 <span class="text-[9px] text-gray-400">/</span>
-                                <input type="number" min="1" step="1" class="spec-num-input w-12 text-[9px] border border-gray-200 rounded px-0.5 py-0.5 text-right" data-spec-field="maxSize" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${maxKb}">
-                                <span class="text-[9px] text-gray-500">KB</span>
+                                <input type="number" min="0.1" step="0.1" class="spec-num-input w-14 text-[9px] border border-gray-200 rounded px-0.5 py-0.5 text-right" data-spec-field="maxSize" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${maxMb}">
+                                <span class="text-[9px] text-gray-500">MB</span>
                             </div>
                         </div>
                         <div class="p-4">
@@ -3189,6 +3279,12 @@
                                     ${allowImageTools ? `<div class="absolute inset-0 bg-[#002FA7]/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto flex flex-col items-center justify-center gap-2">
                                         <button type="button" data-action="quick-crop" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">快速剪裁</button>
                                         <button type="button" data-action="logo-layout-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="bg-white px-4 py-1.5 rounded-full shadow text-xs font-bold text-[#002FA7] pointer-events-auto">Logo 排版</button>
+                                    </div>` : ''}
+                                    ${showTaskOverlay ? `<div class="absolute inset-x-3 bottom-3 rounded-lg bg-black/70 text-white px-3 py-2 pointer-events-none">
+                                        <div class="text-[11px] leading-4">${task && task.message ? escapeHtml(task.message) : '处理中...'}</div>
+                                        <div class="mt-1.5 h-1.5 bg-white/20 rounded overflow-hidden">
+                                            <div class="h-full bg-[#FF6B00]" style="width:${task && Number.isFinite(task.progress) ? Math.max(0, Math.min(100, task.progress)) : 8}%;"></div>
+                                        </div>
                                     </div>` : ''}
                                 ` : res && res.error ? `
                                     <div class="w-full h-full flex flex-col items-center justify-center text-red-500 text-xs px-3 text-center">
@@ -3216,8 +3312,10 @@
                                     <div class="flex items-center justify-end flex-1 ml-2 min-w-0">
                                         ${res.warning ? `<span class="text-[10px] font-bold text-orange-500 flex items-center mr-2" title="为保证大小，画质/尺寸被大幅降低"><i data-lucide="alert-triangle" class="w-3 h-3 mr-0.5"></i>高压缩警告</span>` : ``}
                                         <div class="flex items-center space-x-2">
-                                            <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${res.size && res.size !== '--' ? `${res.size} KB` : '-'}</span>
-                                            <a href="${res.url}" download="${sanitizeFileName(`${effW}x${effH}-${String(cfg.name || '').trim() || '未命名'}`, 'image')}.${res.ext || cfg.format}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors"><i data-lucide="download" class="w-4 h-4"></i></a>
+                                            <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${displaySizeText}</span>
+                                            <button type="button" data-action="download-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors" title="下载处理后结果">
+                                                <i data-lucide="download" class="w-4 h-4"></i>
+                                            </button>
                                         </div>
                                     </div>
                                 ` : '<span></span>'}
@@ -4416,7 +4514,7 @@
                 const checked = configSelectedIds.has(r.id) ? 'checked' : '';
                 const cfgs = Array.isArray(r.configs) ? r.configs : [];
                 const counts = configTypeCounts(cfgs);
-                const top5 = cfgs.slice(0, 5).map((c) => `${c.id}.${c.name} ${c.format} ${c.width}x${c.height} ${c.maxSize}KB`).join(' | ');
+                const top5 = cfgs.slice(0, 5).map((c) => `${c.id}.${c.name} ${c.format} ${c.width}x${c.height} ${getConfigMaxSizeMb(c, 20)}MB`).join(' | ');
                 const tags = (r.tags || []).map((t) => `<button type="button" class="config-row-tag text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-red-50 rounded border border-transparent hover:border-red-200" data-id="${escapeGalleryAttr(r.id)}" data-tag="${escapeGalleryAttr(t)}">${escapeHtml(t)}</button>`).join(' ');
                 return `
                 <div class="relative border rounded-xl p-3 ${configSelectedIds.has(r.id) ? 'border-[#002FA7] ring-2 ring-[#002FA7]/20' : 'border-gray-200'} bg-white pr-10" data-config-row="${escapeGalleryAttr(r.id)}">
@@ -6321,7 +6419,7 @@
                     const name = (document.getElementById('createSpecName').value || '').trim() || '新规格';
                     const w = Math.max(1, parseInt(document.getElementById('createSpecW').value, 10) || 800);
                     const h = Math.max(1, parseInt(document.getElementById('createSpecH').value, 10) || 800);
-                    const maxSize = Math.max(1, parseInt(document.getElementById('createSpecMax').value, 10) || 1000);
+                    const maxSize = normalizeMaxSizeMb(document.getElementById('createSpecMax').value, 20);
                     const fmt = (document.getElementById('createSpecFmt').value || 'mp4') === 'mov' ? 'mov' : 'mp4';
                     const newCfg = { id: nextConfigId(), name, format: fmt, width: w, height: h, maxSize, useNatural: false };
                     config.push(newCfg);
@@ -6356,11 +6454,15 @@
             const groupByCfg = sourceImages.length > (config || []).length;
             const totalJobs = sourceImages.length * config.length;
             let doneJobs = 0;
-            if (prog) prog.textContent = `导出处理中 0/${totalJobs} (0%)`;
-            const bump = () => {
-                doneJobs++;
-                if (prog) prog.textContent = `导出处理中 ${doneJobs}/${totalJobs} (${Math.floor((doneJobs / Math.max(1, totalJobs)) * 100)}%)`;
+            let zipPercent = 0;
+            const updateExportProgress = (phase = '') => {
+                const safeTotal = Math.max(1, totalJobs);
+                const jobBasePercent = Math.floor((doneJobs / safeTotal) * 92);
+                const blended = Math.max(jobBasePercent, Math.min(99, Math.floor(92 + (zipPercent * 0.08))));
+                const phaseText = phase ? ` · ${phase}` : '';
+                if (prog) prog.textContent = `导出处理中 ${doneJobs}/${totalJobs} (${blended}%)${phaseText}`;
             };
+            updateExportProgress('初始化');
             const jobs = [];
             if (groupByCfg) {
                 for (let cfg of config) {
@@ -6382,11 +6484,16 @@
             }
             await runWithConcurrency(jobs, 4, async (job) => {
                 const { img, cfg } = job;
+                setTaskState(img.id, cfg.id, { status: 'processing', progress: 8, message: '排队导出' });
+                if (currentImageId === img.id) renderResults();
                 let res = img.results[cfg.id];
                 if (!res || res.pendingExport || !res.blob) {
-                    res = await ensureResultForExport(img, cfg);
+                    setTaskState(img.id, cfg.id, { status: 'processing', progress: 16, message: '处理中 16%' });
+                    if (currentImageId === img.id) renderResults();
+                    res = await ensureResultForExport(img, cfg, () => {});
                 }
-                bump();
+                setTaskState(img.id, cfg.id, { status: 'processing', progress: 92, message: '写入压缩包 92%' });
+                if (currentImageId === img.id) renderResults();
                 if (!res || !res.blob) return;
                 const ext = res.ext || cfg.format;
                 const eff = getEffectiveConfig(cfg, img);
@@ -6398,8 +6505,18 @@
                 const uniqueBase = uniqueNameWithSuffix(baseFile, job.fileNameUsed, '-', 1);
                 const folder = job.mode === 'cfg' ? job.cfgFolder : job.imgFolder;
                 folder.file(`${uniqueBase}.${ext}`, res.blob);
+                doneJobs++;
+                setTaskState(img.id, cfg.id, { status: 'done', progress: 100, message: '已加入导出包' });
+                if (currentImageId === img.id) renderResults();
+                updateExportProgress('打包资源');
             });
-            const blob = await zip.generateAsync({ type: 'blob', compression: "DEFLATE", mimeType: 'application/zip' });
+            const blob = await zip.generateAsync(
+                { type: 'blob', compression: "DEFLATE", mimeType: 'application/zip' },
+                (meta) => {
+                    zipPercent = Number(meta && meta.percent) || 0;
+                    updateExportProgress('压缩 ZIP');
+                }
+            );
             triggerBlobDownload(blob, `${globalFolderName}.zip`);
             if (prog) prog.textContent = '导出完成';
         };
@@ -6424,7 +6541,7 @@
 
         function downloadExcelTemplate() {
             closeTemplateDownloadMenu();
-            const data = [["序号", "描述名称", "格式(mov/mp4)", "宽", "高", "限制KB"], ...config.map(c => [c.id, c.name, c.format, c.width, c.height, c.maxSize])];
+            const data = [["序号", "描述名称", "格式(mov/mp4)", "宽", "高", "限制MB"], ...config.map(c => [c.id, c.name, c.format, c.width, c.height, getConfigMaxSizeMb(c, 20)])];
             const ws = XLSX.utils.aoa_to_sheet(data);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Config");
@@ -6479,7 +6596,7 @@
 
         document.getElementById('downloadTemplateTxt').onclick = () => {
             closeTemplateDownloadMenu();
-            const lines = config.map((c, idx) => `【序号】${idx + 1}\r\n【描述名称】${c.name}\r\n【格式(mov/mp4)】${c.format}\r\n【宽】${c.width}\r\n【高】${c.height}\r\n【限制KB】${c.maxSize}`);
+            const lines = config.map((c, idx) => `【序号】${idx + 1}\r\n【描述名称】${c.name}\r\n【格式(mov/mp4)】${c.format}\r\n【宽】${c.width}\r\n【高】${c.height}\r\n【限制MB】${getConfigMaxSizeMb(c, 20)}`);
             const content = lines.join('\r\n\r\n');
             const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             triggerBlobDownload(blob, '批量图片处理_配置模板.txt');
