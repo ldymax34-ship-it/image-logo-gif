@@ -720,6 +720,12 @@
             return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
         }
 
+        /** 与源视频一致的时间轴总长（秒），用于预览条与 seek；与 MediaRecorder 元数据不可靠时兜底 */
+        function resolveTimelineDurationSec(sourceImgLike) {
+            const n = Number(sourceImgLike && sourceImgLike.duration);
+            return (Number.isFinite(n) && n > 0) ? n : 0;
+        }
+
         function captureFrameFromVideo(videoEl) {
             try {
                 const w = Math.max(2, videoEl.videoWidth || 2);
@@ -736,9 +742,29 @@
             }
         }
 
-        async function seekVideo(videoEl, t) {
-            const d = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
-            const safe = Math.max(0, Math.min(Math.max(0, d - 0.01), t || 0));
+        async function seekVideo(videoEl, t, durationHint = null) {
+            let d = Number.isFinite(videoEl.duration) && videoEl.duration > 0 ? videoEl.duration : 0;
+            const hint = Number(durationHint);
+            if ((!Number.isFinite(d) || d <= 0) && Number.isFinite(hint) && hint > 0) d = hint;
+            const want = Math.max(0, Number(t) || 0);
+            if (!Number.isFinite(d) || d <= 0) {
+                await new Promise((resolve) => {
+                    let settled = false;
+                    const finish = () => {
+                        if (settled) return;
+                        settled = true;
+                        try { videoEl.removeEventListener('seeked', onSeeked); } catch (e) {}
+                        resolve();
+                    };
+                    const onSeeked = () => finish();
+                    videoEl.addEventListener('seeked', onSeeked);
+                    try { videoEl.currentTime = want; } catch (e) { finish(); return; }
+                    setTimeout(finish, 480);
+                });
+                return;
+            }
+            const eps = d > 0.09 ? Math.min(0.08, Math.max(0.02, d * 0.0005)) : 0;
+            const safe = Math.max(0, Math.min(Math.max(0, d - eps), want));
             await new Promise((resolve) => {
                 const onSeeked = () => {
                     videoEl.removeEventListener('seeked', onSeeked);
@@ -804,10 +830,93 @@
                 seek.oninput = async () => {
                     if (!session.video || !session.duration) return;
                     const t = (parseInt(seek.value, 10) / 1000) * session.duration;
-                    await seekVideo(session.video, t);
+                    await seekVideo(session.video, t, session.duration);
                     if (timeEl) timeEl.textContent = `${formatSec(t)} / ${formatSec(session.duration)}`;
                 };
             }
+        }
+
+        /** 规格卡片「处理后预览」：用源时长驱动进度条，避免 MediaRecorder/碎片化 MP4 无 duration */
+        function wireResultPreviewVideos(grid) {
+            if (!grid) return;
+            grid.querySelectorAll('[data-role="result-video-pane"]').forEach((pane) => {
+                if (!pane || pane.dataset.rvBound === '1') return;
+                pane.dataset.rvBound = '1';
+                const previewBox = pane.previousElementSibling;
+                const video = previewBox && previewBox.matches && previewBox.matches('.aspect-video')
+                    ? previewBox.querySelector('video[data-role="result-video"]')
+                    : null;
+                const seek = pane.querySelector('input[data-role="rv-seek"]');
+                const timeEl = pane.querySelector('[data-role="rv-time"]');
+                const playBtn = pane.querySelector('button[data-role="rv-play"]');
+                const muteBtn = pane.querySelector('button[data-role="rv-mute"]');
+                if (!video || !seek || !timeEl || !playBtn || !muteBtn) return;
+
+                let hintDur = Number.parseFloat(pane.getAttribute('data-timeline-sec') || '') || 0;
+
+                function totalDur() {
+                    const vd = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+                    if (hintDur > 0) return hintDur;
+                    return vd > 0 ? vd : 1;
+                }
+
+                function displayCur() {
+                    let c = Math.max(0, video.currentTime || 0);
+                    const tot = totalDur();
+                    return Math.min(c, tot);
+                }
+
+                function syncUi() {
+                    const tot = totalDur();
+                    const cur = displayCur();
+                    seek.value = String(Math.max(0, Math.min(1000, Math.round((cur / tot) * 1000))));
+                    timeEl.textContent = `${formatSec(cur)} / ${formatSec(tot)}`;
+                    playBtn.textContent = video.paused ? '播放' : '暂停';
+                    muteBtn.textContent = video.muted ? '有声' : '静音';
+                }
+
+                video.addEventListener('loadedmetadata', () => {
+                    if (!(hintDur > 0) && Number.isFinite(video.duration) && video.duration > 0) {
+                        hintDur = video.duration;
+                    }
+                    syncUi();
+                });
+                video.addEventListener('timeupdate', () => syncUi());
+                video.addEventListener('play', () => syncUi());
+                video.addEventListener('pause', () => syncUi());
+                video.addEventListener('ended', () => syncUi());
+
+                playBtn.onclick = async () => {
+                    if (!video.paused && !video.ended) {
+                        video.pause();
+                        syncUi();
+                        return;
+                    }
+                    if (video.ended && totalDur() > 0.05) {
+                        await seekVideo(video, 0, totalDur()).catch(() => {});
+                    }
+                    try {
+                        await video.play();
+                    } catch (e) {
+                        logDev('warn', 'result preview play failed', { error: String(e && e.message || e) });
+                    }
+                    syncUi();
+                };
+
+                muteBtn.onclick = () => {
+                    video.muted = !video.muted;
+                    syncUi();
+                };
+
+                seek.oninput = async () => {
+                    const tot = totalDur();
+                    const t = (parseInt(seek.value, 10) / 1000) * tot;
+                    await seekVideo(video, t, tot);
+                    syncUi();
+                };
+
+                syncUi();
+            });
         }
 
         async function getVideoPosterDataUrl(fileOrUrl, hintTimeSec = 0.8) {
@@ -963,8 +1072,9 @@
                     }
                     const tw = wNorm * outW;
                     const th = tw * item.logoAr;
-                    let cx = p && p.coverMode ? 0.5 : (p.cx == null ? 0.88 : p.cx);
-                    let cy = p && p.coverMode ? 0.5 : (p.cy == null ? 0.12 : p.cy);
+                    const nc = logoNormCenterForRender(p);
+                    let cx = nc.cx;
+                    let cy = nc.cy;
                     if (!p || !p.coverMode) {
                         const cl = clampLogoNormCenter(cx, cy, wNorm, item.logoAr, outW, outH, 0.03);
                         cx = cl.cx;
@@ -1383,6 +1493,7 @@
             const prev = img.results[cfgId] || {};
             const cfg = config.find((c) => String(c.id) === String(cfgId));
             const estSize = estimateVideoSizeKb(img, cfg);
+            const tlDefer = resolveTimelineDurationSec(img);
             img.results[cfgId] = {
                 ...prev,
                 isVideo: true,
@@ -1392,7 +1503,8 @@
                 estimatedSize: estSize || prev.estimatedSize || null,
                 ext: prev.ext || ((cfg || {}).format || 'mp4'),
                 cropRect: cropRect || prev.cropRect || null,
-                pendingExport: true
+                pendingExport: true,
+                timelineDurationSec: tlDefer > 0 ? tlDefer : prev.timelineDurationSec
             };
             setTaskState(img.id, cfgId, { status: 'done', progress: 100, message: '已更新，导出时处理' });
             if (cfg) {
@@ -1801,6 +1913,14 @@
             return effectiveLogoWNorm(p, sourceImg, cropNatW);
         }
 
+        /** 铺满模式下仍允许拖动微调位置，默认可不传 cx/cy 则为正中心 */
+        function logoNormCenterForRender(p) {
+            if (p && p.coverMode) {
+                return { cx: p.cx == null ? 0.5 : p.cx, cy: p.cy == null ? 0.5 : p.cy };
+            }
+            return { cx: p.cx == null ? 0.88 : p.cx, cy: p.cy == null ? 0.12 : p.cy };
+        }
+
         function getLogoCustomPresets() {
             try {
                 const raw = localStorage.getItem(LS_LOGO_CUSTOM_PRESETS);
@@ -2035,8 +2155,9 @@
                             }
                             const tw = wNorm * cw;
                             const th = tw * logoAr;
-                            let cx = p && p.coverMode ? 0.5 : (p.cx == null ? 0.88 : p.cx);
-                            let cy = p && p.coverMode ? 0.5 : (p.cy == null ? 0.12 : p.cy);
+                            const nc = logoNormCenterForRender(p);
+                            let cx = nc.cx;
+                            let cy = nc.cy;
                             if (!p || !p.coverMode) {
                                 const cl = clampLogoNormCenter(cx, cy, wNorm, logoAr, cw, ch, 0.03);
                                 cx = cl.cx;
@@ -2839,7 +2960,7 @@
                 }
                 if (typeof LogoWorkbench !== 'undefined') {
                     LogoWorkbench.updateCropSizeLabel();
-                    LogoWorkbench.renderLayers();
+                    LogoWorkbench.updateLogoLayerLayout();
                 }
             }
         };
@@ -2862,6 +2983,7 @@
                 // 原图直出场景不需要转码，避免在本地环境中因 FFmpeg 内核拉取失败导致“无法识别视频”
                 if (canUseSourceDirectly) {
                     const originalBlob = sourceImgRef.file;
+                    const timelineDurationSec = resolveTimelineDurationSec(sourceImgRef);
                     return {
                         url: sourceImgRef.url,
                         blob: originalBlob,
@@ -2869,7 +2991,8 @@
                         cropRect: { x: 0, y: 0, width: sourceImgRef.naturalW || 0, height: sourceImgRef.naturalH || 0 },
                         warning: false,
                         ext: sourceExt,
-                        isVideo: true
+                        isVideo: true,
+                        timelineDurationSec: timelineDurationSec > 0 ? timelineDurationSec : undefined
                     };
                 }
                 const outCfg = getEffectiveConfig(cfg, sourceImgRef);
@@ -2902,6 +3025,7 @@
                         const resultUrl = URL.createObjectURL(nativeOut.blob);
                         setTaskState(sourceImgRef.id, cfg.id, { status: 'done', progress: 100, message: '本地编码完成' });
                         if (currentImageId === sourceImgRef.id) renderResults();
+                        const tlNative = resolveTimelineDurationSec(sourceImgRef);
                         return {
                             url: resultUrl,
                             blob: nativeOut.blob,
@@ -2909,7 +3033,8 @@
                             cropRect: customRect || { x: 0, y: 0, width: sourceImgRef.naturalW || outW, height: sourceImgRef.naturalH || outH },
                             warning: nativeOut.warning,
                             ext: nativeOut.ext,
-                            isVideo: true
+                            isVideo: true,
+                            timelineDurationSec: tlNative > 0 ? tlNative : undefined
                         };
                     } catch (nativeErr) {
                         logDev('error', 'native video transcode failed', {
@@ -2964,6 +3089,7 @@
                     ff.FS('unlink', inName);
                     ff.FS('unlink', outName);
                     logDev('info', 'video transcode done', { file: sourceImgRef.name, cfg: cfg.name, outKb: Math.round(blob.size / 1024) });
+                    const tlFf = resolveTimelineDurationSec(sourceImgRef);
                     return {
                         url: resultUrl,
                         blob,
@@ -2971,7 +3097,8 @@
                         cropRect: customRect || { x: 0, y: 0, width: sourceImgRef.naturalW || outW, height: sourceImgRef.naturalH || outH },
                         warning: (blob.size / 1024) > maxKb,
                         ext: outExt,
-                        isVideo: true
+                        isVideo: true,
+                        timelineDurationSec: tlFf > 0 ? tlFf : undefined
                     };
                 } catch (err) {
                     ff.setProgress(() => {});
@@ -3323,6 +3450,11 @@
                     if (res.estimatedSize && res.estimatedSize !== '--') return `约 ${(parseFloat(res.estimatedSize) / 1024).toFixed(2)} MB`;
                     return '-';
                 })();
+                const timelineAttr = (() => {
+                    const t = Number(res && res.timelineDurationSec);
+                    return (Number.isFinite(t) && t > 0) ? String(t.toFixed(6)).replace(',', '.') : '';
+                })();
+                const showReadyVideoChrome = !!(res && !res.error && res.isVideo && !res.pendingExport);
                 const showTaskOverlay = task && task.status === 'processing';
 
                 return `
@@ -3344,7 +3476,7 @@
                                             ? `<img src="${res.previewUrl}" class="max-w-full max-h-full object-contain">`
                                             : (res.pendingExport
                                                 ? `<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">预览生成中...</div>`
-                                                : `<video src="${res.url}" class="max-w-full max-h-full object-contain" controls preload="metadata"></video>`))
+                                                : `<video src="${res.url}" data-role="result-video" class="max-w-full max-h-full object-contain" playsinline preload="metadata"></video>`))
                                         : `<img src="${res.url}" class="max-w-full max-h-full object-contain">`
                                     }
                                     ${allowImageTools ? `<div class="absolute inset-0 bg-[#002FA7]/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto flex flex-col items-center justify-center gap-2">
@@ -3372,6 +3504,15 @@
                                     </div>
                                 `}
                             </div>
+                            ${showReadyVideoChrome ? `
+                            <div data-role="result-video-pane" class="mt-2 w-full shrink-0" data-timeline-sec="${timelineAttr}">
+                                <div class="flex items-center gap-2 w-full px-1">
+                                    <button type="button" data-role="rv-play" class="shrink-0 px-3 py-1 rounded border border-gray-200 font-bold text-[#002FA7] hover:bg-blue-50" style="font-size:20px">播放</button>
+                                    <input type="range" data-role="rv-seek" min="0" max="1000" value="0" class="flex-1 min-w-[40px]" title="拖动进度">
+                                    <span data-role="rv-time" class="shrink-0 font-mono tabular-nums text-gray-700 whitespace-nowrap min-w-[7.5rem] text-right" style="font-size:18px">00:00 / 00:00</span>
+                                    <button type="button" data-role="rv-mute" class="shrink-0 px-3 py-1 rounded border border-gray-200 text-gray-700 hover:bg-gray-50" style="font-size:18px" title="静音">静音</button>
+                                </div>
+                            </div>` : ''}
                             <div class="mt-3 flex justify-between items-end gap-2 flex-wrap">
                                 <div class="flex items-center gap-1 min-w-0">
                                     <input type="number" min="1" class="spec-num-input w-12 text-[10px] border border-gray-200 rounded px-1 py-0.5 font-mono" data-spec-field="width" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${effW}">
@@ -3404,6 +3545,7 @@
 
             grid.innerHTML = cards + addCard;
             lucide.createIcons();
+            wireResultPreviewVideos(grid);
             renderLogoStatusBadge();
         }
 
@@ -5917,6 +6059,74 @@
                 this.updatePropsPanel();
             },
 
+            /** 裁切框平移缩放时只做几何刷新，避免整层 innerHTML + 重装图片导致的闪烁、「拖一半图层没了」race */
+            updateLogoLayerLayout() {
+                const host = document.getElementById('logoPreviewLayers');
+                if (!host) return;
+                const box = this.getPreviewCropBoxDisp();
+                const curImg = this.getCurrentImg();
+                const cfg = this.getPreviewCfg();
+                const base = document.getElementById('logoModalCropImg');
+                if (!box || !curImg || !cfg || !base || !base.naturalWidth) return;
+                let cropNatW = 0;
+                if (!document.getElementById('logoLayoutModal').classList.contains('hidden') &&
+                    typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
+                    cropNatW = LogoModalCrop.getNaturalRect().width;
+                } else {
+                    const crNat = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, curImg), curImg.results[cfg.id]?.cropRect);
+                    cropNatW = crNat.width;
+                }
+                const list = this.isScopeGlobal() ? globalLogoPlacements : (this.getCurrentImg()?.logoPlacements || []);
+                const seen = new Set();
+                const items = list.filter((p) => {
+                    if (!logoRecordById[p.logoId] || seen.has(p.pid)) return false;
+                    seen.add(p.pid);
+                    return true;
+                });
+                const domEls = [...host.querySelectorAll('.logo-layer-el')];
+                if (!items.length) {
+                    if (domEls.length) this.renderLayers();
+                    return;
+                }
+                if (domEls.length !== items.length) {
+                    this.renderLayers();
+                    return;
+                }
+                const domByPid = new Map(domEls.map((el) => [el.dataset.pid, el]));
+                for (const p of items) {
+                    const layer = domByPid.get(p.pid);
+                    if (!layer) {
+                        this.renderLayers();
+                        return;
+                    }
+                    const img = layer.querySelector('img');
+                    if (!img || !img.complete || img.naturalWidth <= 0) {
+                        this.renderLayers();
+                        return;
+                    }
+                }
+                for (const p of items) {
+                    const layer = domByPid.get(p.pid);
+                    const img = layer.querySelector('img');
+                    const ar = img.naturalHeight / Math.max(1, img.naturalWidth);
+                    const wNormEff = getPlacementWNormForRender(p, curImg, cropNatW, ar, box.w, box.h);
+                    const wPx = Math.max(8, wNormEff * box.w);
+                    const hPx = wPx * ar;
+                    const nc = logoNormCenterForRender(p);
+                    const left = box.l + nc.cx * box.w - wPx / 2;
+                    const top = box.t + nc.cy * box.h - hPx / 2;
+                    layer.className = 'logo-layer-el' + (p.pid === logoSelectedPid ? ' selected' : '');
+                    layer.style.left = `${left}px`;
+                    layer.style.top = `${top}px`;
+                    layer.style.width = `${wPx}px`;
+                    layer.style.height = `${hPx}px`;
+                    layer.style.pointerEvents = 'auto';
+                    if (this.isHiddenOnCurrent(p.pid)) layer.style.opacity = '0.35';
+                    else layer.style.opacity = '';
+                }
+                this.bindLayerInteractions();
+            },
+
             renderLayers() {
                 const host = document.getElementById('logoPreviewLayers');
                 if (!host) return;
@@ -5959,10 +6169,9 @@
                         const wNormEff = getPlacementWNormForRender(p, curImg, cropNatW, ar, box.w, box.h);
                         const wPx = Math.max(8, wNormEff * box.w);
                         const hPx = wPx * ar;
-                        const cx = p && p.coverMode ? 0.5 : (p.cx == null ? 0.88 : p.cx);
-                        const cy = p && p.coverMode ? 0.5 : (p.cy == null ? 0.12 : p.cy);
-                        const left = box.l + cx * box.w - wPx / 2;
-                        const top = box.t + cy * box.h - hPx / 2;
+                        const nc = logoNormCenterForRender(p);
+                        const left = box.l + nc.cx * box.w - wPx / 2;
+                        const top = box.t + nc.cy * box.h - hPx / 2;
                         const el = document.createElement('div');
                         el.className = 'logo-layer-el' + (p.pid === logoSelectedPid ? ' selected' : '');
                         el.dataset.pid = p.pid;
@@ -6057,12 +6266,14 @@
                                     cropNatWMv = crNat.width;
                                 }
                             }
-                            const wNormEff = getPlacementWNormForRender(found.p, curImg, cropNatWMv, ar, box.w, box.h);
-                            if (found.p.coverMode) {
-                                found.p.cx = Math.max(0.02, Math.min(0.98, ncx));
-                                found.p.cy = Math.max(0.02, Math.min(0.98, ncy));
-                                layer.style.left = `${box.l + found.p.cx * box.w - layer.offsetWidth / 2}px`;
-                                layer.style.top = `${box.t + found.p.cy * box.h - layer.offsetHeight / 2}px`;
+                                const wNormEff = getPlacementWNormForRender(found.p, curImg, cropNatWMv, ar, box.w, box.h);
+                                if (found.p.coverMode) {
+                                    found.p.cx = Math.max(0.02, Math.min(0.98, ncx));
+                                    found.p.cy = Math.max(0.02, Math.min(0.98, ncy));
+                                    const wCov = Math.max(8, wNormEff * box.w);
+                                    const hCov = wCov * ar;
+                                    layer.style.left = `${box.l + found.p.cx * box.w - wCov / 2}px`;
+                                    layer.style.top = `${box.t + found.p.cy * box.h - hCov / 2}px`;
                             } else {
                                 const cl = clampLogoNormCenter(ncx, ncy, wNormEff, ar, box.w, box.h);
                                 found.p.cx = cl.cx;
@@ -6113,12 +6324,9 @@
                                 const wNormEff = getPlacementWNormForRender(found.p, curImg, cropNatW, ar, box.w, box.h);
                                 const wPx = Math.max(8, wNormEff * box.w);
                                 const hPx = wPx * ar;
-                                const cx0 = found.p.coverMode ? 0.5 : (found.p.cx == null ? 0.88 : found.p.cx);
-                                const cy0 = found.p.coverMode ? 0.5 : (found.p.cy == null ? 0.12 : found.p.cy);
-                                if (found.p.coverMode) {
-                                    found.p.cx = cx0;
-                                    found.p.cy = cy0;
-                                } else {
+                                const cx0 = found.p.coverMode ? (found.p.cx == null ? 0.5 : found.p.cx) : (found.p.cx == null ? 0.88 : found.p.cx);
+                                const cy0 = found.p.coverMode ? (found.p.cy == null ? 0.5 : found.p.cy) : (found.p.cy == null ? 0.12 : found.p.cy);
+                                if (!found.p.coverMode) {
                                     const cl = clampLogoNormCenter(cx0, cy0, wNormEff, ar, box.w, box.h);
                                     found.p.cx = cl.cx;
                                     found.p.cy = cl.cy;
