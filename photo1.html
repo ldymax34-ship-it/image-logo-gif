@@ -32,6 +32,13 @@
             cursor: grab; box-shadow: 0 2px 12px rgba(0,0,0,0.25);
             outline: none;
         }
+        /* 文字层：仅顶条拖动手型；正文区为文本光标，避免与拖动混淆 */
+        .logo-layer-el.logo-layer-text-wrap {
+            cursor: default;
+        }
+        .logo-layer-el.logo-layer-text-wrap:active {
+            cursor: default;
+        }
         .logo-layer-el:focus, .logo-layer-el:focus-within { outline: none; }
         .logo-layer-el.selected { border-color: #002FA7; z-index: 10; }
         .logo-layer-el:active { cursor: grabbing; }
@@ -106,7 +113,9 @@
             cursor: grab;
             border-radius: 2px 0 0 0;
         }
-        .logo-text-drag-bar:active { cursor: grabbing; }
+        .logo-text-drag-bar:active {
+            cursor: grabbing !important;
+        }
         .logo-layer-text-inner {
             position: absolute;
             left: 0;
@@ -115,14 +124,15 @@
             bottom: 0;
             box-sizing: border-box;
             white-space: pre-wrap;
-            word-break: break-word;
-            text-align: center;
-            line-height: 1.25;
-            overflow: auto;
+            /* 与 canvas 逐字折行策略对齐，减少与导出/预览的换行差异 */
+            overflow-wrap: anywhere;
+            word-break: break-all;
+            text-align: left;
+            overflow: hidden;
             outline: none;
+            cursor: text;
         }
         .logo-layer-text-inner:not(.logo-text-editing) {
-            cursor: default;
             -webkit-user-select: none;
             user-select: none;
         }
@@ -500,20 +510,11 @@
                 </div>
                 <div class="flex-1 flex flex-row min-h-0 overflow-hidden">
                     <aside class="w-[15.5rem] shrink-0 border-r border-gray-200 bg-slate-50 flex flex-col min-h-0 overflow-hidden">
-                        <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
-                            <div class="px-2.5 pt-2 pb-0.5 text-xs font-semibold text-gray-600 shrink-0">常用位置</div>
-                            <div id="logoPresetBuiltinList" class="p-1.5 space-y-1 shrink-0"></div>
-                            <div class="px-2.5 py-1.5 border-t border-b text-xs font-semibold text-gray-600 shrink-0">自定义位置</div>
-                            <div id="logoPresetCustomList" class="p-1.5 space-y-1 flex-1 overflow-y-auto min-h-[2rem]"></div>
-                            <div class="p-1.5 border-t space-y-1.5 shrink-0 bg-white">
-                                <label class="block text-[11px] text-gray-500 leading-tight">将当前选中项命名后保存为预设</label>
-                                <input type="text" id="logoPresetNewName" placeholder="例如：右下主标题" class="w-full text-xs border border-gray-200 rounded px-1.5 py-1" maxlength="40">
-                                <button type="button" id="logoPresetSaveBtn" class="w-full text-xs font-semibold py-2 rounded-md bg-[#002FA7] text-white hover:bg-blue-800">保存位置预设</button>
+                        <div id="logoTextToolbox" class="shrink-0 border-b-[3px] border-[#FF6B00] bg-white flex flex-col">
+                            <div class="px-2 pt-2 pb-2 shrink-0">
+                                <button type="button" id="logoTextAddHint" class="w-full shrink-0 rounded-md bg-[#002FA7] text-white text-xs font-semibold py-2 px-2 shadow-sm hover:bg-blue-800 border-0 cursor-pointer transition-colors">添加文本</button>
                             </div>
-                        </div>
-                        <div id="logoTextToolbox" class="shrink-0 border-t-[3px] border-[#FF6B00] bg-white flex flex-col">
-                            <button type="button" id="logoTextAddHint" class="w-full text-left px-2.5 py-3 text-xs text-gray-600 hover:bg-slate-50 border-0 bg-white shrink-0">点击添加文本</button>
-                            <div id="logoTextToolboxBody" class="hidden p-2 space-y-2 overflow-y-auto flex-1 max-h-[min(48vh,380px)] min-h-0">
+                            <div id="logoTextToolboxBody" class="hidden p-2 space-y-2 overflow-y-auto max-h-[min(48vh,380px)] min-h-0 border-t border-gray-100">
                                 <div class="flex flex-col gap-1">
                                     <span class="text-xs font-semibold text-gray-600">字体</span>
                                     <select id="logoTextFontSelect" class="w-full text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"></select>
@@ -558,6 +559,55 @@
                                     </div>
                                 </div>
                                 <p class="text-[10px] text-gray-400 leading-snug">先点画布文字出现外框，再点一次进入编辑；点预览空白处取消选中；顶部细条拖动位置。</p>
+                            </div>
+                        </div>
+                        <!-- 与「添加文本」分离：横线以下为「Logo / 水印位置」整块（常用预设 + 内置列表 + 自定义，同一模块、同一滚动区） -->
+                        <div id="logoPositionPresetModule" class="flex-1 flex flex-col min-h-0 overflow-hidden border-t-2 border-gray-300 bg-slate-50">
+                            <div class="flex-1 min-h-0 overflow-y-auto flex flex-col">
+                                <div class="px-2.5 pt-2.5 pb-2 shrink-0 border-b border-gray-200 bg-white">
+                                    <h2 class="text-sm font-bold text-gray-900 leading-tight tracking-tight">Logo / 水印位置</h2>
+                                </div>
+                                <div class="px-2.5 py-1.5 shrink-0 bg-slate-50 border-b border-gray-200">
+                                    <h3 class="text-xs font-semibold text-[#002FA7] leading-tight">常用位置预设</h3>
+                                </div>
+                                <div id="logoPresetBuiltinList" class="p-1.5 space-y-1 shrink-0 bg-slate-50"></div>
+                                <div class="shrink-0 border-t border-gray-200 bg-slate-100">
+                                    <button type="button" id="logoCustomPresetToggle" class="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-left bg-slate-100 hover:bg-slate-200/80 border-b border-gray-200/80 transition-colors" aria-expanded="false" aria-controls="logoCustomPresetPanel">
+                                        <span class="text-xs font-semibold text-gray-700 leading-tight">自定义位置</span>
+                                        <span id="logoCustomPresetToggleIcon" class="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded border border-gray-400 bg-white text-sm font-bold text-gray-700 leading-none" aria-hidden="true">+</span>
+                                    </button>
+                                    <div id="logoCustomPresetPanel" class="hidden flex flex-col bg-white border-t border-gray-200">
+                                        <div id="logoPresetCustomList" class="p-1.5 space-y-1 max-h-[min(32vh,240px)] overflow-y-auto min-h-[2rem]"></div>
+                                        <div class="p-1.5 border-t border-gray-200 space-y-1.5 shrink-0 bg-white">
+                                            <label class="block text-[11px] text-gray-500 leading-tight">将当前选中项命名后保存为预设</label>
+                                            <input type="text" id="logoPresetNewName" placeholder="例如：右下主标题" class="w-full text-xs border border-gray-200 rounded px-1.5 py-1" maxlength="40">
+                                            <button type="button" id="logoPresetSaveBtn" class="w-full text-xs font-semibold py-2 rounded-md bg-[#002FA7] text-white hover:bg-blue-800">保存位置预设</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="logoImgShadowDock" class="hidden shrink-0 border-t-2 border-gray-300 bg-white p-2 pb-2.5 space-y-1.5">
+                            <button type="button" id="logoImgShadowToggle" class="w-full text-left text-xs font-semibold py-1.5 px-1 rounded hover:bg-gray-50 text-[#002FA7] border border-transparent hover:border-gray-200">开启模糊投影</button>
+                            <div id="logoImgShadowPanel" class="hidden space-y-1.5 pl-0.5">
+                                <label class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-600 shrink-0 w-10">阴影色</span>
+                                    <input type="color" id="logoImgShadowColor" value="#000000" class="h-7 w-9 shrink-0 border border-gray-200 rounded cursor-pointer p-0.5 bg-white">
+                                </label>
+                                <div>
+                                    <div class="flex justify-between text-[10px] text-gray-600 mb-0.5">
+                                        <span>透明度</span>
+                                        <span id="logoImgShadowOpacityVal" class="font-mono">45%</span>
+                                    </div>
+                                    <input type="range" id="logoImgShadowOpacity" min="0" max="100" value="45" class="w-full">
+                                </div>
+                                <div>
+                                    <div class="flex justify-between text-[10px] text-gray-600 mb-0.5">
+                                        <span>模糊</span>
+                                        <span id="logoImgShadowBlurVal" class="font-mono">1.80%</span>
+                                    </div>
+                                    <input type="range" id="logoImgShadowBlur" min="2" max="120" step="1" value="35" class="w-full">
+                                </div>
                             </div>
                         </div>
                     </aside>
@@ -808,7 +858,7 @@
             clearConfigDirty();
         }
 
-        /** @type {{ pid: string, logoId: string, cx: number, cy: number, wNorm: number, opacity: number, syncRefCropW?: number }[]} */
+        /** @type {{ pid: string, logoId: string, cx: number, cy: number, wNorm: number, opacity: number, syncRefCropW?: number, logoDropShadowOn?: boolean, logoDropShadowColor?: string, logoDropShadowOpacity?: number, logoDropShadowBlurNorm?: number, logoDropShadowOffsetYNorm?: number }[]} */
         let globalLogoPlacements = [];
         let logoLibraryRecords = [];
         const logoRecordById = {};
@@ -1153,7 +1203,44 @@
             return `0 ${oy.toFixed(1)}px ${blurPx.toFixed(1)}px ${col}`;
         }
 
+        /** 图片 Logo 预览用 filter:drop-shadow（boxRefW 为裁切框显示宽） */
+        function buildLogoImageDropShadowCss(p, boxRefW) {
+            if (!p || !p.logoDropShadowOn) return 'none';
+            const w = Math.max(40, boxRefW || 100);
+            let blurNorm = typeof p.logoDropShadowBlurNorm === 'number' && Number.isFinite(p.logoDropShadowBlurNorm) ? p.logoDropShadowBlurNorm : 0.014;
+            blurNorm = Math.max(0.0005, Math.min(0.12, blurNorm));
+            const blurPx = blurNorm * w;
+            let oyNorm = typeof p.logoDropShadowOffsetYNorm === 'number' && Number.isFinite(p.logoDropShadowOffsetYNorm) ? p.logoDropShadowOffsetYNorm : 0.003;
+            oyNorm = Math.max(0, Math.min(0.04, oyNorm));
+            const oy = Math.max(0.5, oyNorm * w);
+            const op = p.logoDropShadowOpacity != null ? Math.max(0, Math.min(1, p.logoDropShadowOpacity)) : 0.45;
+            const col = logoHexToRgba(p.logoDropShadowColor || '#000000', op);
+            return `drop-shadow(0 ${oy.toFixed(1)}px ${blurPx.toFixed(1)}px ${col})`;
+        }
+
+        /** 排版预览层：不透明度 × 本图隐藏淡化 */
+        function logoLayerPreviewOpacityString(p) {
+            let op = p.opacity == null ? 1 : Math.max(0, Math.min(1, p.opacity));
+            if (typeof LogoWorkbench !== 'undefined' && LogoWorkbench.isHiddenOnCurrent(p.pid)) op *= 0.35;
+            return String(op);
+        }
+
         const LOGO_TEXT_DRAG_BAR_PX = 14;
+        /** 与 .logo-layer-el 左右 border 各 2px 一致，用于折行宽度与 DOM 内容区对齐 */
+        const LOGO_TEXT_LAYER_BORDER_TOTAL_X = 4;
+
+        function normalizeLogoTextPlain(s) {
+            return String(s ?? '')
+                .replace(/[\u200b-\u200d\ufeff]/g, '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/\r\n/g, '\n')
+                .replace(/\r/g, '\n');
+        }
+
+        function normalizeLogoTextFromEditable(el) {
+            if (!el) return '';
+            return normalizeLogoTextPlain(el.innerText);
+        }
 
         function resolveLogoTextFontCss(familyKey) {
             if (!familyKey || familyKey === LOGO_TEXT_FONT_SYSTEM) {
@@ -1171,6 +1258,49 @@
             return Math.max(0.006, Math.min(0.28, base));
         }
 
+        function measureLogoTextAdvanceWidth(ctx, str) {
+            const tm = ctx.measureText(str);
+            let w = tm.width || 0;
+            if (typeof tm.actualBoundingBoxLeft === 'number' && typeof tm.actualBoundingBoxRight === 'number') {
+                const span = tm.actualBoundingBoxLeft + tm.actualBoundingBoxRight;
+                if (Number.isFinite(span) && span > 0) w = Math.max(w, span);
+            }
+            return w;
+        }
+
+        /** 按最大宽度折行（与画布上 pre-wrap + break-word 接近），用于框高与导出绘制 */
+        function wrapLogoTextLineToWidth(ctx, line, availW) {
+            const s = String(line);
+            if (!s.length) return [''];
+            const n = s.length;
+            const out = [];
+            let i = 0;
+            while (i < n) {
+                const rest = s.slice(i);
+                if (measureLogoTextAdvanceWidth(ctx, rest) <= availW) {
+                    out.push(rest);
+                    break;
+                }
+                let lo = i + 1;
+                let hi = n;
+                let best = i + 1;
+                while (lo <= hi) {
+                    const mid = (lo + hi) >> 1;
+                    const sub = s.slice(i, mid);
+                    if (measureLogoTextAdvanceWidth(ctx, sub) <= availW) {
+                        best = mid;
+                        lo = mid + 1;
+                    } else {
+                        hi = mid - 1;
+                    }
+                }
+                if (best <= i) best = i + 1;
+                out.push(s.slice(i, best));
+                i = best;
+            }
+            return out.length ? out : [''];
+        }
+
         /** 与预览/导出一致：pixelW 为当前坐标系可视宽度（预览用裁切框宽 box.w，导出用 cfg.width） */
         function measureLogoTextLayout(p, pixelW, sourceImg, cropNatW) {
             const fn = effectiveTextFontSizeNorm(p, sourceImg, cropNatW);
@@ -1181,6 +1311,7 @@
             ctx.font = `${weight} ${fontPx}px ${resolveLogoTextFontCss(p.fontFamily)}`;
             const raw = String(p.text != null ? p.text : '');
             const lines = raw.length ? raw.split(/\r?\n/) : [''];
+            const padX = Math.max(8, fontPx * 0.22);
             let maxLineW = 0;
             lines.forEach((ln) => {
                 const tm = ctx.measureText(ln);
@@ -1190,29 +1321,51 @@
                     if (Number.isFinite(span) && span > 0) wline = Math.max(wline, span);
                 }
                 /* 粗体/中文常与 advance width 不一致；未加载完自定义字体时更易偏小，多留余量 */
-                wline += Math.max(8, fontPx * 0.22);
+                wline += padX;
                 maxLineW = Math.max(maxLineW, wline);
             });
             maxLineW = Math.max(1, maxLineW);
             const cropW = Math.max(1, pixelW);
-            /* 画布文字框最小宽度：约为裁切可视宽的 72%，便于编辑且不顶满裁切区 */
-            const minBoxW = Math.min(cropW * 0.92, cropW * 0.72);
-            if (!lines.some((ln) => String(ln || '').trim().length)) {
-                maxLineW = Math.max(maxLineW, fontPx * 4, minBoxW);
-            } else {
-                maxLineW = Math.max(maxLineW, minBoxW);
+            const hasUserText = lines.some((ln) => String(ln || '').trim().length);
+            /* 尚无内容：预留约五个汉字宽度作为点击与输入区；一旦有内容则按实测宽度随行变化 */
+            if (!hasUserText) {
+                const chW = (() => {
+                    const t = ctx.measureText('字');
+                    let w = t.width || 0;
+                    if (typeof t.actualBoundingBoxLeft === 'number' && typeof t.actualBoundingBoxRight === 'number') {
+                        const span = t.actualBoundingBoxLeft + t.actualBoundingBoxRight;
+                        if (Number.isFinite(span) && span > 0) w = Math.max(w, span);
+                    }
+                    return Number.isFinite(w) && w > 0 ? w : fontPx * 1.08;
+                })();
+                maxLineW = Math.max(maxLineW, chW * 5 + padX);
             }
+            maxLineW = Math.min(maxLineW, cropW * 0.995);
+            /* 与含 2px×2 边框的 .logo-layer-el 内容区同宽，勿再减 padX（会导致画布比编辑器更窄、多出换行） */
+            const availWrapInner = Math.max(fontPx * 2, maxLineW - LOGO_TEXT_LAYER_BORDER_TOTAL_X);
+            const wrappedFlat = [];
+            lines.forEach((ln) => {
+                const chunks = ln.length === 0 ? [''] : wrapLogoTextLineToWidth(ctx, ln, availWrapInner);
+                chunks.forEach((piece) => wrappedFlat.push(piece));
+            });
             const lhMul = typeof p.lineHeightPxMul === 'number' ? p.lineHeightPxMul : 1.22;
             const lh = fontPx * lhMul;
-            let totalH = lines.length ? Math.max(fontPx * 1.12, fontPx + (lines.length - 1) * lh) : lh;
+            const wrapCount = Math.max(1, wrappedFlat.length);
+            let totalH = fontPx + (wrapCount - 1) * lh;
             totalH += Math.max(4, fontPx * 0.08);
-            /* 编辑区最小高度略加大，减少「点一下框就变形」的观感 */
-            totalH = Math.max(totalH, fontPx * 1.35, fontPx * 2.4);
+            /* 外框高度与行高对齐；略有下限避免单行过扁 */
+            totalH = Math.max(totalH, fontPx * (hasUserText ? 1.18 : 1.22));
             const outerH = totalH + LOGO_TEXT_DRAG_BAR_PX;
             const ar = outerH / maxLineW;
             const wNorm = maxLineW / Math.max(1, pixelW);
             return {
-                fontPx, maxW: maxLineW, totalH, wNorm: Math.min(3, Math.max(0.0008, wNorm)), ar: Math.max(0.02, ar), lines,
+                fontPx,
+                maxW: maxLineW,
+                totalH,
+                wNorm: Math.min(3, Math.max(0.0008, wNorm)),
+                ar: Math.max(0.02, ar),
+                lines,
+                wrappedLines: wrappedFlat,
                 lineStep: lh
             };
         }
@@ -1229,8 +1382,8 @@
         }
 
         async function drawTextPlacementOnCanvas(ctx, cw, ch, p, syncScaleOpts) {
-            const text = String(p.text || '').trim();
-            if (!text) return;
+            const rawDraw = String(p.text != null ? p.text : '');
+            if (!normalizeLogoTextPlain(rawDraw).trim()) return;
             const useSync = syncScaleOpts && syncScaleOpts.useSyncScale && syncScaleOpts.sourceImg;
             const cropNatW = useSync ? syncScaleOpts.cropNatW : undefined;
             const sourceImg = useSync ? syncScaleOpts.sourceImg : undefined;
@@ -1265,7 +1418,8 @@
                 ctx.shadowOffsetX = 0;
                 ctx.shadowOffsetY = 0;
             }
-            m.lines.forEach((ln, i) => {
+            const drawLines = Array.isArray(m.wrappedLines) && m.wrappedLines.length ? m.wrappedLines : m.lines;
+            drawLines.forEach((ln, i) => {
                 ctx.fillText(ln, ox, oy + i * m.lineStep);
             });
             ctx.shadowBlur = 0;
@@ -1571,7 +1725,25 @@
                             const oy = cy * ch - th / 2;
                             ctx.save();
                             ctx.globalAlpha = p.opacity == null ? 1 : Math.max(0, Math.min(1, p.opacity));
+                            if (p.logoDropShadowOn) {
+                                let blurNorm = typeof p.logoDropShadowBlurNorm === 'number' && Number.isFinite(p.logoDropShadowBlurNorm) ? p.logoDropShadowBlurNorm : 0.014;
+                                blurNorm = Math.max(0.0005, Math.min(0.12, blurNorm));
+                                let oyNorm = typeof p.logoDropShadowOffsetYNorm === 'number' && Number.isFinite(p.logoDropShadowOffsetYNorm) ? p.logoDropShadowOffsetYNorm : 0.003;
+                                oyNorm = Math.max(0, Math.min(0.04, oyNorm));
+                                const sop = p.logoDropShadowOpacity != null ? Math.max(0, Math.min(1, p.logoDropShadowOpacity)) : 0.45;
+                                ctx.shadowColor = logoHexToRgba(p.logoDropShadowColor || '#000000', sop);
+                                ctx.shadowBlur = blurNorm * cw;
+                                ctx.shadowOffsetX = 0;
+                                ctx.shadowOffsetY = Math.max(0.5, oyNorm * cw);
+                            } else {
+                                ctx.shadowColor = 'transparent';
+                                ctx.shadowBlur = 0;
+                                ctx.shadowOffsetX = 0;
+                                ctx.shadowOffsetY = 0;
+                            }
                             ctx.drawImage(im, ox, oy, tw, th);
+                            ctx.shadowBlur = 0;
+                            ctx.shadowOffsetY = 0;
                             ctx.restore();
                             resolve();
                         };
@@ -4221,11 +4393,50 @@
             document.getElementById('logoLibraryModal').classList.add('hidden');
         }
 
+        /**
+         * 文字测量用的裁切自然宽度。Logo 排版弹窗、规格裁剪弹窗（同一图+同一规格）与弹窗关闭后的保存结果必须一致，
+         * 否则 effectiveTextFontSizeNorm / getSyncWNormScale 在切换编辑器时跳变，canvas 软折行与 DOM 会反复错位。
+         */
+        function resolveLogoTextCropNatW(img, cfg) {
+            if (!img || !cfg) return 0;
+            const logoModalEl = document.getElementById('logoLayoutModal');
+            if (logoModalEl && !logoModalEl.classList.contains('hidden') &&
+                typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
+                try {
+                    const w = LogoModalCrop.getNaturalRect().width;
+                    if (w > 0) return w;
+                } catch (e) { /* ignore */ }
+            }
+            const cropModalEl = document.getElementById('cropModal');
+            if (cropModalEl && !cropModalEl.classList.contains('hidden') &&
+                typeof Modal !== 'undefined' && Modal.activeImageIdx >= 0 && Modal.imgInfo && Modal.imgInfo.natW &&
+                Modal.activeConfig) {
+                const mImg = sourceImages[Modal.activeImageIdx];
+                if (mImg && mImg.id === img.id && String(Modal.activeConfig.id) === String(cfg.id)) {
+                    const w = Modal.box.w * Modal.imgInfo.scale;
+                    if (w > 0) return w;
+                }
+            }
+            const base = document.getElementById('logoModalCropImg');
+            if (base && base.naturalWidth) {
+                const crNat = getSourceCropRect(
+                    base.naturalWidth,
+                    base.naturalHeight,
+                    getEffectiveConfig(cfg, img),
+                    img.results[cfg.id]?.cropRect
+                );
+                if (crNat.width > 0) return crNat.width;
+            }
+            return 0;
+        }
+
         const LogoWorkbench = {
             dragState: null,
             _layerRenderGen: 0,
             _logoEditorDirty: false,
             _lastPreviewCfgId: null,
+            /** 左侧「自定义位置」折叠：默认收起，每次打开排版弹窗复位 */
+            _logoCustomPresetExpanded: false,
 
             isScopeGlobal() {
                 const g = document.getElementById('logoScopeGlobal');
@@ -4396,7 +4607,7 @@
                 const py = Modal.pos.y;
                 const bw = Modal.box.w;
                 const bh = Modal.box.h;
-                const cropNatW = Modal.box.w * Modal.imgInfo.scale;
+                const cropNatW = resolveLogoTextCropNatW(img, cfg) || (Modal.box.w * Modal.imgInfo.scale);
                 ensureImageLogoFields(img);
                 const seen = new Set();
                 const list = getEffectivePlacements(img).filter((p) => {
@@ -4426,6 +4637,8 @@
                         el.style.top = `${top}px`;
                         el.style.width = `${wPx}px`;
                         el.style.height = `${hPx}px`;
+                        el.style.boxSizing = 'border-box';
+                        el.style.border = '2px solid transparent';
                         let op = p.opacity == null ? 1 : Math.max(0, Math.min(1, p.opacity));
                         if (LogoWorkbench.isHiddenOnCurrent(p.pid)) op *= 0.35;
                         el.style.opacity = String(op);
@@ -4433,7 +4646,7 @@
                         inner.className = 'logo-layer-text-inner';
                         inner.style.top = `${LOGO_TEXT_DRAG_BAR_PX}px`;
                         inner.style.pointerEvents = 'none';
-                        inner.textContent = String(p.text != null ? p.text : '');
+                        inner.textContent = normalizeLogoTextPlain(p.text != null ? String(p.text) : '');
                         const weight = Number.isFinite(Number(p.textFontWeight)) ? Math.round(Number(p.textFontWeight)) : 600;
                         inner.style.fontWeight = String(weight);
                         inner.style.fontSize = `${m.fontPx}px`;
@@ -4469,6 +4682,7 @@
                         if (LogoWorkbench.isHiddenOnCurrent(p.pid)) op *= 0.35;
                         el.style.opacity = String(op);
                         im.className = 'w-full h-full object-contain pointer-events-none';
+                        im.style.filter = buildLogoImageDropShadowCss(p, bw);
                         el.appendChild(im);
                         host.appendChild(el);
                     };
@@ -4561,7 +4775,10 @@
                     const row = listRef.find((x) => x.pid === logoSelectedPid);
                     fillLogoTextFontSelect(tf, row && isLogoTextPlacement(row) ? row.fontFamily : undefined);
                     if (row && isLogoTextPlacement(row)) this.syncLogoTextToolboxFromPlacement(row);
-                    else this.updateLogoTextSizeLabel();
+                    else {
+                        this.updateLogoTextSizeLabel();
+                        if (row && !isLogoTextPlacement(row)) this.syncLogoImgShadowPanelUi(row);
+                    }
                     this.refreshLogoTextToolboxLayout();
                     this.renderPlacementList();
                     if (typeof LogoModalCrop !== 'undefined' && !LogoModalCrop.isDragging) {
@@ -4631,15 +4848,9 @@
             getCurrentCropNatW() {
                 const img = this.getCurrentImg();
                 const cfg = this.getPreviewCfg();
-                const base = document.getElementById('logoModalCropImg');
-                if (!img || !cfg || !base || !base.naturalWidth) return null;
-                if (!document.getElementById('logoLayoutModal').classList.contains('hidden') &&
-                    typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
-                    const w = LogoModalCrop.getNaturalRect().width;
-                    return w > 0 ? w : null;
-                }
-                const cr = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, img), img.results[cfg.id]?.cropRect);
-                return cr.width > 0 ? cr.width : null;
+                if (!img || !cfg) return null;
+                const w = resolveLogoTextCropNatW(img, cfg);
+                return w > 0 ? w : null;
             },
 
             addPlacement(logoId) {
@@ -4724,12 +4935,23 @@
                 this.renderLayers();
             },
 
+            syncLogoCustomPresetPanelUi() {
+                const panel = document.getElementById('logoCustomPresetPanel');
+                const toggle = document.getElementById('logoCustomPresetToggle');
+                const icon = document.getElementById('logoCustomPresetToggleIcon');
+                if (!panel || !toggle || !icon) return;
+                const on = !!this._logoCustomPresetExpanded;
+                panel.classList.toggle('hidden', !on);
+                toggle.setAttribute('aria-expanded', on ? 'true' : 'false');
+                icon.textContent = on ? '−' : '+';
+            },
+
             renderPresetSidebar() {
                 const builtinEl = document.getElementById('logoPresetBuiltinList');
                 const customEl = document.getElementById('logoPresetCustomList');
                 if (!builtinEl || !customEl) return;
                 builtinEl.innerHTML = LOGO_BUILTIN_PRESETS.map((pr) =>
-                    `<button type="button" class="logo-preset-apply w-full text-left px-2 py-1.5 text-xs rounded border border-gray-200 bg-white hover:border-[#002FA7] hover:bg-blue-50 transition-colors" data-cx="${pr.cx}" data-cy="${pr.cy}" data-wnorm="${pr.wNorm != null ? pr.wNorm : ''}" data-cover="${pr.coverMode ? '1' : '0'}">${escapeHtml(pr.name)}</button>`
+                    `<button type="button" class="logo-preset-apply w-full text-left px-2 py-1.5 text-xs rounded border border-[#cddcf5] bg-white text-[#002FA7] hover:bg-[#f0f5ff] transition-colors" data-cx="${pr.cx}" data-cy="${pr.cy}" data-wnorm="${pr.wNorm != null ? pr.wNorm : ''}" data-cover="${pr.coverMode ? '1' : '0'}">${escapeHtml(pr.name)}</button>`
                 ).join('');
                 builtinEl.querySelectorAll('.logo-preset-apply').forEach((btn) => {
                     btn.onclick = async () => {
@@ -4740,7 +4962,7 @@
                 });
                 const custom = getLogoCustomPresets();
                 if (!custom.length) {
-                    customEl.innerHTML = '<p class="text-[10px] text-gray-400 px-1 py-1">暂无。选中水印后填写名称并点「保存logo位置预设」。</p>';
+                    customEl.innerHTML = '<p class="text-[10px] text-gray-400 px-1 py-1 leading-snug">暂无。选中水印后填写名称并点「保存位置预设」。</p>';
                 } else {
                     customEl.innerHTML = custom.map((pr, i) => {
                         const wnAttr = pr.wNorm != null && Number.isFinite(pr.wNorm) ? String(pr.wNorm) : '';
@@ -4773,7 +4995,7 @@
                 if (!el) return;
                 const list = this.isScopeGlobal() ? globalLogoPlacements : (this.getCurrentImg()?.logoPlacements || []);
                 if (!list.length) {
-                    el.innerHTML = '<p class="text-xs text-gray-500 leading-snug">点击上方添加图片水印；左侧栏底部可编辑文字图层。</p>';
+                    el.innerHTML = '<p class="text-xs text-gray-500 leading-snug">点击左侧「添加文本」新建文字水印；或使用上方 Logo 网格添加图片水印。</p>';
                     this.updatePropsPanel();
                     return;
                 }
@@ -4809,6 +5031,7 @@
                         logoTextCaretPid = null;
                         const row = list.find((x) => x.pid === logoSelectedPid);
                         if (row && isLogoTextPlacement(row)) this.syncLogoTextToolboxFromPlacement(row);
+                        else if (row && !isLogoTextPlacement(row)) this.syncLogoImgShadowPanelUi(row);
                         this.renderPlacementList();
                         this.renderLayers();
                         this.updatePropsPanel();
@@ -4827,6 +5050,8 @@
                 if (!p) {
                     panel.classList.add('invisible', 'pointer-events-none');
                     panel.setAttribute('aria-hidden', 'true');
+                    const imgDockEmpty = document.getElementById('logoImgShadowDock');
+                    if (imgDockEmpty) imgDockEmpty.classList.add('hidden');
                     return;
                 }
                 panel.classList.remove('invisible', 'pointer-events-none');
@@ -4845,6 +5070,14 @@
                 } else {
                     if (hideBtn) hideBtn.classList.add('hidden');
                     if (remBtn) { remBtn.textContent = '删除此项'; remBtn.classList.remove('hidden'); }
+                }
+                const imgDock = document.getElementById('logoImgShadowDock');
+                if (imgDock) {
+                    if (!p || isLogoTextPlacement(p)) imgDock.classList.add('hidden');
+                    else {
+                        imgDock.classList.remove('hidden');
+                        this.syncLogoImgShadowPanelUi(p);
+                    }
                 }
             },
 
@@ -4889,11 +5122,17 @@
             /** 在全量 rebuild 画布层前写回 DOM 中的文本，避免 innerHTML='' 丢字 */
             syncLogoTextDomToPlacements(host) {
                 if (!host) return;
+                const modalEl = document.getElementById('logoLayoutModal');
+                /* 弹窗仍为 hidden 时子树不参与布局，innerText 常为空或丢换行，写回会抹掉 p.text */
+                if (!modalEl || modalEl.classList.contains('hidden')) {
+                    logoTextLayoutDbgLog('syncLogoTextDomToPlacements:skip', { reason: 'logoLayoutModal.hidden' });
+                    return;
+                }
                 host.querySelectorAll('.logo-layer-text-inner[data-placement-pid]').forEach((node) => {
                     const apid = node.getAttribute('data-placement-pid');
                     if (!apid) return;
                     const row = this.findPlacementByPid(apid);
-                    if (row && isLogoTextPlacement(row.p)) row.p.text = node.innerText;
+                    if (row && isLogoTextPlacement(row.p)) row.p.text = normalizeLogoTextFromEditable(node);
                 });
             },
 
@@ -4932,6 +5171,58 @@
                 const blurUi = Math.round(Math.max(2, Math.min(120, blurNorm * 1000)));
                 if (blR) blR.value = String(blurUi);
                 if (blV) blV.textContent = `${(Math.max(0.0005, blurNorm) * 100).toFixed(2)}%`;
+            },
+
+            syncLogoImgShadowPanelUi(p) {
+                const toggle = document.getElementById('logoImgShadowToggle');
+                const panel = document.getElementById('logoImgShadowPanel');
+                const col = document.getElementById('logoImgShadowColor');
+                const opR = document.getElementById('logoImgShadowOpacity');
+                const opV = document.getElementById('logoImgShadowOpacityVal');
+                const blR = document.getElementById('logoImgShadowBlur');
+                const blV = document.getElementById('logoImgShadowBlurVal');
+                if (!toggle || !panel) return;
+                const on = !!(p && !isLogoTextPlacement(p) && p.logoDropShadowOn);
+                toggle.textContent = on ? '模糊投影（开）' : '开启模糊投影';
+                toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+                panel.classList.toggle('hidden', !on);
+                if (!p || isLogoTextPlacement(p)) return;
+                if (col) col.value = normalizeLogoHexColor(p.logoDropShadowColor || '#000000');
+                const opPct = Math.round((p.logoDropShadowOpacity != null ? Math.max(0, Math.min(1, p.logoDropShadowOpacity)) : 0.45) * 100);
+                if (opR) opR.value = String(Math.max(0, Math.min(100, opPct)));
+                if (opV) opV.textContent = `${Math.max(0, Math.min(100, opPct))}%`;
+                const blurNorm = p.logoDropShadowBlurNorm != null ? p.logoDropShadowBlurNorm : 0.014;
+                const blurUi = Math.round(Math.max(2, Math.min(120, blurNorm * 1000)));
+                if (blR) blR.value = String(blurUi);
+                if (blV) blV.textContent = `${(Math.max(0.0005, blurNorm) * 100).toFixed(2)}%`;
+            },
+
+            readLogoImgShadowToPlacement(p) {
+                if (!p || isLogoTextPlacement(p)) return;
+                const shCol = document.getElementById('logoImgShadowColor');
+                const shOp = document.getElementById('logoImgShadowOpacity');
+                const shBl = document.getElementById('logoImgShadowBlur');
+                if (p.logoDropShadowOn) {
+                    if (shCol) p.logoDropShadowColor = normalizeLogoHexColor(shCol.value || '#000000');
+                    if (shOp) {
+                        const o = parseInt(shOp.value, 10);
+                        p.logoDropShadowOpacity = Number.isFinite(o) ? Math.max(0, Math.min(1, o / 100)) : 0.45;
+                    }
+                    if (shBl) {
+                        const b = parseInt(shBl.value, 10);
+                        p.logoDropShadowBlurNorm = Number.isFinite(b) ? Math.max(2, Math.min(120, b)) / 1000 : 0.014;
+                    }
+                    p.logoDropShadowOffsetYNorm = typeof p.logoDropShadowOffsetYNorm === 'number' ? p.logoDropShadowOffsetYNorm : 0.003;
+                }
+            },
+
+            applyLogoImgShadowToSelected() {
+                const cur = this.getEditingListRef().find((x) => x.pid === logoSelectedPid);
+                if (!cur || isLogoTextPlacement(cur)) return;
+                this.readLogoImgShadowToPlacement(cur);
+                this.markLogoEditorDirty();
+                this.syncLogoImgShadowPanelUi(cur);
+                this.renderLayers();
             },
 
             createTextPlacementFromHint() {
@@ -5003,10 +5294,6 @@
                     e.stopPropagation();
                     const foundRow = self.findPlacementByPid(p.pid);
                     if (!foundRow || !isLogoTextPlacement(foundRow.p)) return;
-                    if (logoTextCaretPid === p.pid) {
-                        logoTextLayoutDbgLog('textInner.mousedown:skip(caretActive)', { pid: p.pid });
-                        return;
-                    }
                     logoTextLayoutDbgLog('textInner.mousedown:enter', { pid: p.pid, caret: logoTextCaretPid, sel: logoSelectedPid });
                     const hostClear = document.getElementById('logoPreviewLayers');
                     if (hostClear) {
@@ -5024,19 +5311,11 @@
                         if (ap && ap !== p.pid) aeSel.blur();
                     }
                     if (logoTextCaretPid && logoTextCaretPid !== p.pid) logoTextCaretPid = null;
-                    const secondIntoEdit = logoSelectedPid === p.pid;
-                    logoTextLayoutDbgLog('textInner.mousedown:afterClear', { pid: p.pid, secondIntoEdit, caret: logoTextCaretPid, sel: logoSelectedPid });
                     logoSelectedPid = p.pid;
-                    if (!secondIntoEdit) {
-                        logoTextCaretPid = null;
-                        inner.contentEditable = 'false';
-                        inner.classList.remove('logo-text-editing');
-                        e.preventDefault();
-                    } else {
-                        logoTextCaretPid = p.pid;
-                        inner.contentEditable = 'true';
-                        inner.classList.add('logo-text-editing');
-                    }
+                    logoTextCaretPid = p.pid;
+                    inner.contentEditable = 'true';
+                    inner.classList.add('logo-text-editing');
+                    /* 不 preventDefault，便于首次点击即落光标、拖选与插入 */
                     const host = document.getElementById('logoPreviewLayers');
                     if (host) {
                         host.querySelectorAll('.logo-layer-el').forEach((elx) => {
@@ -5060,9 +5339,31 @@
                     if (gen !== self._layerRenderGen) return;
                     const foundRow = self.findPlacementByPid(p.pid);
                     if (!foundRow || !isLogoTextPlacement(foundRow.p)) return;
-                    foundRow.p.text = inner.innerText;
+                    foundRow.p.text = normalizeLogoTextFromEditable(inner);
                     self.markLogoEditorDirty();
                     self.renderPlacementList();
+                    if (!self.refreshLogoPreviewLayerGeometry()) self.renderLayers();
+                });
+                inner.addEventListener('keydown', (e) => {
+                    if (gen !== self._layerRenderGen) return;
+                    if (logoTextCaretPid !== p.pid) return;
+                    if (e.isComposing) return;
+                    if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+                    e.preventDefault();
+                    if (typeof document.execCommand === 'function') {
+                        document.execCommand('insertLineBreak');
+                    }
+                });
+                inner.addEventListener('blur', () => {
+                    if (gen !== self._layerRenderGen) return;
+                    const foundRow = self.findPlacementByPid(p.pid);
+                    if (!foundRow || !isLogoTextPlacement(foundRow.p)) return;
+                    const next = normalizeLogoTextFromEditable(inner);
+                    if (foundRow.p.text === next) return;
+                    foundRow.p.text = next;
+                    self.markLogoEditorDirty();
+                    self.renderPlacementList();
+                    if (!self.refreshLogoPreviewLayerGeometry()) self.renderLayers();
                 });
             },
 
@@ -5105,17 +5406,7 @@
 
                 const curImg = this.getCurrentImg();
                 const cfg = this.getPreviewCfg();
-                const base = document.getElementById('logoModalCropImg');
-                let cropNatW = 0;
-                if (base && curImg && cfg && base.naturalWidth) {
-                    if (!document.getElementById('logoLayoutModal').classList.contains('hidden') &&
-                        typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
-                        cropNatW = LogoModalCrop.getNaturalRect().width;
-                    } else {
-                        const crNat = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, curImg), curImg.results[cfg.id]?.cropRect);
-                        cropNatW = crNat.width;
-                    }
-                }
+                const cropNatW = curImg && cfg ? resolveLogoTextCropNatW(curImg, cfg) : 0;
 
                 for (const p of items) {
                     const el = byPid.get(p.pid);
@@ -5150,8 +5441,11 @@
                         el.style.width = `${wPx}px`;
                         el.style.height = `${hPx}px`;
                     }
-                    if (this.isHiddenOnCurrent(p.pid)) el.style.opacity = '0.35';
-                    else el.style.opacity = '';
+                    el.style.opacity = logoLayerPreviewOpacityString(p);
+                    if (!isLogoTextPlacement(p)) {
+                        const im = el.querySelector('img');
+                        if (im) im.style.filter = buildLogoImageDropShadowCss(p, box.w);
+                    }
                 }
                 return true;
             },
@@ -5193,16 +5487,7 @@
                 });
                 const curImg = this.getCurrentImg();
                 const cfg = this.getPreviewCfg();
-                let cropNatW = 0;
-                if (base && curImg && cfg && base.naturalWidth) {
-                    if (!document.getElementById('logoLayoutModal').classList.contains('hidden') &&
-                        typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
-                        cropNatW = LogoModalCrop.getNaturalRect().width;
-                    } else {
-                        const crNat = getSourceCropRect(base.naturalWidth, base.naturalHeight, getEffectiveConfig(cfg, curImg), curImg.results[cfg.id]?.cropRect);
-                        cropNatW = crNat.width;
-                    }
-                }
+                const cropNatW = curImg && cfg ? resolveLogoTextCropNatW(curImg, cfg) : 0;
                 let pending = items.length;
                 const finishOne = () => {
                     pending--;
@@ -5240,7 +5525,7 @@
                         el.style.pointerEvents = 'auto';
                         el.style.overflow = 'visible';
                         logoTextLayoutDbgLog('renderLayers.textBox', { pid: p.pid, wPx, hPx, mMaxW: m.maxW, mTotalH: m.totalH, fontPx: m.fontPx, selected: p.pid === logoSelectedPid, editing: p.pid === logoTextCaretPid });
-                        if (this.isHiddenOnCurrent(p.pid)) el.style.opacity = '0.35';
+                        el.style.opacity = logoLayerPreviewOpacityString(p);
                         const dragBar = document.createElement('div');
                         dragBar.className = 'logo-text-drag-bar';
                         dragBar.title = '拖动位置';
@@ -5253,7 +5538,7 @@
                         inner.setAttribute('role', 'textbox');
                         inner.setAttribute('aria-label', '画布文本');
                         inner.dataset.placementPid = p.pid;
-                        inner.innerText = p.text != null ? String(p.text) : '';
+                        inner.innerText = normalizeLogoTextPlain(p.text != null ? String(p.text) : '');
                         const weight = Number.isFinite(Number(p.textFontWeight)) ? Math.round(Number(p.textFontWeight)) : 600;
                         inner.style.fontWeight = String(weight);
                         inner.style.fontSize = `${m.fontPx}px`;
@@ -5300,8 +5585,9 @@
                         el.style.width = `${wPx}px`;
                         el.style.height = `${hPx}px`;
                         el.style.pointerEvents = 'auto';
-                        if (this.isHiddenOnCurrent(p.pid)) el.style.opacity = '0.35';
+                        el.style.opacity = logoLayerPreviewOpacityString(p);
                         im.className = 'w-full h-full object-contain pointer-events-none';
+                        im.style.filter = buildLogoImageDropShadowCss(p, box.w);
                         el.appendChild(im);
                         const hnd = document.createElement('div');
                         hnd.className = 'logo-resize-se';
@@ -5432,19 +5718,9 @@
                             const { w: natW0, h: natH0 } = getLogoLayerNaturalSize(layer);
                             if (!box || !found || natW0 <= 0) return;
                             const startX = e.clientX;
-                            const baseImg = document.getElementById('logoModalCropImg');
                             const curImg = this.getCurrentImg();
                             const cfg = this.getPreviewCfg();
-                            let cropNatW = 0;
-                            if (baseImg && curImg && cfg && baseImg.naturalWidth) {
-                                if (!document.getElementById('logoLayoutModal').classList.contains('hidden') &&
-                                    typeof LogoModalCrop !== 'undefined' && LogoModalCrop.imgInfo && LogoModalCrop.imgInfo.natW) {
-                                    cropNatW = LogoModalCrop.getNaturalRect().width;
-                                } else {
-                                    const crNat = getSourceCropRect(baseImg.naturalWidth, baseImg.naturalHeight, getEffectiveConfig(cfg, curImg), curImg.results[cfg.id]?.cropRect);
-                                    cropNatW = crNat.width;
-                                }
-                            }
+                            const cropNatW = curImg && cfg ? resolveLogoTextCropNatW(curImg, cfg) : 0;
                             if (isLogoTextPlacement(found.p)) {
                                 const startFontPx = effectiveTextFontSizeNorm(found.p, curImg, cropNatW) * box.w;
                                 const moveT = (ev) => {
@@ -5497,6 +5773,9 @@
                                 layer.style.height = `${hPx}px`;
                                 layer.style.left = `${box.l + found.p.cx * box.w - wPx / 2}px`;
                                 layer.style.top = `${box.t + found.p.cy * box.h - hPx / 2}px`;
+                                const imN = layer.querySelector('img');
+                                const boxNow = this.getPreviewCropBoxDisp();
+                                if (imN && boxNow) imN.style.filter = buildLogoImageDropShadowCss(found.p, boxNow.w);
                             };
                             const up = () => {
                                 window.removeEventListener('mousemove', move);
@@ -5609,6 +5888,8 @@
                     this.renderLayers();
                 };
                 if (ovEl) ovEl.src = img.url;
+                /* 须先于 refreshPreview/renderLayers：否则 syncLogoTextDomToPlacements 在 display:none 下读 innerText 会清空换行 */
+                document.getElementById('logoLayoutModal').classList.remove('hidden');
                 imgEl.onload = () => {
                     LogoModalCrop.syncFromImgCfg(img, this.getPreviewCfg());
                     refreshPreview();
@@ -5619,7 +5900,6 @@
                 } else {
                     imgEl.src = img.url;
                 }
-                document.getElementById('logoLayoutModal').classList.remove('hidden');
                 const rejoin = document.getElementById('logoRejoinGlobalBtn');
                 if (rejoin) {
                     if (img && img.logoIndependent) rejoin.classList.remove('hidden');
@@ -5628,6 +5908,8 @@
                 const sel = document.getElementById('logoPreviewCfgSelect');
                 this._lastPreviewCfgId = sel && sel.value ? String(sel.value) : null;
                 this.clearLogoEditorDirty();
+                this._logoCustomPresetExpanded = false;
+                this.syncLogoCustomPresetPanelUi();
                 lucide.createIcons();
             },
 
@@ -5689,6 +5971,15 @@
                     if (nameEl) nameEl.value = '';
                     this.renderPresetSidebar();
                 };
+                const customPresetToggleBtn = document.getElementById('logoCustomPresetToggle');
+                if (customPresetToggleBtn) {
+                    customPresetToggleBtn.onclick = () => {
+                        this._logoCustomPresetExpanded = !this._logoCustomPresetExpanded;
+                        this.syncLogoCustomPresetPanelUi();
+                    };
+                }
+                this._logoCustomPresetExpanded = false;
+                this.syncLogoCustomPresetPanelUi();
                 document.getElementById('logoLayoutModal').onclick = (e) => {
                     if (e.target.id === 'logoLayoutModal') this.closeLayoutModal();
                 };
@@ -5772,6 +6063,9 @@
                     const list = this.getEditingListRef();
                     const p = list.find((x) => x.pid === logoSelectedPid);
                     if (p) p.opacity = Math.max(0, Math.min(1, v / 100));
+                    const host = document.getElementById('logoPreviewLayers');
+                    const layer = host && host.querySelector(`.logo-layer-el[data-pid="${logoSelectedPid}"]`);
+                    if (layer && p) layer.style.opacity = logoLayerPreviewOpacityString(p);
                 };
                 document.getElementById('logoOpacityRange').onchange = () => this.markLogoEditorDirty();
                 document.getElementById('logoBtnHideThis').onclick = () => {
@@ -5870,6 +6164,31 @@
                 if (shBl) {
                     shBl.oninput = () => this.applyLogoToolboxStyleToSelected();
                 }
+                const imgShToggle = document.getElementById('logoImgShadowToggle');
+                if (imgShToggle) {
+                    imgShToggle.onclick = () => {
+                        const cur = this.getEditingListRef().find((x) => x.pid === logoSelectedPid);
+                        if (!cur || isLogoTextPlacement(cur)) return;
+                        if (cur.logoDropShadowOn) {
+                            cur.logoDropShadowOn = false;
+                        } else {
+                            cur.logoDropShadowOn = true;
+                            cur.logoDropShadowColor = cur.logoDropShadowColor || '#000000';
+                            cur.logoDropShadowOpacity = cur.logoDropShadowOpacity != null ? cur.logoDropShadowOpacity : 0.45;
+                            cur.logoDropShadowBlurNorm = cur.logoDropShadowBlurNorm != null ? cur.logoDropShadowBlurNorm : 0.014;
+                            cur.logoDropShadowOffsetYNorm = cur.logoDropShadowOffsetYNorm != null ? cur.logoDropShadowOffsetYNorm : 0.003;
+                        }
+                        this.markLogoEditorDirty();
+                        this.syncLogoImgShadowPanelUi(cur);
+                        this.renderLayers();
+                    };
+                }
+                const imgShCol = document.getElementById('logoImgShadowColor');
+                const imgShOp = document.getElementById('logoImgShadowOpacity');
+                const imgShBl = document.getElementById('logoImgShadowBlur');
+                if (imgShCol) imgShCol.oninput = () => this.applyLogoImgShadowToSelected();
+                if (imgShOp) imgShOp.oninput = () => this.applyLogoImgShadowToSelected();
+                if (imgShBl) imgShBl.oninput = () => this.applyLogoImgShadowToSelected();
                 const txtImp = document.getElementById('logoTextFontImport');
                 if (txtImp) {
                     txtImp.onchange = async (e) => {
