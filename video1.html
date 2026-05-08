@@ -180,11 +180,11 @@
             <aside id="imageDropZone" class="w-64 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden transition-colors">
                 <div class="p-4 border-b border-gray-100 bg-gray-50 space-y-2">
                     <label class="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white bg-[#FF6B00] rounded cursor-pointer hover:bg-[#e66000] transition-colors shadow-sm">
-                        <i data-lucide="image-plus" class="w-4 h-4 mr-2"></i> 批量导入本地图片
+                        <i data-lucide="image-plus" class="w-4 h-4 mr-2"></i> 批量导入本地视频
                         <input type="file" id="imageInput" multiple accept="video/mp4,video/quicktime,.mp4,.mov" class="hidden">
                     </label>
                     <button type="button" id="openGalleryModal" class="flex items-center justify-center w-full px-4 py-2.5 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors">
-                        <i data-lucide="images" class="w-4 h-4 mr-2"></i> 批量导入已上传素材
+                        <i data-lucide="images" class="w-4 h-4 mr-2"></i> 批量导入已上传视频
                     </button>
                 </div>
                 <div id="sourceImageList" class="flex-1 overflow-y-auto p-3 space-y-3">
@@ -306,7 +306,7 @@
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-200 flex justify-between items-center shrink-0">
                     <div>
-                        <h3 class="text-lg font-bold text-[#002FA7]">批量导入已上传素材</h3>
+                        <h3 class="text-lg font-bold text-[#002FA7]">批量导入已上传视频</h3>
                         <p class="text-xs text-gray-500 mt-0.5">本地保存的历史视频素材，可筛选标签、多选后加入当前处理列表</p>
                     </div>
                     <button type="button" id="closeGalleryModal" class="p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"><i data-lucide="x" class="w-6 h-6"></i></button>
@@ -847,7 +847,13 @@
 
             const outW = Math.max(2, outCfg.width | 0);
             const outH = Math.max(2, outCfg.height | 0);
-            const duration = Math.max(0.1, v.duration || sourceImgRef.duration || 1);
+            const vdRaw = Number(v.duration);
+            const sdRaw = Number(sourceImgRef && sourceImgRef.duration);
+            let durationSec = Number.isFinite(vdRaw) && vdRaw > 0
+                ? vdRaw
+                : (Number.isFinite(sdRaw) && sdRaw > 0 ? sdRaw : 1);
+            if (!Number.isFinite(durationSec) || durationSec <= 0) durationSec = 1;
+            const duration = Math.max(0.1, durationSec);
             const maxKb = getConfigMaxSizeKb(cfg, 20);
             const requestedKbps = Math.max(120, Math.floor((maxKb * 8) / duration));
             const px = outW * outH;
@@ -863,12 +869,16 @@
             if (!ctx) throw new Error('无法创建视频渲染上下文');
 
             const stream = canvas.captureStream(fps);
+            const addedAudioTracks = [];
             try {
                 const mediaStream = typeof v.captureStream === 'function' ? v.captureStream() : null;
                 const audioTracks = mediaStream ? mediaStream.getAudioTracks() : [];
                 if (audioTracks && audioTracks.length) {
                     audioTracks.forEach((track) => {
-                        try { stream.addTrack(track); } catch (e) {}
+                        try {
+                            stream.addTrack(track);
+                            addedAudioTracks.push(track);
+                        } catch (e) {}
                     });
                 }
             } catch (e) {}
@@ -971,7 +981,7 @@
 
             await new Promise((resolve, reject) => {
                 const finishIfEnded = () => {
-                    if (v.ended || (duration - (v.currentTime || 0)) < 0.05) resolve();
+                    if (v.ended || (duration - (v.currentTime || 0)) < 0.08) resolve();
                 };
                 if (typeof v.requestVideoFrameCallback === 'function') {
                     const cb = (_now, meta) => {
@@ -980,7 +990,7 @@
                             const cur = Math.max(v.currentTime || 0, (meta && Number.isFinite(meta.mediaTime)) ? meta.mediaTime : 0);
                             const ratio = Math.max(0, Math.min(1, cur / duration));
                             if (onProgress) onProgress(ratio);
-                            if (v.ended || (duration - cur) < 0.05) {
+                            if (v.ended || (duration - cur) < 0.08) {
                                 resolve();
                                 return;
                             }
@@ -1008,20 +1018,81 @@
                 }
             });
 
+            try { v.pause(); } catch (e) {}
+            for (let i = 0; i < 4; i++) {
+                try {
+                    drawFrame();
+                } catch (e) {}
+                await new Promise((r) => setTimeout(r, 45));
+            }
+            for (const t of addedAudioTracks) {
+                try { t.stop(); } catch (e) {}
+            }
+            await new Promise((r) => setTimeout(r, 220));
+            try { if (typeof recorder.requestData === 'function') recorder.requestData(); } catch (e) {}
+            await new Promise((r) => setTimeout(r, 80));
+
             try { recorder.stop(); } catch (e) {}
             await stopped;
             URL.revokeObjectURL(srcUrl);
 
-            const blob = new Blob(chunks, { type: mime.includes('webm') ? 'video/webm' : mime });
+            let blob = new Blob(chunks, { type: mime.includes('webm') ? 'video/webm' : mime });
             if (!blob.size) throw new Error('浏览器本地编码结果为空');
             if ((wantedExt === 'mp4' || wantedExt === 'mov') && mime.includes('webm')) {
                 throw new Error(`当前浏览器在此环境下无法输出 ${wantedExt.toUpperCase()}，请用本地服务打开页面后使用 FFmpeg 导出`);
             }
+            blob = await repairNativeRecordedBlob(blob, mime, wantedExt);
             return {
                 blob,
                 ext: mime.includes('webm') ? 'webm' : (wantedExt === 'mov' ? 'mov' : 'mp4'),
                 warning: (blob.size / 1024) > maxKb
             };
+        }
+
+        async function repairNativeRecordedBlob(blob, mime, wantedExt) {
+            if (!blob || blob.size < 1024) return blob;
+            if (mime.includes('webm')) return blob;
+            if (!mime.includes('mp4') && !mime.includes('quicktime')) return blob;
+
+            const extOut = wantedExt === 'mov' ? 'mov' : 'mp4';
+            let ff = null;
+            const prevReason = String(ffmpegUnavailableReason || '');
+            const sabBlocked = prevReason.includes('SharedArrayBuffer');
+            if ((!ffmpegReady || !ffmpegInstance) && sabBlocked) return blob;
+
+            if (!ffmpegReady || !ffmpegInstance) {
+                ffmpegUnavailableReason = '';
+                try {
+                    ff = await ensureFfmpeg();
+                } catch (e) {
+                    if (prevReason) ffmpegUnavailableReason = prevReason;
+                    logDev('info', 'native remux skipped (FFmpeg)');
+                    return blob;
+                }
+            } else {
+                ff = ffmpegInstance;
+            }
+            const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+            const inName = `nr_in_${stamp}.${extOut}`;
+            const outName = `nr_out_${stamp}.${extOut}`;
+            try {
+                const buf = await blob.arrayBuffer();
+                ff.FS('writeFile', inName, new Uint8Array(buf));
+                await ff.run('-y', '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName);
+                const out = ff.FS('readFile', outName);
+                const repaired = new Blob([out.buffer], { type: extOut === 'mov' ? 'video/quicktime' : 'video/mp4' });
+                try { ff.FS('unlink', inName); } catch (e2) {}
+                try { ff.FS('unlink', outName); } catch (e2) {}
+                if (repaired.size > 512) {
+                    logDev('info', 'native recording remux OK (faststart)');
+                    return repaired;
+                }
+            } catch (e) {
+                logDev('warn', 'native recording remux failed', { err: String(e && e.message || e) });
+                try { ff.FS('unlink', inName); } catch (e2) {}
+                try { ff.FS('unlink', outName); } catch (e2) {}
+            }
+            return blob;
         }
 
         async function ensureFfmpeg() {
