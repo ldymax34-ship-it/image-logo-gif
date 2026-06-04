@@ -8,6 +8,7 @@
     <!-- 引入 JSZip 用于处理压缩包 -->
     <script src="assets/vendor/jszip.min.js"></script>
     <script src="assets/vendor/xlsx.full.min.js"></script>
+    <script src="assets/usage-tracker.js"></script>
     <style>
         :root {
             --klein-blue: #002FA7;
@@ -234,7 +235,14 @@
 <div class="container">
     <header>
         <div>
-            <h1 class="site-title">一站式渠道素材辅助工具</h1>
+            <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;">
+                <h1 class="site-title" style="margin:0;">一站式渠道素材辅助工具</h1>
+                <span style="font-size:13px;color:#888;font-weight:normal;">
+                    <a href="suggest.html?view=review" style="color:#888;text-decoration:none;">使用回顾</a>
+                    <span style="color:#ccc;margin:0 4px;">|</span>
+                    <a href="suggest.html?view=form" style="color:#888;text-decoration:none;">我要提建议</a>
+                </span>
+            </div>
             <p style="margin: 4px 0 0; color: #666; font-size: 13px;">一站式工具与提示词网站 V0.6</p>
             <h2>图片尺寸核对</h2>
             <p style="margin: 5px 0 0; color: #666;">本地运行 · 支持 ZIP/图片 · 自动智能匹配</p>
@@ -403,6 +411,7 @@
         const banner = document.getElementById('copySuccess');
         banner.style.display = 'flex';
         setTimeout(() => banner.style.display = 'none', 5000);
+        if (window.UsageTracker) UsageTracker.trackTestCopyAi();
     }
 
     // --- 配置文件处理 ---
@@ -726,6 +735,14 @@
                 <div>多余文件</div>
             </div>
         `;
+        if (window.UsageTracker) {
+            UsageTracker.trackTestVerify({
+                matchedCount,
+                errorCount,
+                missingCount,
+                extraCount: extraImages.length
+            });
+        }
     }
 
     function showModal(src) {

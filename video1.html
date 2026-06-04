@@ -203,7 +203,14 @@
                     <i data-lucide="shield-check" class="text-white w-6 h-6"></i>
                 </div>
                 <div>
-                    <h1 class="text-[28px] leading-none font-bold text-[#002FA7] tracking-wide">一站式渠道素材辅助工具</h1>
+                    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <h1 class="text-[28px] leading-none font-bold text-[#002FA7] tracking-wide">一站式渠道素材辅助工具</h1>
+                        <span class="text-[13px] text-gray-500 font-normal">
+                            <a href="suggest.html?view=review" class="hover:text-[#002FA7] underline-offset-2 hover:underline">使用回顾</a>
+                            <span class="text-gray-300 mx-1">|</span>
+                            <a href="suggest.html?view=form" class="hover:text-[#002FA7] underline-offset-2 hover:underline">我要提建议</a>
+                        </span>
+                    </div>
                     <p class="text-[13px] mt-1 text-gray-600">一站式工具与提示词网站 V0.6</p>
                     <p class="text-[22px] leading-none mt-2 text-[#1d2a57] font-semibold">批量修改视频规格</p>
                     <nav class="mt-2 flex gap-2 flex-wrap">
@@ -688,6 +695,7 @@
     </div>
 
     <script src="assets/builtin-logos/builtin-data.js"></script>
+    <script src="assets/usage-tracker.js"></script>
     <script>
         // --- 核心状态（未上传配置时为空；选图后若无配置会自动生成「原图 useNatural」）---
         let config = [];
@@ -2185,6 +2193,7 @@
                     configLoadedFromId = rid || null;
                     clearConfigDirty();
                     if (currentImageId) await selectImage(currentImageId);
+                    if (window.UsageTracker) UsageTracker.trackVideoConfigImported();
                 }
             } catch (err) {
                 console.error("配置解析失败:", err);
@@ -2217,6 +2226,7 @@
             if (list.length) {
                 renderSourceList();
                 if (!currentImageId && sourceImages.length > 0) selectImage(sourceImages[0].id);
+                if (window.UsageTracker) UsageTracker.trackVideoImported(list.length);
             }
         }
 
@@ -2236,6 +2246,7 @@
                 await refreshLogoLibraryRecords();
                 renderLogoLibraryGrid();
                 if (window.LogoWorkbench && window.LogoWorkbench.syncOpenModals) window.LogoWorkbench.syncOpenModals();
+                if (window.UsageTracker) UsageTracker.trackVideoLogosImported(list.length);
             }
         }
 
@@ -3233,6 +3244,7 @@
                 const oldText = btn ? btn.textContent : '';
                 if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
                 try {
+                    if (window.UsageTracker) UsageTracker.trackVideoQuickCrop();
                     const modal = document.getElementById('cropModal');
                     if (modal) modal.classList.add('hidden');
                     const cfg = config.find((c) => String(c.id) === String(this.activeConfig.id)) || this.activeConfig;
@@ -6054,6 +6066,7 @@
                     this.renderLayers();
                     this.updateCropSizeLabel();
                     this.clearLogoEditorDirty();
+                    if (window.UsageTracker) UsageTracker.trackVideoLogoSave();
                 });
             },
 
@@ -6094,6 +6107,7 @@
                         this.updateCropSizeLabel();
                     }
                     this.clearLogoEditorDirty();
+                    if (window.UsageTracker) UsageTracker.trackVideoLogoSave();
                 });
             },
 
@@ -6149,6 +6163,7 @@
                         }
                     }
                     this.clearLogoEditorDirty();
+                    if (window.UsageTracker) UsageTracker.trackVideoLogoSave();
                 });
             },
 
@@ -6975,6 +6990,7 @@
                     applyLogoFrame(img.url, { preserveCrop: false, live: false });
                 }
                 document.getElementById('logoLayoutModal').classList.remove('hidden');
+                if (window.UsageTracker) UsageTracker.trackVideoLogoEditor();
                 const rejoin = document.getElementById('logoRejoinGlobalBtn');
                 if (rejoin) {
                     if (img && img.logoIndependent) rejoin.classList.remove('hidden');

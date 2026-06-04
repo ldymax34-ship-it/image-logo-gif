@@ -213,6 +213,39 @@
             color: #b91c1c;
             border: 1px solid #fca5a5;
         }
+        .spec-fmt-select-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            vertical-align: middle;
+        }
+        .spec-fmt-select {
+            appearance: none;
+            -webkit-appearance: none;
+            padding: 2px 14px 2px 4px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            line-height: 1.2;
+        }
+        .spec-fmt-select:focus {
+            outline: none;
+            border-color: #002FA7;
+        }
+        .spec-fmt-chevron {
+            position: absolute;
+            right: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #6b7280;
+        }
+        .spec-name-input {
+            min-width: 0;
+            max-width: 100%;
+            field-sizing: content;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-gray-800 font-sans antialiased">
@@ -224,7 +257,14 @@
                     <i data-lucide="shield-check" class="text-white w-6 h-6"></i>
                 </div>
                 <div>
-                    <h1 class="text-[28px] leading-none font-bold text-[#002FA7] tracking-wide">一站式渠道素材辅助工具</h1>
+                    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <h1 class="text-[28px] leading-none font-bold text-[#002FA7] tracking-wide">一站式渠道素材辅助工具</h1>
+                        <span class="text-[13px] text-gray-500 font-normal">
+                            <a href="suggest.html?view=review" class="hover:text-[#002FA7] underline-offset-2 hover:underline">使用回顾</a>
+                            <span class="text-gray-300 mx-1">|</span>
+                            <a href="suggest.html?view=form" class="hover:text-[#002FA7] underline-offset-2 hover:underline">我要提建议</a>
+                        </span>
+                    </div>
                     <p class="text-[13px] mt-1 text-gray-600">一站式工具与提示词网站 V0.6</p>
                     <p class="text-[22px] leading-none mt-2 text-[#1d2a57] font-semibold">批量修改图片尺寸</p>
                     <nav class="mt-2 flex gap-2 flex-wrap">
@@ -745,10 +785,15 @@
             </div>
         </div>
 
-        <div id="createSpecModal" class="hidden fixed inset-0 z-[75] flex items-center justify-center p-4" style="background: rgba(15, 23, 42, 0.5);" onclick="if (event.target === this) document.getElementById('createSpecModal').classList.add('hidden')">
-            <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-5" onclick="event.stopPropagation()">
-                <h3 class="text-[20px] font-bold text-[#002FA7]">新建规格</h3>
-                <p class="text-[12px] text-gray-500 mt-1">仅作用于当前会话，保存后才写入配置库</p>
+        <div id="createSpecModal" class="hidden fixed inset-0 z-[75] flex items-center justify-center p-4" style="background: rgba(15, 23, 42, 0.5);">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-5">
+                <div class="flex justify-between items-start gap-2">
+                    <div class="min-w-0">
+                        <h3 class="text-[20px] font-bold text-[#002FA7]">新建规格</h3>
+                        <p class="text-[12px] text-gray-500 mt-1">仅作用于当前会话，保存后才写入配置库</p>
+                    </div>
+                    <button type="button" id="createSpecClose" class="shrink-0 p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100" title="关闭" aria-label="关闭"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
                 <div class="mt-4 space-y-3">
                     <div>
                         <label class="block text-[12px] text-gray-600 mb-0.5">描述名称</label>
@@ -787,6 +832,7 @@
     </div>
 
     <script src="assets/builtin-logos/builtin-data.js"></script>
+    <script src="assets/usage-tracker.js"></script>
     <script>
         // --- 核心状态（未上传配置时为空；选图后若无配置会自动生成「原图 useNatural」）---
         let config = [];
@@ -873,6 +919,11 @@
             }
         }
 
+        function closeCreateSpecModal() {
+            const m = document.getElementById('createSpecModal');
+            if (m) m.classList.add('hidden');
+        }
+
         function openCreateSpecModal() {
             const m = document.getElementById('createSpecModal');
             if (!m) return;
@@ -889,6 +940,7 @@
             const nEl = document.getElementById('createSpecName');
             if (nEl) nEl.value = '';
             m.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
         }
 
         function cleanCfgForStore(rows) {
@@ -1020,6 +1072,7 @@
             if (!banner) return;
             banner.classList.remove('hidden');
             setTimeout(() => banner.classList.add('hidden'), 5000);
+            if (window.UsageTracker) UsageTracker.trackPhotoCopyAi();
         }
 
         function canvasHasTransparency(ctx, width, height) {
@@ -1151,6 +1204,7 @@
                 clearConfigDirty();
                 if (currentImageId) await selectImage(currentImageId);
                 showImportToast('导入配置成功', true);
+                if (window.UsageTracker) UsageTracker.trackPhotoConfigImported();
                 return true;
             } catch (err) {
                 console.error("配置解析失败:", err);
@@ -1184,6 +1238,7 @@
                 renderSourceList();
                 if (!currentImageId && sourceImages.length > 0) selectImage(sourceImages[0].id);
                 showImportToast(list.length > 1 ? `导入 ${list.length} 张图片成功` : '导入图片成功', true);
+                if (window.UsageTracker) UsageTracker.trackPhotoImagesImported(list.length);
             }
             if (rejected.length) showImportFormatFail('image', rejected);
             return list.length;
@@ -1208,6 +1263,7 @@
                 renderLogoLibraryGrid();
                 if (window.LogoWorkbench && window.LogoWorkbench.syncOpenModals) window.LogoWorkbench.syncOpenModals();
                 showImportToast(list.length > 1 ? `导入 ${list.length} 个 Logo 成功` : '导入 Logo 成功', true);
+                if (window.UsageTracker) UsageTracker.trackPhotoLogosImported(list.length);
             }
             if (rejected.length) showImportFormatFail('logo', rejected);
             return list.length;
@@ -2193,6 +2249,7 @@
                 const cropLogoHost = document.getElementById('cropModalLogoLayers');
                 if (cropLogoHost) cropLogoHost.innerHTML = '';
                 document.getElementById('cropModal').classList.add('hidden');
+                if (window.UsageTracker) UsageTracker.trackPhotoQuickCrop();
             }
         };
         window.Modal = Modal;
@@ -2547,13 +2604,30 @@
             grid.dataset.delegationBound = '1';
             grid.addEventListener('change', (e) => {
                 const t = e.target;
-                if (!t || t.tagName !== 'INPUT' || !t.getAttribute('data-spec-field')) return;
-                const field = t.getAttribute('data-spec-field');
+                const field = t && t.getAttribute('data-spec-field');
+                if (!field) return;
+                const tag = t.tagName;
+                if (tag !== 'INPUT' && tag !== 'SELECT') return;
                 const card = t.closest('[data-cfg-card]');
                 if (!card) return;
                 const cfgId = card.getAttribute('data-cfg-card');
                 const cfg = config.find((c) => String(c.id) === String(cfgId));
                 if (!cfg) return;
+                if (field === 'name') {
+                    const v = (t.value || '').trim() || '未命名';
+                    cfg.name = v;
+                    t.value = v;
+                    markConfigDirty();
+                    renderResults();
+                    return;
+                }
+                if (field === 'format') {
+                    cfg.format = normalizeFormat(t.value);
+                    t.value = cfg.format;
+                    markConfigDirty();
+                    reprocessSpecEverywhere(cfgId);
+                    return;
+                }
                 if (field === 'maxSize') {
                     const n = Math.max(1, parseInt(t.value, 10) || 1);
                     cfg.maxSize = n;
@@ -2709,9 +2783,15 @@
                 return `
                     <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group" data-cfg-card="${escapeHtml(String(cfg.id))}">
                         <div class="bg-gray-50 border-b px-4 py-2 flex justify-between items-center gap-2">
-                            <span class="text-xs font-bold text-gray-600">${escapeHtml(cfg.name || '规格')}</span>
+                            <input type="text" class="spec-name-input flex-1 min-w-0 text-xs font-bold text-gray-600 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-[#002FA7] focus:outline-none px-0.5 py-0.5" data-spec-field="name" maxlength="32" title="点击修改规格名称" value="${escapeHtml(String(cfg.name || '规格'))}">
                             <div class="flex items-center gap-1 shrink-0">
-                                <span class="text-[9px] font-bold text-gray-500 uppercase">${cfg.format}</span>
+                                <div class="spec-fmt-select-wrap" title="输出格式">
+                                    <select class="spec-fmt-select text-[9px] font-bold text-gray-600 uppercase" data-spec-field="format" aria-label="输出格式">
+                                        <option value="jpg"${cfg.format === 'png' ? '' : ' selected'}>JPG</option>
+                                        <option value="png"${cfg.format === 'png' ? ' selected' : ''}>PNG</option>
+                                    </select>
+                                    <i data-lucide="chevron-down" class="spec-fmt-chevron w-2.5 h-2.5"></i>
+                                </div>
                                 <span class="text-[9px] text-gray-400">/</span>
                                 <input type="number" min="1" step="1" class="spec-num-input w-12 text-[9px] border border-gray-200 rounded px-0.5 py-0.5 text-right" data-spec-field="maxSize" data-cfg-id="${escapeHtml(String(cfg.id))}" value="${maxKb}">
                                 <span class="text-[9px] text-gray-500">KB</span>
@@ -4739,6 +4819,7 @@
                 this.renderPlacementList();
                 this.renderLayers();
                 this.clearLogoEditorDirty();
+                if (window.UsageTracker) UsageTracker.trackPhotoLogoSave();
             },
 
             async saveLogoEditorCurrentImageAllSpecs() {
@@ -4767,6 +4848,7 @@
                     this.renderLayers();
                 }
                 this.clearLogoEditorDirty();
+                if (window.UsageTracker) UsageTracker.trackPhotoLogoSave();
             },
 
             async saveLogoEditorAllImages() {
@@ -4799,6 +4881,7 @@
                     }
                 }
                 this.clearLogoEditorDirty();
+                if (window.UsageTracker) UsageTracker.trackPhotoLogoSave();
             },
 
             layoutLogoModalCropFromResults() {
@@ -6113,6 +6196,7 @@
                 if (ovEl) ovEl.src = img.url;
                 /* 须先于 refreshPreview/renderLayers：否则 syncLogoTextDomToPlacements 在 display:none 下读 innerText 会清空换行 */
                 document.getElementById('logoLayoutModal').classList.remove('hidden');
+                if (window.UsageTracker) UsageTracker.trackPhotoLogoEditor();
                 imgEl.onload = () => {
                     LogoModalCrop.syncFromImgCfg(img, this.getPreviewCfg());
                     refreshPreview();
@@ -6450,6 +6534,7 @@
             const closeB = document.getElementById('configDirtyCloseBtn');
             const mod = document.getElementById('createSpecModal');
             const cancel = document.getElementById('createSpecCancel');
+            const closeX = document.getElementById('createSpecClose');
             const ok = document.getElementById('createSpecOk');
             if (saveAs) {
                 saveAs.onclick = async () => {
@@ -6460,6 +6545,7 @@
                     configLoadedFromId = id;
                     try { configRecords = await configGetAll(); } catch (e) {}
                     clearConfigDirty();
+                    if (window.UsageTracker) UsageTracker.trackPhotoConfigSaved();
                 };
             }
             if (over) {
@@ -6470,6 +6556,7 @@
                     }
                     if (!confirm('用当前规则覆盖该条库内配置？')) return;
                     await updateConfigRecordById(configLoadedFromId);
+                    if (window.UsageTracker) UsageTracker.trackPhotoConfigSaved();
                 };
             }
             if (closeB) {
@@ -6477,11 +6564,8 @@
                     clearConfigSessionDirtyUI();
                 };
             }
-            if (cancel && mod) {
-                cancel.onclick = () => {
-                    mod.classList.add('hidden');
-                };
-            }
+            if (closeX) closeX.onclick = () => closeCreateSpecModal();
+            if (cancel) cancel.onclick = () => closeCreateSpecModal();
             if (ok && mod) {
                 ok.onclick = async () => {
                     const name = (document.getElementById('createSpecName').value || '').trim() || '新规格';
@@ -6492,7 +6576,8 @@
                     const newCfg = { id: nextConfigId(), name, format: fmt, width: w, height: h, maxSize, useNatural: false };
                     config.push(newCfg);
                     markConfigDirty();
-                    mod.classList.add('hidden');
+                    if (window.UsageTracker) UsageTracker.trackPhotoSpecCreated();
+                    closeCreateSpecModal();
                     await reprocessSpecEverywhere(newCfg.id);
                     renderSourceList();
                 };
