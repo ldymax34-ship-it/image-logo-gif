@@ -156,6 +156,63 @@
             -moz-appearance: textfield;
             appearance: textfield;
         }
+        .drop-zone-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.4;
+            pointer-events: none;
+            border: 2px dashed transparent;
+            border-radius: inherit;
+        }
+        .drop-zone-overlay.drop-overlay-config {
+            background: rgba(237, 243, 255, 0.92);
+            border-color: #002FA7;
+            color: #002FA7;
+        }
+        .drop-zone-overlay.drop-overlay-image {
+            background: rgba(255, 243, 224, 0.92);
+            border-color: #FF6B00;
+            color: #c2410c;
+        }
+        .drop-zone-overlay.drop-overlay-logo {
+            background: rgba(237, 243, 255, 0.92);
+            border-color: #002FA7;
+            color: #002FA7;
+        }
+        .import-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 28px;
+            transform: translateX(-50%);
+            z-index: 80;
+            max-width: min(92vw, 520px);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.45;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+            pointer-events: none;
+        }
+        .import-toast-ok {
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #6ee7b7;
+        }
+        .import-toast-err {
+            background: #fef2f2;
+            color: #b91c1c;
+            border: 1px solid #fca5a5;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-gray-800 font-sans antialiased">
@@ -208,7 +265,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
+                <div id="configDropZone" class="relative flex flex-wrap items-center gap-2 rounded-lg px-1 py-0.5 transition-colors">
                     <label class="flex items-center px-4 py-2 text-sm text-white bg-[#002FA7] rounded hover:bg-blue-800 cursor-pointer transition-colors shadow-sm">
                         <i data-lucide="file-up" class="w-4 h-4 mr-2"></i> 上传配置 (Excel/TXT)
                         <input type="file" id="configInput" accept=".xlsx, .xls, .txt" class="hidden">
@@ -216,6 +273,7 @@
                     <button type="button" id="openConfigModal" class="flex items-center px-4 py-2 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors shadow-sm">
                         <i data-lucide="archive" class="w-4 h-4 mr-2"></i> 导入以往配置
                     </button>
+                    <div id="configDropOverlay" class="drop-zone-overlay drop-overlay-config hidden rounded-lg">将配置拖入该区域上传</div>
                 </div>
                 <button id="downloadAll" class="flex items-center px-4 py-2 text-sm text-white bg-[#FF6B00] rounded hover:bg-[#e66000] transition-colors shadow-sm">
                     <i data-lucide="download-cloud" class="w-4 h-4 mr-2"></i> 导出全部 (ZIP)
@@ -223,8 +281,8 @@
                 </div>
             </div>
         </header>
-        <div id="configDropHint" class="hidden mx-6 mt-3 px-4 py-3 border-2 border-dashed border-[#002FA7] bg-blue-50 text-[#002FA7] text-sm rounded">
-            将配置文件拖到这里（支持 TXT / XLSX / XLS）
+        <div id="configDropHint" class="hidden mx-6 mt-3 px-4 py-3 border-2 border-dashed border-[#002FA7] bg-blue-50 text-[#002FA7] text-[18px] font-semibold rounded">
+            将配置拖入该区域上传（支持 TXT / XLSX / XLS）
         </div>
         <div id="copySuccess" class="hidden mx-6 mt-3 px-4 py-3 bg-amber-50 border-l-4 border-[#FF6B00] text-sm text-gray-700 rounded">
             指令已复制！你可以将其粘贴给 AI (如飞书的知识问答)，让它帮你把杂乱的需求转换为标准 TXT 格式。
@@ -233,7 +291,7 @@
         <!-- 主内容区 -->
         <main class="flex-1 flex overflow-hidden">
             <!-- 侧边栏 -->
-            <aside id="imageDropZone" class="w-64 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden transition-colors">
+            <aside id="imageDropZone" class="relative w-64 bg-white border-r border-gray-200 flex flex-col h-full overflow-hidden transition-colors">
                 <div class="p-4 border-b border-gray-100 bg-gray-50 space-y-2">
                     <label class="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white bg-[#FF6B00] rounded cursor-pointer hover:bg-[#e66000] transition-colors shadow-sm">
                         <i data-lucide="image-plus" class="w-4 h-4 mr-2"></i> 批量导入本地图片
@@ -246,6 +304,7 @@
                 <div id="sourceImageList" class="flex-1 overflow-y-auto p-3 space-y-3">
                     <!-- 图片列表动态插入 -->
                 </div>
+                <div id="imageDropOverlay" class="drop-zone-overlay drop-overlay-image hidden">将图片拖入该区域上传</div>
             </aside>
 
             <!-- 工作区 -->
@@ -282,7 +341,7 @@
             </section>
 
             <!-- 右侧 Logo 栏：左侧图片、右侧 Logo -->
-            <aside id="logoDropZone" class="w-64 shrink-0 bg-white border-l border-gray-200 flex flex-col h-full overflow-hidden transition-colors">
+            <aside id="logoDropZone" class="relative w-64 shrink-0 bg-white border-l border-gray-200 flex flex-col h-full overflow-hidden transition-colors">
                 <div class="p-4 border-b border-gray-100 bg-gray-50 space-y-2">
                     <p class="text-xs font-semibold text-[#002FA7]">Logo 素材</p>
                     <label class="flex items-center justify-center w-full px-4 py-3 text-sm font-medium text-white bg-[#FF6B00] rounded cursor-pointer hover:bg-[#e66000] transition-colors shadow-sm">
@@ -298,6 +357,7 @@
                     <p class="text-[11px] text-gray-500">已保存的素材（点击「水印 / Logo 排版」叠到图上）</p>
                 </div>
                 <div id="logoRailGrid" class="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2 content-start min-h-0"></div>
+                <div id="logoDropOverlay" class="drop-zone-overlay drop-overlay-logo hidden">将 Logo 图片拖入该区域上传</div>
             </aside>
         </main>
 
@@ -974,16 +1034,99 @@
             return false;
         }
 
+        function isConfigMimeType(mime) {
+            const t = String(mime || '').toLowerCase();
+            if (!t) return false;
+            if (t === 'text/plain' || t === 'text/csv') return true;
+            if (t.includes('spreadsheet') || t.includes('excel') || t === 'application/vnd.ms-excel') return true;
+            return false;
+        }
+
         function getDropFileKind(file) {
             if (!file) return '';
             const name = String(file.name || '').toLowerCase();
-            if (/\.(txt|xlsx|xls|csv)$/i.test(name)) return 'config';
-            if ((file.type || '').startsWith('image/') || /\.(png|jpg|jpeg|webp)$/i.test(name)) return 'image';
+            const mime = String(file.type || '').toLowerCase();
+            if (/\.(txt|xlsx|xls|csv)$/i.test(name) || isConfigMimeType(mime)) return 'config';
+            if (mime.startsWith('image/') || /\.(png|jpg|jpeg|webp|gif|bmp)$/i.test(name)) return 'image';
             return '';
         }
 
+        /** 拖拽过程中 files 常为空，需结合 items 判断类型（HTML5 DnD 惯例） */
+        function analyzeDragDataTransfer(dt) {
+            const out = { hasConfig: false, hasImage: false, hasFileItems: false };
+            if (!dt) return out;
+            const files = Array.from(dt.files || []);
+            for (const f of files) {
+                out.hasFileItems = true;
+                const k = getDropFileKind(f);
+                if (k === 'config') out.hasConfig = true;
+                else if (k === 'image') out.hasImage = true;
+            }
+            if (out.hasConfig || out.hasImage) return out;
+            const items = dt.items;
+            if (!items || !items.length) return out;
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                if (it.kind !== 'file') continue;
+                out.hasFileItems = true;
+                const mime = (it.type || '').toLowerCase();
+                if (mime.startsWith('image/')) {
+                    out.hasImage = true;
+                    continue;
+                }
+                if (isConfigMimeType(mime)) {
+                    out.hasConfig = true;
+                    continue;
+                }
+                if (typeof it.getAsFile === 'function') {
+                    const f = it.getAsFile();
+                    if (!f) continue;
+                    const k = getDropFileKind(f);
+                    if (k === 'config') out.hasConfig = true;
+                    else if (k === 'image') out.hasImage = true;
+                }
+            }
+            return out;
+        }
+
+        function dtHasFilesType(dt) {
+            return !!(dt && Array.from(dt.types || []).includes('Files'));
+        }
+
+        const IMPORT_ZONE_FORMATS = {
+            config: { label: '配置', exts: 'TXT、XLSX、XLS' },
+            image: { label: '图片', exts: 'PNG、JPG、JPEG、WebP' },
+            logo: { label: 'Logo', exts: 'PNG、JPG、JPEG、WebP' }
+        };
+        let importToastHideTimer = null;
+
+        function showImportToast(message, ok = true, durationMs) {
+            const ms = durationMs != null ? durationMs : (ok ? 1000 : 2200);
+            let el = document.getElementById('importToast');
+            if (!el) return;
+            if (importToastHideTimer) clearTimeout(importToastHideTimer);
+            el.textContent = message;
+            el.className = 'import-toast ' + (ok ? 'import-toast-ok' : 'import-toast-err');
+            importToastHideTimer = setTimeout(() => {
+                el.classList.add('hidden');
+                importToastHideTimer = null;
+            }, ms);
+        }
+
+        function showImportFormatFail(zoneKey, files) {
+            const z = IMPORT_ZONE_FORMATS[zoneKey] || IMPORT_ZONE_FORMATS.image;
+            const list = Array.from(files || []).filter(Boolean);
+            if (!list.length) return;
+            const nameHint = list.length === 1 ? list[0].name : `${list.length} 个文件`;
+            showImportToast(`导入失败，${nameHint}：${z.label}只支持 ${z.exts} 格式的文件`, false);
+        }
+
         async function importConfigFile(file) {
-            if (!file) return;
+            if (!file) return false;
+            if (getDropFileKind(file) !== 'config') {
+                showImportFormatFail('config', [file]);
+                return false;
+            }
             try {
                 const lowerName = file.name.toLowerCase();
                 let newCfg = [];
@@ -995,26 +1138,31 @@
                     newCfg = parseExcelConfigArrayBuffer(buffer);
                 }
                 if (!newCfg.length) {
-                    alert('未读取到有效配置');
-                } else {
-                    config = newCfg;
-                    sourceImages.forEach(img => img.results = {});
-                    const cfgBaseName = file.name.replace(/\.[^/.]+$/, '');
-                    const folderInp = document.getElementById('globalFolderName');
-                    if (folderInp) folderInp.value = cfgBaseName;
-                    const rid = await saveConfigRecord(cfgBaseName, lowerName.endsWith('.txt') ? 'txt' : 'xlsx', newCfg);
-                    configLoadedFromId = rid || null;
-                    clearConfigDirty();
-                    if (currentImageId) await selectImage(currentImageId);
+                    showImportToast('导入失败，未读取到有效配置', false);
+                    return false;
                 }
+                config = newCfg;
+                sourceImages.forEach(img => img.results = {});
+                const cfgBaseName = file.name.replace(/\.[^/.]+$/, '');
+                const folderInp = document.getElementById('globalFolderName');
+                if (folderInp) folderInp.value = cfgBaseName;
+                const rid = await saveConfigRecord(cfgBaseName, lowerName.endsWith('.txt') ? 'txt' : 'xlsx', newCfg);
+                configLoadedFromId = rid || null;
+                clearConfigDirty();
+                if (currentImageId) await selectImage(currentImageId);
+                showImportToast('导入配置成功', true);
+                return true;
             } catch (err) {
                 console.error("配置解析失败:", err);
-                alert('配置解析失败，请检查文件格式');
+                showImportToast('导入失败，配置解析失败，请检查是否为 TXT、XLSX、XLS 格式', false);
+                return false;
             }
         }
 
         async function importSourceImages(files) {
-            const list = Array.from(files || []).filter((f) => getDropFileKind(f) === 'image');
+            const arr = Array.from(files || []);
+            const list = arr.filter((f) => getDropFileKind(f) === 'image');
+            const rejected = arr.filter((f) => getDropFileKind(f) !== 'image');
             for (const file of list) {
                 try {
                     await gallerySaveFromFile(file);
@@ -1035,11 +1183,16 @@
             if (list.length) {
                 renderSourceList();
                 if (!currentImageId && sourceImages.length > 0) selectImage(sourceImages[0].id);
+                showImportToast(list.length > 1 ? `导入 ${list.length} 张图片成功` : '导入图片成功', true);
             }
+            if (rejected.length) showImportFormatFail('image', rejected);
+            return list.length;
         }
 
         async function importLogoFiles(files) {
-            const list = Array.from(files || []).filter((f) => getDropFileKind(f) === 'image');
+            const arr = Array.from(files || []);
+            const list = arr.filter((f) => getDropFileKind(f) === 'image');
+            const rejected = arr.filter((f) => getDropFileKind(f) !== 'image');
             for (const f of list) {
                 const buf = await f.arrayBuffer();
                 await logoPut({
@@ -1054,77 +1207,147 @@
                 await refreshLogoLibraryRecords();
                 renderLogoLibraryGrid();
                 if (window.LogoWorkbench && window.LogoWorkbench.syncOpenModals) window.LogoWorkbench.syncOpenModals();
+                showImportToast(list.length > 1 ? `导入 ${list.length} 个 Logo 成功` : '导入 Logo 成功', true);
             }
+            if (rejected.length) showImportFormatFail('logo', rejected);
+            return list.length;
         }
 
         function initDragImport() {
             const configHint = document.getElementById('configDropHint');
+            const configZone = document.getElementById('configDropZone');
+            const configOverlay = document.getElementById('configDropOverlay');
             const imageZone = document.getElementById('imageDropZone');
+            const imageOverlay = document.getElementById('imageDropOverlay');
             const logoZone = document.getElementById('logoDropZone');
-            if (!configHint || !imageZone || !logoZone) return;
+            const logoOverlay = document.getElementById('logoDropOverlay');
+            if (!configHint || !configZone || !imageZone || !logoZone) return;
             let dragDepth = 0;
+
+            const setOverlay = (el, on) => {
+                if (!el) return;
+                el.classList.toggle('hidden', !on);
+            };
 
             const resetUi = () => {
                 configHint.classList.add('hidden');
+                setOverlay(configOverlay, false);
+                setOverlay(imageOverlay, false);
+                setOverlay(logoOverlay, false);
+                configZone.classList.remove('ring-2', 'ring-[#002FA7]', 'bg-blue-50');
                 imageZone.classList.remove('ring-2', 'ring-[#FF6B00]', 'bg-orange-50');
                 logoZone.classList.remove('ring-2', 'ring-[#002FA7]', 'bg-blue-50');
             };
-            const showByFiles = (files) => {
-                const arr = Array.from(files || []);
-                const hasConfig = arr.some((f) => getDropFileKind(f) === 'config');
-                const hasImage = arr.some((f) => getDropFileKind(f) === 'image');
-                configHint.classList.toggle('hidden', !hasConfig);
-                if (hasImage) {
-                    imageZone.classList.add('ring-2', 'ring-[#FF6B00]', 'bg-orange-50');
-                    logoZone.classList.add('ring-2', 'ring-[#002FA7]', 'bg-blue-50');
-                } else {
-                    imageZone.classList.remove('ring-2', 'ring-[#FF6B00]', 'bg-orange-50');
-                    logoZone.classList.remove('ring-2', 'ring-[#002FA7]', 'bg-blue-50');
+
+            const showDragUi = (dt) => {
+                const { hasConfig, hasImage, hasFileItems } = analyzeDragDataTransfer(dt);
+                const filesTypeOnly = dtHasFilesType(dt) && !hasFileItems;
+                const showConfig = hasConfig || filesTypeOnly || (hasFileItems && !hasImage);
+                const showImage = hasImage || filesTypeOnly || (hasFileItems && !hasConfig);
+                configHint.classList.toggle('hidden', !showConfig);
+                setOverlay(configOverlay, showConfig);
+                setOverlay(imageOverlay, showImage);
+                setOverlay(logoOverlay, showImage);
+                configZone.classList.toggle('ring-2', showConfig);
+                configZone.classList.toggle('ring-[#002FA7]', showConfig);
+                configZone.classList.toggle('bg-blue-50', showConfig);
+                imageZone.classList.toggle('ring-2', showImage);
+                imageZone.classList.toggle('ring-[#FF6B00]', showImage);
+                imageZone.classList.toggle('bg-orange-50', showImage);
+                logoZone.classList.toggle('ring-2', showImage);
+                logoZone.classList.toggle('ring-[#002FA7]', showImage);
+                logoZone.classList.toggle('bg-blue-50', showImage);
+            };
+
+            const onConfigDrop = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragDepth = 0;
+                resetUi();
+                const files = Array.from(e.dataTransfer.files || []);
+                const cfg = files.find((f) => getDropFileKind(f) === 'config');
+                if (cfg) await importConfigFile(cfg);
+                else if (files.length) showImportFormatFail('config', files);
+            };
+
+            const onImageDrop = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragDepth = 0;
+                resetUi();
+                const files = Array.from(e.dataTransfer.files || []);
+                const cfg = files.find((f) => getDropFileKind(f) === 'config');
+                if (cfg && !files.some((f) => getDropFileKind(f) === 'image')) {
+                    await importConfigFile(cfg);
+                    return;
                 }
+                await importSourceImages(files);
+            };
+
+            const onLogoDrop = async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragDepth = 0;
+                resetUi();
+                const files = Array.from(e.dataTransfer.files || []);
+                const cfg = files.find((f) => getDropFileKind(f) === 'config');
+                if (cfg && !files.some((f) => getDropFileKind(f) === 'image')) {
+                    await importConfigFile(cfg);
+                    return;
+                }
+                await importLogoFiles(files);
+            };
+
+            const allowDrop = (e) => {
+                if (!dtHasFilesType(e.dataTransfer)) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
             };
 
             document.addEventListener('dragenter', (e) => {
-                if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+                if (!dtHasFilesType(e.dataTransfer)) return;
                 dragDepth += 1;
-                showByFiles(e.dataTransfer.files);
+                showDragUi(e.dataTransfer);
             });
             document.addEventListener('dragover', (e) => {
-                if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
-                e.preventDefault();
-                showByFiles(e.dataTransfer.files);
+                if (!dtHasFilesType(e.dataTransfer)) return;
+                allowDrop(e);
+                showDragUi(e.dataTransfer);
             });
             document.addEventListener('dragleave', (e) => {
-                if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+                if (!dtHasFilesType(e.dataTransfer)) return;
                 dragDepth = Math.max(0, dragDepth - 1);
                 if (dragDepth === 0) resetUi();
             });
-            document.addEventListener('drop', (e) => {
-                if (!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'))) return;
+            document.addEventListener('drop', async (e) => {
+                if (!dtHasFilesType(e.dataTransfer)) return;
+                if (e.target.closest('#configDropZone, #configDropHint, #imageDropZone, #logoDropZone')) return;
                 e.preventDefault();
                 dragDepth = 0;
                 resetUi();
-            });
-
-            configHint.addEventListener('dragover', (e) => e.preventDefault());
-            configHint.addEventListener('drop', async (e) => {
-                e.preventDefault();
                 const files = Array.from(e.dataTransfer.files || []);
                 const cfg = files.find((f) => getDropFileKind(f) === 'config');
-                if (!cfg) return;
-                await importConfigFile(cfg);
+                const imgs = files.filter((f) => getDropFileKind(f) === 'image');
+                const bad = files.filter((f) => !getDropFileKind(f));
+                if (cfg) await importConfigFile(cfg);
+                if (imgs.length) await importSourceImages(imgs);
+                if (!cfg && !imgs.length && bad.length) {
+                    showImportToast('导入失败：本页只支持配置文件（TXT、XLSX、XLS）或图片（PNG、JPG、JPEG、WebP）', false);
+                } else if (bad.length && (cfg || imgs.length)) {
+                    showImportFormatFail('image', bad);
+                }
             });
 
-            imageZone.addEventListener('dragover', (e) => e.preventDefault());
-            imageZone.addEventListener('drop', async (e) => {
-                e.preventDefault();
-                await importSourceImages(Array.from(e.dataTransfer.files || []));
+            [configHint, configZone].forEach((el) => {
+                el.addEventListener('dragover', allowDrop);
+                el.addEventListener('drop', onConfigDrop);
             });
 
-            logoZone.addEventListener('dragover', (e) => e.preventDefault());
-            logoZone.addEventListener('drop', async (e) => {
-                e.preventDefault();
-                await importLogoFiles(Array.from(e.dataTransfer.files || []));
-            });
+            imageZone.addEventListener('dragover', allowDrop);
+            imageZone.addEventListener('drop', onImageDrop);
+
+            logoZone.addEventListener('dragover', allowDrop);
+            logoZone.addEventListener('drop', onLogoDrop);
         }
 
         function rebuildLogoRecordMap() {
@@ -6499,5 +6722,6 @@
             setupPWA();
         };
     </script>
+    <div id="importToast" class="import-toast hidden" role="status" aria-live="polite"></div>
 </body>
 </html>
