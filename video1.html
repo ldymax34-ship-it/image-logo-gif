@@ -5,6 +5,97 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' blob:; worker-src 'self' blob:; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'">
     <title>视频批量处理工作站 - 修复版</title>
+    <!-- file:// 下 @ffmpeg/ffmpeg 会用 fetch() 加载本地 wasm/worker；Chrome 等对 file 的 fetch 常失败。
+         离线/不落盘服务器的保密场景只允许 file 打开时：用 XHR + Response 接住同目录资源（仅拦截 URL 以 file: 开头的请求）。 -->
+    <script>
+        (function fileOriginFetchBridge() {
+            if (!/^file:$/i.test(location.protocol || '')) return;
+            const realFetch = window.fetch.bind(window);
+            function toAbsUrl(resourceUrl) {
+                try {
+                    return new URL(resourceUrl, window.location.href).href;
+                } catch (e) {
+                    return resourceUrl;
+                }
+            }
+            /** Chrome 对 file:// 的异步 XHR 常直接 onerror；Emscripten 主线程回退用法是同步 XHR + arraybuffer */
+            function xhrFileToResponse(absUrl) {
+                return new Promise((resolve, reject) => {
+                    try {
+                        const sx = new XMLHttpRequest();
+                        sx.open('GET', absUrl, false);
+                        sx.responseType = 'arraybuffer';
+                        sx.send(null);
+                        const st = sx.status;
+                        const ok = (st >= 200 && st < 300) || st === 0;
+                        const ab = sx.response;
+                        const len = ab && typeof ab.byteLength === 'number' ? ab.byteLength : 0;
+                        if (ok && len > 0) {
+                            const blob = new Blob([ab]);
+                            const headers = new Headers();
+                            headers.set('Content-Length', String(len));
+                            resolve(new Response(blob, { status: st === 0 ? 200 : st, statusText: 'OK', headers }));
+                            return;
+                        }
+                    } catch (eSync) {
+                        /* 继续走异步 */
+                    }
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', absUrl, true);
+                    xhr.responseType = 'arraybuffer';
+                    xhr.onerror = () => reject(new TypeError('[file-fetch-bridge] async onerror rs=' + xhr.readyState + ' st=' + xhr.status + ' ' + absUrl));
+                    xhr.onload = () => {
+                        const st = xhr.status;
+                        const ok = (st >= 200 && st < 300) || st === 0;
+                        const ab = xhr.response;
+                        const len = ab && typeof ab.byteLength === 'number' ? ab.byteLength : 0;
+                        if (!ok || len < 1) {
+                            reject(new TypeError('[file-fetch-bridge] async bad status ' + st + ' rs=' + xhr.readyState + ' len=' + len + ' ' + absUrl));
+                            return;
+                        }
+                        const blob = new Blob([ab]);
+                        const headers = new Headers();
+                        headers.set('Content-Length', String(len));
+                        resolve(new Response(blob, {
+                            status: st === 0 ? 200 : st,
+                            statusText: st === 0 ? 'OK' : xhr.statusText,
+                            headers
+                        }));
+                    };
+                    xhr.send(null);
+                });
+            }
+            /** @ffmpeg/ffmpeg 包内写死了占位 base（…/home/jeromewu/repos/ffmpeg.wasm/…），相对 corePath 会被拼成不存在的路径 */
+            function rewriteFfmpegBogusFileUrl(absHref) {
+                if (!absHref || !/^file:/i.test(absHref)) return absHref;
+                try {
+                    const bad = absHref.includes('jeromewu') || absHref.includes('/repos/ffmpeg.wasm/src/browser');
+                    if (!bad) return absHref;
+                    const leaf = decodeURIComponent(String(absHref).replace(/\\/g, '/')).split('/').pop().split('?')[0] || '';
+                    if (!/^ffmpeg-core/i.test(leaf)) return absHref;
+                    return new URL('assets/vendor/' + leaf, window.location.href).href;
+                } catch (e3) {
+                    return absHref;
+                }
+            }
+            window.fetch = function patchedFetch(input, init) {
+                let urlStr = '';
+                try {
+                    if (typeof input === 'string') urlStr = input;
+                    else if (input && typeof Request !== 'undefined' && input instanceof Request) urlStr = input.url || '';
+                    else if (input && input.url) urlStr = input.url;
+                } catch (e2) {}
+                let abs = urlStr ? toAbsUrl(urlStr) : '';
+                const before = abs;
+                abs = rewriteFfmpegBogusFileUrl(abs);
+                if (before !== abs) {
+                    try { console.warn('[file-fetch-bridge] rewrite ffmpeg vendor URL', before, '->', abs); } catch (e4) {}
+                }
+                if (abs && /^file:/i.test(abs)) return xhrFileToResponse(abs);
+                return realFetch(input, init);
+            };
+        })();
+    </script>
     <script src="assets/vendor/tailwindcss.cdn.js"></script>
     <script src="assets/vendor/lucide.min.js"></script>
     <script src="assets/vendor/xlsx.full.min.js"></script>
@@ -108,12 +199,12 @@
         <!-- 顶部导航 -->
         <header class="bg-white border-b-[3px] border-b-[#002FA7] px-6 py-4 flex justify-between items-start z-10">
             <div class="flex items-center space-x-3">
-                <div id="appBadge" class="w-10 h-10 rounded bg-[#002FA7] flex items-center justify-center" title="双击可导出开发日志">
+                <div id="appBadge" class="w-10 h-10 rounded bg-[#002FA7] flex items-center justify-center" title="双击导出开发日志；音视频排查请检索 [Vdiag] 条目">
                     <i data-lucide="shield-check" class="text-white w-6 h-6"></i>
                 </div>
                 <div>
                     <h1 class="text-[28px] leading-none font-bold text-[#002FA7] tracking-wide">一站式渠道素材辅助工具</h1>
-                    <p class="text-[13px] mt-1 text-gray-600">一站式工具与提示词网站 V0.4.0.0</p>
+                    <p class="text-[13px] mt-1 text-gray-600">一站式工具与提示词网站 V0.6</p>
                     <p class="text-[22px] leading-none mt-2 text-[#1d2a57] font-semibold">批量修改视频规格</p>
                     <nav class="mt-2 flex gap-2 flex-wrap">
                         
@@ -609,7 +700,6 @@
         let ffmpegReady = false;
         let ffmpegLoadPromise = null;
         let ffmpegUnavailableReason = '';
-        const FFMPEG_CORE_ST = 'assets/vendor/ffmpeg-core.js';
         let devLogs = [];
         /** 从配置库/文件导入的当前配置记录 id，用于“覆盖原配置” */
         let configLoadedFromId = null;
@@ -628,6 +718,68 @@
             if (devLogs.length > 2000) devLogs = devLogs.slice(-1200);
             const fn = level === 'error' ? console.error : (level === 'warn' ? console.warn : console.log);
             try { fn('[video1]', message, payload || ''); } catch (e) {}
+        }
+
+        /** ------- 音视频问题排查日志（前缀 [Vdiag]），导出开发日志后发回即可 ------- */
+        function diagMediaTimeRanges(media) {
+            const out = [];
+            if (!media || typeof media.length !== 'number') return out;
+            try {
+                for (let i = 0; i < media.length; i++) out.push({ start: media.start(i), end: media.end(i) });
+            } catch (e) {}
+            return out;
+        }
+
+        function diagVideoElementSnapshot(label, videoEl, extra = null) {
+            if (!videoEl) {
+                logDev('warn', `[Vdiag] ${label}`, { error: 'no element', ...extra });
+                return;
+            }
+            let errCode = null;
+            try {
+                errCode = videoEl.error ? videoEl.error.code : null;
+            } catch (e) {}
+            logDev('info', `[Vdiag] ${label}`, {
+                duration: videoEl.duration,
+                currentTime: videoEl.currentTime,
+                readyState: videoEl.readyState,
+                networkState: videoEl.networkState,
+                paused: videoEl.paused,
+                ended: videoEl.ended,
+                muted: videoEl.muted,
+                videoWidth: videoEl.videoWidth,
+                videoHeight: videoEl.videoHeight,
+                seekable: diagMediaTimeRanges(videoEl.seekable),
+                buffered: diagMediaTimeRanges(videoEl.buffered),
+                played: diagMediaTimeRanges(videoEl.played),
+                errorCode: errCode,
+                ...extra
+            });
+        }
+
+        async function diagProbeBlobAsVideo(tag, blob, timeoutMs = 9000) {
+            if (!blob || blob.size < 32) {
+                logDev('warn', `[Vdiag] blob probe skip ${tag}`, { size: blob ? blob.size : 0 });
+                return;
+            }
+            const url = URL.createObjectURL(blob);
+            const ve = document.createElement('video');
+            ve.preload = 'metadata';
+            ve.muted = true;
+            ve.playsInline = true;
+            ve.src = url;
+            const ev = { tag, blobSize: blob.size, blobType: blob.type || '' };
+            let done = false;
+            const finish = (how) => {
+                if (done) return;
+                done = true;
+                diagVideoElementSnapshot(`blob probe ${how}: ${tag}`, ve, ev);
+                try { ve.removeAttribute('src'); ve.load(); } catch (e) {}
+                try { URL.revokeObjectURL(url); } catch (e2) {}
+            };
+            ve.addEventListener('loadedmetadata', () => finish('loadedmetadata'), { once: true });
+            ve.addEventListener('error', () => finish('error'), { once: true });
+            setTimeout(() => finish('timeout'), timeoutMs);
         }
 
         function logCropTrace(node, note, payload = null) {
@@ -655,6 +807,49 @@
 
         function getTaskState(imgId, cfgId) {
             return processingState[`${imgId}__${cfgId}`];
+        }
+
+        /** 仍需渲染成稿的视频规格数量（未完成则顶栏「导出全部」显示为「开始处理」） */
+        function deferredVideoExportRemainingCount() {
+            let n = 0;
+            for (const img of sourceImages || []) {
+                if (!String(img.mime || '').startsWith('video/')) continue;
+                for (const cfg of config || []) {
+                    const res = img.results && img.results[cfg.id];
+                    if (!res || res.error) continue;
+                    if (res.pendingExport || !res.blob) n++;
+                }
+            }
+            return n;
+        }
+
+        /** 顶栏是否在批量导出流程中手写文案（禁止 renderResults 把按钮文案刷掉） */
+        let batchExportToolbarLocked = false;
+
+        function syncBatchExportToolbar() {
+            const btn = document.getElementById('downloadAll');
+            if (!btn || batchExportToolbarLocked) return;
+            const pending = deferredVideoExportRemainingCount();
+            if (pending > 0) {
+                btn.dataset.exportMode = 'process';
+                btn.setAttribute('title', `还有 ${pending} 个规格视频未完成渲染；点此将全部视频渲染完成后自动下载 ZIP`);
+                btn.innerHTML = '<i data-lucide="wand-2" class="w-4 h-4 mr-2"></i>开始处理';
+            } else {
+                btn.dataset.exportMode = 'zip';
+                btn.removeAttribute('title');
+                btn.innerHTML = '<i data-lucide="download-cloud" class="w-4 h-4 mr-2"></i>导出全部 (ZIP)';
+            }
+            try {
+                if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+            } catch (e2) {}
+        }
+
+        /** 本条视频规格是否仍为「占位/未渲染」且无错误 */
+        function videoSpecNeedsDeferredProcessing(img, cfgId) {
+            if (!img || !String(img.mime || '').startsWith('video/')) return false;
+            const res = img.results && img.results[cfgId];
+            if (!res || res.error) return false;
+            return !!(res.isVideo && (res.pendingExport || !res.blob));
         }
 
         function resolveWorkingCfgId() {
@@ -856,8 +1051,9 @@
 
                 function totalDur() {
                     const vd = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+                    if (vd > 0) return vd;
                     if (hintDur > 0) return hintDur;
-                    return vd > 0 ? vd : 1;
+                    return 1;
                 }
 
                 function displayCur() {
@@ -865,6 +1061,12 @@
                     const tot = totalDur();
                     return Math.min(c, tot);
                 }
+
+                const cfgCardEl = pane.closest('[data-cfg-card]');
+                const diagCfgLabel = cfgCardEl ? cfgCardEl.getAttribute('data-cfg-card') : '';
+
+                let stagnantAnchor = null;
+                let stagnantSincePlayEmitted = false;
 
                 function syncUi() {
                     const tot = totalDur();
@@ -875,16 +1077,84 @@
                     muteBtn.textContent = video.muted ? '有声' : '静音';
                 }
 
+                function onMaybeStagnant() {
+                    const ct = Number(video.currentTime) || 0;
+                    const nowWall = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+                    if (!video.paused && !video.ended) {
+                        if (!stagnantAnchor || Math.abs(ct - stagnantAnchor.ct) >= 0.03) {
+                            stagnantAnchor = { ct, wall: nowWall };
+                        } else if (nowWall - stagnantAnchor.wall > 1300 && !stagnantSincePlayEmitted) {
+                            stagnantSincePlayEmitted = true;
+                            logDev('warn', '[Vdiag] result preview stagnant currentTime while playing (>~1.3s)', {
+                                cfgCard: diagCfgLabel,
+                                anchorCt: stagnantAnchor.ct,
+                                currentTimeNow: ct,
+                                hintDurFromSourceTimeline: hintDur,
+                                vd: video.duration,
+                                seekableRanges: diagMediaTimeRanges(video.seekable),
+                                bufferedRanges: diagMediaTimeRanges(video.buffered)
+                            });
+                            diagVideoElementSnapshot('result-preview @ stagnant-while-playing', video, {
+                                cfgCard: diagCfgLabel
+                            });
+                        }
+                    }
+                    syncUi();
+                }
+
                 video.addEventListener('loadedmetadata', () => {
                     if (!(hintDur > 0) && Number.isFinite(video.duration) && video.duration > 0) {
                         hintDur = video.duration;
                     }
+                    diagVideoElementSnapshot('result-preview loadedmetadata', video, {
+                        cfgCard: diagCfgLabel,
+                        hintTimelineSecFromPaneAttr: pane.getAttribute('data-timeline-sec') || ''
+                    });
                     syncUi();
                 });
-                video.addEventListener('timeupdate', () => syncUi());
-                video.addEventListener('play', () => syncUi());
-                video.addEventListener('pause', () => syncUi());
-                video.addEventListener('ended', () => syncUi());
+                video.addEventListener('durationchange', () => {
+                    diagVideoElementSnapshot('result-preview durationchange', video, { cfgCard: diagCfgLabel });
+                    syncUi();
+                });
+                video.addEventListener('timeupdate', onMaybeStagnant);
+                video.addEventListener('play', () => {
+                    stagnantSincePlayEmitted = false;
+                    stagnantAnchor = null;
+                    diagVideoElementSnapshot('result-preview play', video, { cfgCard: diagCfgLabel });
+                    syncUi();
+                });
+                video.addEventListener('pause', () => {
+                    diagVideoElementSnapshot('result-preview pause', video, { cfgCard: diagCfgLabel });
+                    syncUi();
+                });
+                video.addEventListener('ended', () => {
+                    diagVideoElementSnapshot('result-preview ended', video, { cfgCard: diagCfgLabel });
+                    syncUi();
+                });
+                video.addEventListener('stalled', () => {
+                    logDev('warn', '[Vdiag] result preview stalled', {
+                        cfgCard: diagCfgLabel,
+                        networkState: video.networkState,
+                        readyState: video.readyState
+                    });
+                });
+                video.addEventListener('waiting', () => {
+                    logDev('warn', '[Vdiag] result preview waiting', {
+                        cfgCard: diagCfgLabel,
+                        ct: video.currentTime,
+                        buffered: diagMediaTimeRanges(video.buffered)
+                    });
+                });
+                video.addEventListener('error', () => {
+                    let errCode = null;
+                    try { errCode = video.error ? video.error.code : null; } catch (e) {}
+                    logDev('error', '[Vdiag] result preview video error event', {
+                        cfgCard: diagCfgLabel,
+                        errorCode: errCode,
+                        networkState: video.networkState,
+                        srcIsObjectUrl: !!(video.currentSrc && String(video.currentSrc).indexOf('blob:') === 0)
+                    });
+                });
 
                 playBtn.onclick = async () => {
                     if (!video.paused && !video.ended) {
@@ -909,6 +1179,8 @@
                 };
 
                 seek.oninput = async () => {
+                    stagnantAnchor = null;
+                    stagnantSincePlayEmitted = false;
                     const tot = totalDur();
                     const t = (parseInt(seek.value, 10) / 1000) * tot;
                     await seekVideo(video, t, tot);
@@ -998,6 +1270,8 @@
             let mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
             if (!MediaRecorder.isTypeSupported(mime)) throw new Error('浏览器不支持本地视频录制');
 
+            const diagNtRun = `ntv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+
             const chunks = [];
             const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrate });
             recorder.ondataavailable = (e) => {
@@ -1042,7 +1316,33 @@
             }
 
             await v.play().catch(() => {});
-            recorder.start(250);
+            /** 短 timeslice 易产生大量 moof 碎片，系统播放器常无法显示总时长；中等长度内优先录制结束再交片 */
+            const recorderSinglePartMaxSec = 600;
+            let recorderSliceMs = null;
+            if (duration > recorderSinglePartMaxSec) {
+                recorderSliceMs = Math.min(4000, Math.max(750, Math.round((duration / 150) * 1000)));
+            }
+            if (recorderSliceMs == null) {
+                recorder.start();
+            } else {
+                recorder.start(recorderSliceMs);
+            }
+
+            logDev('info', '[Vdiag] native transcode setup', {
+                runId: diagNtRun,
+                sourceName: sourceImgRef && sourceImgRef.name,
+                vdRaw,
+                sdRaw,
+                durationHintSec: duration,
+                outWxH: `${outW}x${outH}`,
+                recorderMime: mime,
+                recorderState: recorder.state,
+                recorderChunkPolicy: recorderSliceMs == null ? 'single-at-stop' : `timeslice-${recorderSliceMs}ms`,
+                videoBitsPerSecond: bitrate,
+                canvasCaptureFps: fps,
+                audioTrackCount: addedAudioTracks.length,
+                hasElementCaptureStream: typeof v.captureStream === 'function'
+            });
 
             const drawFrame = () => {
                 ctx.fillStyle = '#000000';
@@ -1090,41 +1390,136 @@
             };
 
             await new Promise((resolve, reject) => {
-                const finishIfEnded = () => {
-                    if (v.ended || (duration - (v.currentTime || 0)) < 0.08) resolve();
+                let settled = false;
+                let watchdog = 0;
+                const vdMeta = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : duration;
+                const watchdogMs = Math.min(28800000, Math.max(duration, vdMeta, 1) * 1000 + 120000);
+                let lastRatio = 0;
+                let lastDiagWallMs = 0;
+                let lastDiagRatioBucket = -1;
+
+                const maybeDiagHeartbeat = () => {
+                    const nowMs = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+                    const bucket = Math.floor(lastRatio * 25);
+                    if (bucket === lastDiagRatioBucket && nowMs - lastDiagWallMs < 2800) return;
+                    lastDiagRatioBucket = bucket;
+                    lastDiagWallMs = nowMs;
+                    let chunkBytes = 0;
+                    try {
+                        chunkBytes = chunks.reduce((a, c) => a + ((c && c.size) ? c.size : 0), 0);
+                    } catch (e2) {}
+                    logDev('info', '[Vdiag] native transcode heartbeat', {
+                        runId: diagNtRun,
+                        currentTime: v.currentTime,
+                        mediaTimeGuess: typeof v.requestVideoFrameCallback === 'function' ? 'rVFC' : 'raf',
+                        vDuration: v.duration,
+                        durationHintSec: duration,
+                        ended: v.ended,
+                        paused: v.paused,
+                        ratio: Number(lastRatio.toFixed(4)),
+                        recorderState: recorder.state,
+                        chunks: chunks.length,
+                        chunkBytes
+                    });
                 };
+
+                const finish = (reason) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(watchdog);
+                    let chunkBytes = 0;
+                    try {
+                        chunkBytes = chunks.reduce((a, c) => a + ((c && c.size) ? c.size : 0), 0);
+                    } catch (e2) {}
+                    logDev('info', '[Vdiag] native transcode loop end', {
+                        runId: diagNtRun,
+                        reason: String(reason || 'unknown'),
+                        currentTime: v.currentTime,
+                        vDuration: v.duration,
+                        durationHintSec: duration,
+                        ended: v.ended,
+                        paused: v.paused,
+                        recorderState: recorder.state,
+                        chunks: chunks.length,
+                        chunkBytes
+                    });
+                    resolve();
+                };
+
+                watchdog = setTimeout(() => {
+                    if (settled) return;
+                    logDev('warn', 'transcodeVideoNative watchdog finish', {
+                        runId: diagNtRun,
+                        ct: v.currentTime,
+                        durReported: v.duration,
+                        durationHint: duration
+                    });
+                    finish('watchdog');
+                }, watchdogMs);
+
+                const reportProgressFromCur = () => {
+                    const vdLive = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+                    const curRaw = Number(v.currentTime) || 0;
+                    const durHint = Math.max(duration, vdLive, curRaw + 0.001, 0.1);
+                    const ratio = durHint > 0 ? Math.max(0, Math.min(1, curRaw / durHint)) : 0;
+                    lastRatio = Math.max(lastRatio, ratio);
+                    if (onProgress) onProgress(lastRatio);
+                    maybeDiagHeartbeat();
+                };
+
+                v.onended = () => finish('video-ended');
+
                 if (typeof v.requestVideoFrameCallback === 'function') {
                     const cb = (_now, meta) => {
+                        if (settled) return;
                         try {
                             drawFrame();
-                            const cur = Math.max(v.currentTime || 0, (meta && Number.isFinite(meta.mediaTime)) ? meta.mediaTime : 0);
-                            const ratio = Math.max(0, Math.min(1, cur / duration));
-                            if (onProgress) onProgress(ratio);
-                            if (v.ended || (duration - cur) < 0.08) {
-                                resolve();
+                            const curMedia = meta && Number.isFinite(meta.mediaTime) ? meta.mediaTime : NaN;
+                            const curRaw = Number(v.currentTime) || 0;
+                            const cur = Math.max(curRaw, Number.isFinite(curMedia) ? curMedia : curRaw);
+                            const vdLive = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+                            const durHint = Math.max(duration, vdLive, cur + 0.001, 0.1);
+                            lastRatio = Math.max(lastRatio, durHint > 0 ? cur / durHint : 0);
+                            if (onProgress) onProgress(Math.max(0, Math.min(1, lastRatio)));
+                            maybeDiagHeartbeat();
+                            if (v.ended) {
+                                finish('video-ended');
                                 return;
                             }
                             v.requestVideoFrameCallback(cb);
                         } catch (e) {
+                            settled = true;
+                            clearTimeout(watchdog);
+                            logDev('error', '[Vdiag] native transcode rVFC threw', {
+                                runId: diagNtRun,
+                                err: String(e && e.message || e)
+                            });
                             reject(e);
                         }
                     };
                     v.requestVideoFrameCallback(cb);
-                    v.onended = () => resolve();
                 } else {
                     const tick = () => {
+                        if (settled) return;
                         try {
                             drawFrame();
-                            const ratio = Math.max(0, Math.min(1, (v.currentTime || 0) / duration));
-                            if (onProgress) onProgress(ratio);
-                            finishIfEnded();
-                            if (!v.ended) requestAnimationFrame(tick);
+                            reportProgressFromCur();
+                            if (v.ended) {
+                                finish('video-ended');
+                                return;
+                            }
+                            requestAnimationFrame(tick);
                         } catch (e) {
+                            settled = true;
+                            clearTimeout(watchdog);
+                            logDev('error', '[Vdiag] native transcode rAF threw', {
+                                runId: diagNtRun,
+                                err: String(e && e.message || e)
+                            });
                             reject(e);
                         }
                     };
                     requestAnimationFrame(tick);
-                    v.onended = () => resolve();
                 }
             });
 
@@ -1148,10 +1543,23 @@
 
             let blob = new Blob(chunks, { type: mime.includes('webm') ? 'video/webm' : mime });
             if (!blob.size) throw new Error('浏览器本地编码结果为空');
+            let chunkBytesOut = 0;
+            try {
+                chunkBytesOut = chunks.reduce((a, c) => a + ((c && c.size) ? c.size : 0), 0);
+            } catch (e3) {}
+            logDev('info', '[Vdiag] native recorder finished (pre-repair blob)', {
+                runId: diagNtRun,
+                blobSize: blob.size,
+                chunkCount: chunks.length,
+                chunkBytesSum: chunkBytesOut,
+                mimeRecorded: mime
+            });
             if ((wantedExt === 'mp4' || wantedExt === 'mov') && mime.includes('webm')) {
                 throw new Error(`当前浏览器在此环境下无法输出 ${wantedExt.toUpperCase()}，请用本地服务打开页面后使用 FFmpeg 导出`);
             }
-            blob = await repairNativeRecordedBlob(blob, mime, wantedExt);
+            await diagProbeBlobAsVideo(`pre-remux (${diagNtRun})`, blob);
+            blob = await repairNativeRecordedBlob(blob, mime, wantedExt, diagNtRun);
+            await diagProbeBlobAsVideo(`post-remux (${diagNtRun})`, blob);
             return {
                 blob,
                 ext: mime.includes('webm') ? 'webm' : (wantedExt === 'mov' ? 'mov' : 'mp4'),
@@ -1159,16 +1567,29 @@
             };
         }
 
-        async function repairNativeRecordedBlob(blob, mime, wantedExt) {
-            if (!blob || blob.size < 1024) return blob;
-            if (mime.includes('webm')) return blob;
-            if (!mime.includes('mp4') && !mime.includes('quicktime')) return blob;
+        async function repairNativeRecordedBlob(blob, mime, wantedExt, diagTag = '') {
+            const tag = diagTag ? String(diagTag) : 'no-run-id';
+            if (!blob || blob.size < 1024) {
+                logDev('info', '[Vdiag] remux skipped', { tag, reason: 'blob_tiny', size: blob ? blob.size : 0 });
+                return blob;
+            }
+            if (mime.includes('webm')) {
+                logDev('info', '[Vdiag] remux skipped', { tag, reason: 'webm_copy_only', mime });
+                return blob;
+            }
+            if (!mime.includes('mp4') && !mime.includes('quicktime')) {
+                logDev('info', '[Vdiag] remux skipped', { tag, reason: 'mime_not_mp4_quicktime', mime });
+                return blob;
+            }
 
             const extOut = wantedExt === 'mov' ? 'mov' : 'mp4';
             let ff = null;
             const prevReason = String(ffmpegUnavailableReason || '');
             const sabBlocked = prevReason.includes('SharedArrayBuffer');
-            if ((!ffmpegReady || !ffmpegInstance) && sabBlocked) return blob;
+            if ((!ffmpegReady || !ffmpegInstance) && sabBlocked) {
+                logDev('warn', '[Vdiag] remux skipped', { tag, reason: 'sab_blocked_no_ffmpeg_instance', ffmpegUnavailableReason: prevReason });
+                return blob;
+            }
 
             if (!ffmpegReady || !ffmpegInstance) {
                 ffmpegUnavailableReason = '';
@@ -1176,6 +1597,12 @@
                     ff = await ensureFfmpeg();
                 } catch (e) {
                     if (prevReason) ffmpegUnavailableReason = prevReason;
+                    logDev('warn', '[Vdiag] remux skipped', {
+                        tag,
+                        reason: 'ffmpeg_load_failed',
+                        error: String(e && e.message || e),
+                        ffmpegUnavailableReason: ffmpegUnavailableReason || ''
+                    });
                     logDev('info', 'native remux skipped (FFmpeg)');
                     return blob;
                 }
@@ -1185,24 +1612,57 @@
             const stamp = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
             const inName = `nr_in_${stamp}.${extOut}`;
             const outName = `nr_out_${stamp}.${extOut}`;
+            logDev('info', '[Vdiag] remux ffmpeg invoking', {
+                tag,
+                inSize: blob.size,
+                mime,
+                extOut,
+                ffmpegReady: !!(ffmpegReady && ffmpegInstance),
+                ffmpegUnavailableReason: ffmpegUnavailableReason || ''
+            });
             try {
                 const buf = await blob.arrayBuffer();
                 ff.FS('writeFile', inName, new Uint8Array(buf));
-                await ff.run('-y', '-i', inName, '-c', 'copy', '-movflags', '+faststart', outName);
+                await ff.run(
+                    '-y',
+                    '-avoid_negative_ts', 'make_zero',
+                    '-fflags', '+genpts',
+                    '-i', inName,
+                    '-c', 'copy',
+                    '-movflags', '+faststart',
+                    outName
+                );
                 const out = ff.FS('readFile', outName);
                 const repaired = new Blob([out.buffer], { type: extOut === 'mov' ? 'video/quicktime' : 'video/mp4' });
                 try { ff.FS('unlink', inName); } catch (e2) {}
                 try { ff.FS('unlink', outName); } catch (e2) {}
                 if (repaired.size > 512) {
                     logDev('info', 'native recording remux OK (faststart)');
+                    logDev('info', '[Vdiag] remux ffmpeg ok', { tag, inSize: blob.size, outSize: repaired.size, extOut });
                     return repaired;
                 }
+                logDev('warn', '[Vdiag] remux ffmpeg output too small', { tag, repairedSize: repaired.size });
             } catch (e) {
                 logDev('warn', 'native recording remux failed', { err: String(e && e.message || e) });
+                logDev('warn', '[Vdiag] remux ffmpeg exception', {
+                    tag,
+                    err: String(e && e.message || e),
+                    inSize: blob.size
+                });
                 try { ff.FS('unlink', inName); } catch (e2) {}
                 try { ff.FS('unlink', outName); } catch (e2) {}
             }
+            logDev('warn', '[Vdiag] remux fallback original blob', { tag, mime, size: blob.size });
             return blob;
+        }
+
+        /** 与 HTML 同级的 assets/vendor，避免 @ffmpeg/ffmpeg 内置假 base 把相对路径拼到 /home/jeromewu/... */
+        function resolveFfmpegVendorFileUrl(fileName) {
+            try {
+                return new URL('assets/vendor/' + String(fileName || '').replace(/^\/+/, ''), window.location.href).href;
+            } catch (e) {
+                return null;
+            }
         }
 
         async function ensureFfmpeg() {
@@ -1215,9 +1675,20 @@
                 throw new Error('FFmpeg 脚本未加载');
             }
             const { createFFmpeg } = FFmpeg;
+            const coreHref = resolveFfmpegVendorFileUrl('ffmpeg-core.js') || 'assets/vendor/ffmpeg-core.js';
+            const wasmHref = resolveFfmpegVendorFileUrl('ffmpeg-core.wasm') || 'assets/vendor/ffmpeg-core.wasm';
+            const workerHref = resolveFfmpegVendorFileUrl('ffmpeg-core.worker.js') || 'assets/vendor/ffmpeg-core.worker.js';
+            logDev('info', '[Vdiag] FFmpeg createFFmpeg paths', {
+                pageHref: typeof location !== 'undefined' ? location.href : '',
+                corePath: coreHref,
+                wasmPath: wasmHref,
+                workerPath: workerHref
+            });
             ffmpegInstance = createFFmpeg({
                 log: false,
-                corePath: FFMPEG_CORE_ST
+                corePath: coreHref,
+                wasmPath: wasmHref,
+                workerPath: workerHref
             });
             logDev('info', 'FFmpeg load start');
             ffmpegLoadPromise = (async () => {
@@ -1609,6 +2080,29 @@
                 setTaskState(img.id, cfg.id, { status: 'error', progress: 100, message: '下载失败' });
                 alert(`下载失败：${String(err && err.message || err)}`);
             } finally {
+                syncBatchExportToolbar();
+                if (currentImageId === img.id) renderResults();
+            }
+        }
+
+        /** 「开始处理」仅渲染本条成稿；不触发浏览器下载（与顶栏批量「开始处理」分离） */
+        async function processSingleDeferredVideoResult(imgId, cfgId) {
+            const img = sourceImages.find((x) => String(x.id) === String(imgId));
+            const cfg = config.find((x) => String(x.id) === String(cfgId));
+            if (!img || !cfg) return;
+            if (!videoSpecNeedsDeferredProcessing(img, cfg.id)) return;
+            try {
+                setTaskState(img.id, cfg.id, { status: 'processing', progress: 5, message: '开始渲染 5%' });
+                if (currentImageId === img.id) renderResults();
+                await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const res = await ensureResultForExport(img, cfg, () => {});
+                if (!res || !res.blob) throw new Error('渲染结果为空');
+                setTaskState(img.id, cfg.id, { status: 'done', progress: 100, message: '已就绪，可下载' });
+            } catch (err) {
+                setTaskState(img.id, cfg.id, { status: 'error', progress: 100, message: '渲染失败' });
+                alert(`处理失败：${String(err && err.message || err)}`);
+            } finally {
+                syncBatchExportToolbar();
                 if (currentImageId === img.id) renderResults();
             }
         }
@@ -2984,6 +3478,12 @@
                 if (canUseSourceDirectly) {
                     const originalBlob = sourceImgRef.file;
                     const timelineDurationSec = resolveTimelineDurationSec(sourceImgRef);
+                    logDev('info', '[Vdiag] video export path: passthrough-original-file', {
+                        name: sourceImgRef.name,
+                        blobSize: originalBlob && originalBlob.size,
+                        timelineDurationSec: timelineDurationSec > 0 ? timelineDurationSec : null
+                    });
+                    void diagProbeBlobAsVideo('passthrough-original-file', originalBlob);
                     return {
                         url: sourceImgRef.url,
                         blob: originalBlob,
@@ -3089,6 +3589,13 @@
                     ff.FS('unlink', inName);
                     ff.FS('unlink', outName);
                     logDev('info', 'video transcode done', { file: sourceImgRef.name, cfg: cfg.name, outKb: Math.round(blob.size / 1024) });
+                    logDev('info', '[Vdiag] video export path: ffmpeg-wasm libx264', {
+                        file: sourceImgRef.name,
+                        cfgName: cfg && cfg.name,
+                        outWxH: `${outW}x${outH}`,
+                        blobSize: blob.size
+                    });
+                    await diagProbeBlobAsVideo(`ffmpeg-wasm-out:${sourceImgRef.name}`, blob);
                     const tlFf = resolveTimelineDurationSec(sourceImgRef);
                     return {
                         url: resultUrl,
@@ -3332,6 +3839,21 @@
                     if (cfg) window.LogoWorkbench.openLayoutModal(cfg.id);
                     return;
                 }
+                const procBtn = e.target.closest('[data-action="start-process-result"]');
+                if (procBtn && !procBtn.disabled) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    let imgId;
+                    let cfgId;
+                    try {
+                        imgId = decodeURIComponent(procBtn.getAttribute('data-img-id') || '');
+                        cfgId = decodeURIComponent(procBtn.getAttribute('data-cfg-id') || '');
+                    } catch (err) {
+                        return;
+                    }
+                    if (imgId !== '' && cfgId !== '') processSingleDeferredVideoResult(imgId, cfgId);
+                    return;
+                }
                 const downloadBtn = e.target.closest('[data-action="download-result"]');
                 if (downloadBtn) {
                     e.preventDefault();
@@ -3354,6 +3876,7 @@
             if (sourceImages.length === 0) {
                 list.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-gray-300 py-10 opacity-40"><i data-lucide="inbox" class="w-10 h-10 mb-2"></i><p class="text-xs">等待上传</p></div>`;
                 lucide.createIcons();
+                syncBatchExportToolbar();
                 return;
             }
             list.innerHTML = sourceImages.map(img => `
@@ -3378,6 +3901,7 @@
                 </div>
             `).join('');
             lucide.createIcons();
+            syncBatchExportToolbar();
         }
 
         function updateImgName(id, newName) {
@@ -3454,6 +3978,7 @@
                     const t = Number(res && res.timelineDurationSec);
                     return (Number.isFinite(t) && t > 0) ? String(t.toFixed(6)).replace(',', '.') : '';
                 })();
+                const needDeferVideoProcess = !!(String(currentImg.mime || '').startsWith('video/') && res && !res.error && res.isVideo && (res.pendingExport || !res.blob));
                 const showReadyVideoChrome = !!(res && !res.error && res.isVideo && !res.pendingExport);
                 const showTaskOverlay = task && task.status === 'processing';
 
@@ -3525,9 +4050,13 @@
                                         ${res.warning ? `<span class="text-[10px] font-bold text-orange-500 flex items-center mr-2" title="为保证大小，画质/尺寸被大幅降低"><i data-lucide="alert-triangle" class="w-3 h-3 mr-0.5"></i>高压缩警告</span>` : ``}
                                         <div class="flex items-center space-x-2">
                                             <span class="text-xs ${isOver ? 'text-red-500 font-bold' : 'text-gray-500'}">${displaySizeText}</span>
+                                            ${needDeferVideoProcess ? `
+                                            <button type="button" data-action="start-process-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="inline-flex shrink-0 items-center justify-center whitespace-nowrap px-3 py-1.5 rounded border border-[#FF6B00] bg-[#FF6B00] font-bold hover:bg-[#e66000] text-white shadow-sm disabled:opacity-50 disabled:pointer-events-none transition-colors" style="font-size:20px;line-height:1.2" title="先将本条视频渲染为成稿，再点图标下载"${showTaskOverlay ? ' disabled' : ''}>${showTaskOverlay ? '处理中…' : '开始处理'}</button>
+                                            ` : `
                                             <button type="button" data-action="download-result" data-img-id="${encodeURIComponent(currentImg.id)}" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="text-[#002FA7] hover:bg-blue-100 p-1 rounded transition-colors" title="下载处理后结果">
                                                 <i data-lucide="download" class="w-4 h-4"></i>
                                             </button>
+                                            `}
                                         </div>
                                     </div>
                                 ` : '<span></span>'}
@@ -3547,6 +4076,7 @@
             lucide.createIcons();
             wireResultPreviewVideos(grid);
             renderLogoStatusBadge();
+            syncBatchExportToolbar();
         }
 
         // --- 图库 IndexedDB（离线本地）---
@@ -6723,11 +7253,10 @@
             e.target.value = '';
         };
 
-        document.getElementById('downloadAll').onclick = async () => {
-            if (sourceImages.length === 0) return;
+        /** 打包当前页全部结果为 ZIP（encodeMissing：先补渲染所有仍未成稿的视频再打包） */
+        async function runZipPackagingAndDownload(encodeMissing) {
             const zip = new JSZip();
             const prog = document.getElementById('downloadAllProgress');
-            
             const globalFolderName = sanitizeFileName(document.getElementById('globalFolderName').value.trim() || `批量导出_${new Date().getTime()}`, '批量导出');
             const rootFolder = zip.folder(globalFolderName);
             const groupByCfg = sourceImages.length > (config || []).length;
@@ -6763,17 +7292,28 @@
             }
             await runWithConcurrency(jobs, 4, async (job) => {
                 const { img, cfg } = job;
-                setTaskState(img.id, cfg.id, { status: 'processing', progress: 8, message: '排队导出' });
+                setTaskState(img.id, cfg.id, { status: 'processing', progress: 8, message: encodeMissing ? '批量渲染队列' : '排队导出' });
                 if (currentImageId === img.id) renderResults();
                 let res = img.results[cfg.id];
-                if (!res || res.pendingExport || !res.blob) {
-                    setTaskState(img.id, cfg.id, { status: 'processing', progress: 16, message: '处理中 16%' });
-                    if (currentImageId === img.id) renderResults();
-                    res = await ensureResultForExport(img, cfg, () => {});
+                if (encodeMissing) {
+                    if (!res || res.pendingExport || !res.blob) {
+                        setTaskState(img.id, cfg.id, { status: 'processing', progress: 16, message: '处理中 16%' });
+                        if (currentImageId === img.id) renderResults();
+                        res = await ensureResultForExport(img, cfg, () => {});
+                    }
+                } else if (!res || !res.blob) {
+                    logDev('warn', 'zip export skipped row (no blob)', { imgId: img.id, cfgId: cfg.id });
+                    doneJobs++;
+                    updateExportProgress('跳过缺文件');
+                    return;
                 }
                 setTaskState(img.id, cfg.id, { status: 'processing', progress: 92, message: '写入压缩包 92%' });
                 if (currentImageId === img.id) renderResults();
-                if (!res || !res.blob) return;
+                if (!res || !res.blob) {
+                    doneJobs++;
+                    updateExportProgress();
+                    return;
+                }
                 const ext = res.ext || cfg.format;
                 const eff = getEffectiveConfig(cfg, img);
                 const sizePart = `${eff.width}x${eff.height}`;
@@ -6797,7 +7337,28 @@
                 }
             );
             triggerBlobDownload(blob, `${globalFolderName}.zip`);
-            if (prog) prog.textContent = '导出完成';
+        }
+
+        document.getElementById('downloadAll').onclick = async () => {
+            if (sourceImages.length === 0 || !(config || []).length) return;
+            const prog = document.getElementById('downloadAllProgress');
+            const btn = document.getElementById('downloadAll');
+            batchExportToolbarLocked = true;
+            btn.disabled = true;
+            try {
+                const encodeFirst = deferredVideoExportRemainingCount() > 0;
+                btn.textContent = encodeFirst ? '批量渲染并入 ZIP…' : '导出中…';
+                if (prog) prog.textContent = encodeFirst ? '正在渲染全部未完视频并入压缩包…' : '批量打包导出中…';
+                await runZipPackagingAndDownload(encodeFirst);
+                if (prog) prog.textContent = '导出完成';
+            } catch (err) {
+                alert(`导出失败：${String(err && err.message || err)}`);
+                logDev('error', 'batch zip export failed', { err: String(err && err.message || err) });
+            } finally {
+                batchExportToolbarLocked = false;
+                btn.disabled = false;
+                syncBatchExportToolbar();
+            }
         };
 
         function removeImage(e, id) {
@@ -6953,6 +7514,7 @@
                 });
             }
             lucide.createIcons();
+            syncBatchExportToolbar();
             initResultsGridActionDelegation();
             initConfigSessionBarAndCreateSpec();
             Modal.init();
