@@ -8,6 +8,7 @@
     <!-- 引入 JSZip 用于处理压缩包 -->
     <script src="assets/vendor/jszip.min.js"></script>
     <script src="assets/vendor/xlsx.full.min.js"></script>
+    <script src="assets/config-parser.js"></script>
     <script src="assets/usage-tracker.js"></script>
     <style>
         :root {
@@ -222,6 +223,16 @@
             gap: 15px;
             margin-bottom: 20px;
         }
+        .summary-toolbar {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 14px 0;
+        }
+        .summary-toolbar.show {
+            display: flex;
+        }
         
         .summary-item {
             padding: 15px;
@@ -276,6 +287,8 @@
                 <p>支持 .txt / .csv / .xlsx / .xls</p>
                 <input type="file" id="configFile" class="hidden" accept=".txt,.csv,.xlsx,.xls">
                 <button class="btn btn-primary" onclick="document.getElementById('configFile').click()">选择文件</button>
+                <button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="openTextConfigImportModal()">直接输入配置</button>
+                <button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="openTestConfigLibraryModal()">配置库</button>
                 <div class="template-links">
                     <a href="#" onclick="downloadTxtTemplate()">下载 TXT 模板</a>
                     <a href="#" onclick="downloadCsvTemplate()">下载 CSV 模板</a>
@@ -298,6 +311,14 @@
     <div id="resultsArea" class="results-section hidden">
         <div class="card">
             <h3 style="color: var(--klein-blue); border-bottom: 2px solid #eee; padding-bottom: 10px;">校验结果摘要</h3>
+            <div class="summary-toolbar" id="summaryActions">
+                <button class="btn" id="exportMissingConfigBtn" style="display:none;border:1px solid var(--orange);color:var(--orange);background:white;" onclick="exportMissingConfigTxt()">导出缺失配置</button>
+                <button class="btn btn-orange" id="compressOversizeBtn" style="display:none;" onclick="compressOversizedImages()">压缩规格</button>
+                <label id="compressQualityLabel" style="display:none;align-items:center;gap:6px;font-size:14px;color:#555;">
+                    <input type="checkbox" id="testPriorityQuality">
+                    <span>保清晰度(可超限)</span>
+                </label>
+            </div>
             <div class="summary-box" id="summaryBox">
                 <!-- 摘要内容 -->
             </div>
@@ -332,6 +353,27 @@
                     <tbody id="extraImagesBody"></tbody>
                 </table>
             </div>
+
+            <div id="compressedArea" class="hidden">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:30px;">
+                    <h3 style="color: var(--klein-blue); margin:0;">压缩后对比清单</h3>
+                    <button class="btn btn-orange" id="downloadCompressedBtn" onclick="downloadCompressedImages()">下载</button>
+                </div>
+                <table id="compressedTable" style="margin-top:12px;">
+                    <thead>
+                        <tr>
+                            <th>配置序号</th>
+                            <th>文件名</th>
+                            <th>需求规格</th>
+                            <th>原体积</th>
+                            <th>压缩后</th>
+                            <th>状态</th>
+                            <th>示意图</th>
+                        </tr>
+                    </thead>
+                    <tbody id="compressedBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -344,23 +386,27 @@
 <script>
     let configItems = [];
     let uploadedImages = [];
+    let currentConfigSourceName = '导入配置';
+    let missingConfigEntries = [];
+    let oversizedEntries = [];
+    let compressedEntries = [];
 
     // --- 模板下载函数 ---
     function downloadTxtTemplate() {
-        const content = `【序号】1\r\n【描述名称】示例1\r\n【格式(jpg/png)】jpg\r\n【宽】800\r\n【高】600\r\n【限制KB】500\r\n\r\n【序号】2\r\n【描述名称】示例2\r\n【格式(jpg/png)】png\r\n【宽】1920\r\n【高】1080\r\n【限制KB】1000`;
+        const content = `【序号】1\r\n【描述名称】示例1\r\n【格式(jpg/png)】jpg\r\n【宽】800\r\n【高】600\r\n【限制KB】500\r\n【需求详述】Logo 不要放左上角\r\n\r\n【序号】2\r\n【描述名称】示例2\r\n【格式(jpg/png)】png\r\n【宽】1920\r\n【高】1080\r\n【限制KB】1000\r\n【需求详述】`;
         downloadBlob(content, '规格配置模板.txt', 'text/plain');
     }
 
     function downloadCsvTemplate() {
-        const content = `序号,描述名称,格式(jpg/png),宽,高,限制KB\n1,示例1,jpg,800,600,500\n2,示例2,png,1920,1080,1000`;
+        const content = `序号,描述名称,格式(jpg/png),宽,高,限制KB,需求详述\n1,示例1,jpg,800,600,500,Logo 不要放左上角\n2,示例2,png,1920,1080,1000,`;
         downloadBlob(content, '规格配置模板.csv', 'text/csv');
     }
 
     function downloadXlsxTemplate() {
         const rows = [
-            ["序号", "描述名称", "格式(jpg/png)", "宽", "高", "限制KB"],
-            [1, "示例1", "jpg", 800, 600, 500],
-            [2, "示例2", "png", 1920, 1080, 1000]
+            ["序号", "描述名称", "格式(jpg/png)", "宽", "高", "限制KB", "需求详述"],
+            [1, "示例1", "jpg", 800, 600, 500, "Logo 不要放左上角"],
+            [2, "示例2", "png", 1920, 1080, 1000, ""]
         ];
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
@@ -389,6 +435,7 @@
 【宽】数字
 【高】数字
 【限制KB】数字
+【需求详述】无法被尺寸、格式、大小限制涵盖但会影响验收的设计要求（没有则留空）
 
 要求：
 1. 只输出这个格式的内容，不要解释。
@@ -397,6 +444,7 @@
 4. 若未写限制KB，默认 1000。
 5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
 6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
+7. 【需求详述】是给设计师看的补充要求，只写固定字段无法表达的信息，例如 Logo 不能放左上角、需要/不需要副标题、元素安全区、文案位置限制等；不要重复尺寸、格式、大小限制。
 
 待处理数据如下：
 [在此粘贴你的原始数据]`;
@@ -422,19 +470,7 @@
     });
 
     function parseTxtConfig(text) {
-        configItems = [];
-        const blocks = text.split(/【序号】/).filter(b => b.trim());
-        blocks.forEach((block, index) => {
-            const item = {
-                id: (index + 1).toString(),
-                name: extract(block, '【描述名称】'),
-                ext: extract(block, '【格式\\(jpg/png\\)】').toLowerCase(),
-                width: parseInt(extract(block, '【宽】')),
-                height: parseInt(extract(block, '【高】')),
-                sizeLimit: parseInt(extract(block, '【限制KB】'))
-            };
-            configItems.push(item);
-        });
+        configItems = (window.ConfigTextParser ? ConfigTextParser.parseText(text, { kind: 'image' }) : []).map(toTestConfigItem);
     }
 
     function parseCsvConfig(text) {
@@ -449,7 +485,8 @@
                 ext: String(cols[2] || '').toLowerCase().trim().replace('jpeg', 'jpg'),
                 width: parseInt(cols[3], 10),
                 height: parseInt(cols[4], 10),
-                sizeLimit: parseInt(cols[5], 10)
+                sizeLimit: parseInt(cols[5], 10),
+                requirementDetail: String(cols[6] || '').trim()
             });
         }
     }
@@ -469,9 +506,22 @@
                 ext: String(row[2] || '').toLowerCase().trim().replace('jpeg', 'jpg'),
                 width: parseInt(row[3], 10),
                 height: parseInt(row[4], 10),
-                sizeLimit: parseInt(row[5], 10)
+                sizeLimit: parseInt(row[5], 10),
+                requirementDetail: String(row[6] || '').trim()
             });
         });
+    }
+
+    function toTestConfigItem(row) {
+        return {
+            id: String(row.id || '').trim(),
+            name: String(row.name || '规格').trim(),
+            ext: String(row.format || row.ext || 'jpg').toLowerCase().replace('jpeg', 'jpg') === 'png' ? 'png' : 'jpg',
+            width: Math.max(1, parseInt(row.width, 10) || 1),
+            height: Math.max(1, parseInt(row.height, 10) || 1),
+            sizeLimit: Math.max(1, parseInt(row.maxSize || row.sizeLimit, 10) || 1000),
+            requirementDetail: String(row.requirementDetail || '').trim()
+        };
     }
 
     function extract(text, label) {
@@ -491,6 +541,7 @@
     async function importConfigFile(file) {
         if (!file) return;
         const lowerName = file.name.toLowerCase();
+        const configName = file.name.replace(/\.[^/.]+$/, '') || '导入配置';
         if (lowerName.endsWith('.txt')) {
             const text = await file.text();
             parseTxtConfig(text);
@@ -500,8 +551,233 @@
             const text = await file.text();
             parseCsvConfig(text);
         }
+        currentConfigSourceName = configName;
+        saveTestConfigRecord(configName, lowerName.endsWith('.csv') ? 'csv' : (lowerName.endsWith('.txt') ? 'txt' : 'xlsx'), configItems);
         document.getElementById('configStatus').innerText = `✅ 已加载 ${configItems.length} 条配置`;
         checkAll();
+    }
+
+    function applyTestConfigItems(rows, name, ext) {
+        configItems = (Array.isArray(rows) ? rows : []).map(toTestConfigItem);
+        currentConfigSourceName = name || '手动输入配置';
+        saveTestConfigRecord(currentConfigSourceName, ext || 'txt', configItems);
+        document.getElementById('configStatus').innerText = `✅ 已加载 ${configItems.length} 条配置`;
+        checkAll();
+    }
+
+    const TEST_CONFIG_STORE_KEY = 'test_config_records_v1';
+    let testConfigFilterTag = '';
+
+    function escapeTestHtml(s) {
+        return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function loadTestConfigRecords() {
+        try {
+            const raw = localStorage.getItem(TEST_CONFIG_STORE_KEY);
+            const rows = raw ? JSON.parse(raw) : [];
+            return Array.isArray(rows) ? rows : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveTestConfigRecords(rows) {
+        localStorage.setItem(TEST_CONFIG_STORE_KEY, JSON.stringify(Array.isArray(rows) ? rows : []));
+    }
+
+    function saveTestConfigRecord(name, ext, configs) {
+        const rows = loadTestConfigRecords();
+        rows.unshift({
+            id: 'tcfg-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9),
+            name: String(name || '规格配置').trim(),
+            ext: ext || 'txt',
+            configs: (configs || []).map(toTestConfigItem),
+            tags: [],
+            savedAt: Date.now()
+        });
+        saveTestConfigRecords(rows);
+    }
+
+    function ensureTestConfigLibraryModal() {
+        if (document.getElementById('testConfigLibraryModal')) return;
+        document.body.insertAdjacentHTML('beforeend', `
+            <div id="testConfigLibraryModal" style="display:none;position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;">
+                <div style="background:white;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+                    <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+                        <h3 style="margin:0;color:var(--klein-blue);">图片尺寸核对配置库</h3>
+                        <button class="btn" onclick="closeTestConfigLibraryModal()">关闭</button>
+                    </div>
+                    <div style="padding:12px 18px;border-bottom:1px solid #eee;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <span style="font-size:13px;color:#666;">标签筛选：</span>
+                        <div id="testConfigTagFilters" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+                    </div>
+                    <div id="testConfigList" style="padding:16px 18px;overflow:auto;"></div>
+                </div>
+            </div>`);
+    }
+
+    function openTestConfigLibraryModal() {
+        ensureTestConfigLibraryModal();
+        document.getElementById('testConfigLibraryModal').style.display = 'flex';
+        renderTestConfigLibrary();
+    }
+
+    function closeTestConfigLibraryModal() {
+        const m = document.getElementById('testConfigLibraryModal');
+        if (m) m.style.display = 'none';
+    }
+
+    function renderTestConfigLibrary() {
+        const records = loadTestConfigRecords();
+        const tags = Array.from(new Set(records.flatMap((r) => r.tags || [])));
+        const tagBox = document.getElementById('testConfigTagFilters');
+        tagBox.innerHTML = `<button class="btn" style="padding:4px 9px;font-size:12px;${testConfigFilterTag ? '' : 'background:var(--orange);color:white;'}" onclick="testConfigFilterTag='';renderTestConfigLibrary()">全部</button>` +
+            tags.map((t) => `<button class="btn" style="padding:4px 9px;font-size:12px;${testConfigFilterTag === t ? 'background:var(--orange);color:white;' : ''}" onclick="testConfigFilterTag='${escapeTestHtml(t)}';renderTestConfigLibrary()">${escapeTestHtml(t)}</button>`).join('');
+        const list = document.getElementById('testConfigList');
+        const shown = testConfigFilterTag ? records.filter((r) => (r.tags || []).includes(testConfigFilterTag)) : records;
+        if (!shown.length) {
+            list.innerHTML = '<div style="text-align:center;color:#999;padding:36px;">暂无配置记录</div>';
+            return;
+        }
+        list.innerHTML = shown.map((r) => {
+            const cfgs = Array.isArray(r.configs) ? r.configs : [];
+            const preview = cfgs.slice(0, 4).map((c) => `
+                <div style="display:grid;grid-template-columns:minmax(90px,1.5fr) 90px 55px 70px minmax(120px,2fr);gap:8px;padding:4px 0;border-bottom:1px solid #f2f2f2;font-size:12px;color:#555;">
+                    <span style="font-weight:600;color:#333;">${escapeTestHtml(c.name)}</span><span>${c.width}×${c.height}</span><span>${escapeTestHtml(c.ext)}</span><span>${c.sizeLimit}KB</span><span>${escapeTestHtml(c.requirementDetail || '')}</span>
+                </div>`).join('');
+            const tagHtml = (r.tags || []).map((t) => `<button class="btn" style="padding:3px 7px;font-size:11px;" onclick="removeTestConfigTag('${r.id}','${escapeTestHtml(t)}')">${escapeTestHtml(t)} ×</button>`).join('');
+            return `<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:12px;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input value="${escapeTestHtml(r.name)}" onchange="renameTestConfigRecord('${r.id}',this.value)" style="padding:7px 9px;border:1px solid #ddd;border-radius:6px;min-width:220px;">
+                    <span style="font-size:12px;color:#777;">共 ${cfgs.length} 条 · ${new Date(r.savedAt || Date.now()).toLocaleString('zh-CN')}</span>
+                    <button class="btn btn-primary" onclick="importTestConfigRecord('${r.id}')">导入</button>
+                    <button class="btn" style="color:#dc2626;border:1px solid #fecaca;background:white;" onclick="deleteTestConfigRecord('${r.id}')">删除</button>
+                </div>
+                <div style="margin-top:10px;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;padding:6px 10px;">${preview || '（空配置）'}${cfgs.length > 4 ? `<div style="font-size:12px;color:var(--klein-blue);margin-top:4px;">共 ${cfgs.length} 个配置，已显示前 4 个</div>` : ''}</div>
+                <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${tagHtml || '<span style="font-size:11px;color:#aaa;">无标签</span>'}<input placeholder="新标签" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:12px;" onkeydown="if(event.key==='Enter'){addTestConfigTag('${r.id}',this.value);this.value='';}"></div>
+            </div>`;
+        }).join('');
+    }
+
+    function renameTestConfigRecord(id, name) {
+        const rows = loadTestConfigRecords();
+        const rec = rows.find((r) => r.id === id);
+        if (rec) rec.name = String(name || '').trim() || rec.name;
+        saveTestConfigRecords(rows);
+    }
+
+    function deleteTestConfigRecord(id) {
+        if (!confirm('删除这份配置？')) return;
+        saveTestConfigRecords(loadTestConfigRecords().filter((r) => r.id !== id));
+        renderTestConfigLibrary();
+    }
+
+    function importTestConfigRecord(id) {
+        const rec = loadTestConfigRecords().find((r) => r.id === id);
+        if (!rec) return;
+        configItems = (rec.configs || []).map(toTestConfigItem);
+        currentConfigSourceName = rec.name || '导入配置';
+        document.getElementById('configStatus').innerText = `✅ 已加载 ${configItems.length} 条配置`;
+        closeTestConfigLibraryModal();
+        checkAll();
+    }
+
+    function addTestConfigTag(id, tag) {
+        const t = String(tag || '').trim();
+        if (!t) return;
+        const rows = loadTestConfigRecords();
+        const rec = rows.find((r) => r.id === id);
+        if (rec) rec.tags = Array.from(new Set([...(rec.tags || []), t]));
+        saveTestConfigRecords(rows);
+        renderTestConfigLibrary();
+    }
+
+    function removeTestConfigTag(id, tag) {
+        const rows = loadTestConfigRecords();
+        const rec = rows.find((r) => r.id === id);
+        if (rec) rec.tags = (rec.tags || []).filter((t) => t !== tag);
+        saveTestConfigRecords(rows);
+        renderTestConfigLibrary();
+    }
+
+    function openTextConfigImportModal() {
+        if (!document.getElementById('testTextConfigModal')) {
+            document.body.insertAdjacentHTML('beforeend', `
+                <div id="testTextConfigModal" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;">
+                    <div style="background:white;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+                        <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;"><h3 style="margin:0;color:var(--klein-blue);">直接输入配置</h3><button class="btn" onclick="closeTextConfigImportModal()">关闭</button></div>
+                        <div style="padding:16px 18px;overflow:auto;">
+                            <textarea id="testTextConfigInput" style="width:100%;height:180px;border:1px solid #ddd;border-radius:8px;padding:10px;font-family:monospace;" placeholder="粘贴标准 TXT、表格内容，或如：开屏 1080x1920 png 800KB logo不要左上角"></textarea>
+                            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><input id="testTextConfigName" placeholder="配置名称" style="padding:8px;border:1px solid #ddd;border-radius:6px;"><button class="btn btn-primary" onclick="recognizeTestTextConfig()">识别配置</button><button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="addTestTextConfigRow()">新增一条</button><span id="testTextConfigHint" style="color:#666;font-size:13px;"></span></div>
+                            <div id="testTextConfigPreview" style="margin-top:12px;"></div>
+                        </div>
+                        <div style="padding:14px 18px;border-top:1px solid #eee;text-align:right;"><button class="btn btn-orange" id="testTextConfigConfirm" onclick="confirmTestTextConfig()" disabled>确认导入</button></div>
+                    </div>
+                </div>`);
+        }
+        document.getElementById('testTextConfigModal').style.display = 'flex';
+        document.getElementById('testTextConfigPreview').innerHTML = '';
+        document.getElementById('testTextConfigConfirm').disabled = true;
+    }
+
+    function closeTextConfigImportModal() {
+        document.getElementById('testTextConfigModal').style.display = 'none';
+    }
+
+    function recognizeTestTextConfig() {
+        const rows = window.ConfigTextParser ? ConfigTextParser.parseText(document.getElementById('testTextConfigInput').value || '', { kind: 'image' }).map(toTestConfigItem) : [];
+        window.__testTextConfigRows = rows;
+        renderTestTextConfigPreview();
+    }
+
+    function normalizeTestTextConfigRows(rows) {
+        return (Array.isArray(rows) ? rows : []).map(toTestConfigItem);
+    }
+
+    function updateTestTextConfigRow(index, field, value) {
+        const rows = window.__testTextConfigRows || [];
+        if (!rows[index]) return;
+        if (field === 'width' || field === 'height' || field === 'sizeLimit') rows[index][field] = Math.max(1, parseInt(value, 10) || 1);
+        else if (field === 'ext') rows[index].ext = value === 'png' ? 'png' : 'jpg';
+        else rows[index][field] = String(value || '');
+    }
+
+    function deleteTestTextConfigRow(index) {
+        const rows = window.__testTextConfigRows || [];
+        rows.splice(index, 1);
+        window.__testTextConfigRows = rows;
+        renderTestTextConfigPreview();
+    }
+
+    function addTestTextConfigRow() {
+        const rows = window.__testTextConfigRows || [];
+        rows.push(toTestConfigItem({ id: String(rows.length + 1), name: `规格${rows.length + 1}`, ext: 'jpg', width: 1000, height: 1000, sizeLimit: 1000, requirementDetail: '' }));
+        window.__testTextConfigRows = rows;
+        renderTestTextConfigPreview();
+    }
+
+    function renderTestTextConfigPreview() {
+        const rows = normalizeTestTextConfigRows(window.__testTextConfigRows || []);
+        window.__testTextConfigRows = rows;
+        document.getElementById('testTextConfigHint').textContent = rows.length ? `识别到 ${rows.length} 条，请核对后确认` : '未识别到有效配置';
+        document.getElementById('testTextConfigConfirm').disabled = !rows.length;
+        document.getElementById('testTextConfigPreview').innerHTML = rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:13px;"><tr><th>名称</th><th>宽</th><th>高</th><th>后缀</th><th>大小限制</th><th>需求详述</th><th>操作</th></tr>${rows.map((r, idx) => `<tr>
+            <td><input value="${escapeTestHtml(r.name)}" oninput="updateTestTextConfigRow(${idx}, 'name', this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
+            <td><input type="number" min="1" value="${r.width}" oninput="updateTestTextConfigRow(${idx}, 'width', this.value)" style="width:80px;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
+            <td><input type="number" min="1" value="${r.height}" oninput="updateTestTextConfigRow(${idx}, 'height', this.value)" style="width:80px;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
+            <td><select onchange="updateTestTextConfigRow(${idx}, 'ext', this.value)" style="padding:6px;border:1px solid #ddd;border-radius:5px;"><option value="jpg"${r.ext === 'png' ? '' : ' selected'}>JPG</option><option value="png"${r.ext === 'png' ? ' selected' : ''}>PNG</option></select></td>
+            <td><input type="number" min="1" value="${r.sizeLimit}" oninput="updateTestTextConfigRow(${idx}, 'sizeLimit', this.value)" style="width:90px;padding:6px;border:1px solid #ddd;border-radius:5px;"> KB</td>
+            <td><input value="${escapeTestHtml(r.requirementDetail || '')}" placeholder="无其他需求" oninput="updateTestTextConfigRow(${idx}, 'requirementDetail', this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
+            <td><button class="btn" style="padding:6px 10px;color:#dc2626;border:1px solid #fecaca;background:white;" onclick="deleteTestTextConfigRow(${idx})">删除</button></td>
+        </tr>`).join('')}</table>` : '';
+    }
+
+    function confirmTestTextConfig() {
+        const rows = normalizeTestTextConfigRows(window.__testTextConfigRows || []);
+        if (!rows.length) return;
+        applyTestConfigItems(rows, (document.getElementById('testTextConfigName').value || '').trim() || '手动输入配置', 'txt');
+        closeTextConfigImportModal();
     }
 
     async function importImageFiles(files) {
@@ -624,6 +900,7 @@
                         size: Math.round(file.size / 1024),
                         ext: file.name.split('.').pop().toLowerCase().replace('jpeg', 'jpg'),
                         dataUrl: e.target.result,
+                        blob: file,
                         matched: false
                     });
                     resolve();
@@ -638,6 +915,8 @@
     function checkAll() {
         if (configItems.length === 0 || uploadedImages.length === 0) return;
         document.getElementById('resultsArea').classList.remove('hidden');
+        compressedEntries = [];
+        document.getElementById('compressedArea').classList.add('hidden');
         
         // 重置图片匹配状态
         uploadedImages.forEach(img => img.matched = false);
@@ -648,6 +927,8 @@
         let matchedCount = 0;
         let errorCount = 0;
         let missingCount = 0;
+        missingConfigEntries = [];
+        oversizedEntries = [];
 
         configItems.forEach(config => {
             // 查找完全匹配规格的图
@@ -668,7 +949,10 @@
                 matchedCount++;
                 
                 const sizeError = match.size > config.sizeLimit;
-                if (sizeError) errorCount++;
+                if (sizeError) {
+                    errorCount++;
+                    oversizedEntries.push({ config, image: match, reason: '过大' });
+                }
 
                 tr.innerHTML = `
                     <td>${config.id}</td>
@@ -680,6 +964,7 @@
                 `;
             } else {
                 missingCount++;
+                missingConfigEntries.push({ config, reason: '缺图' });
                 tr.innerHTML = `
                     <td>${config.id}</td>
                     <td>${configSpec}</td>
@@ -735,6 +1020,7 @@
                 <div>多余文件</div>
             </div>
         `;
+        updateSummaryActions();
         if (window.UsageTracker) {
             UsageTracker.trackTestVerify({
                 matchedCount,
@@ -743,6 +1029,221 @@
                 extraCount: extraImages.length
             });
         }
+    }
+
+    function updateSummaryActions() {
+        const hasMissingExport = missingConfigEntries.length > 0 || oversizedEntries.length > 0;
+        const hasOversized = oversizedEntries.length > 0;
+        const bar = document.getElementById('summaryActions');
+        const exportBtn = document.getElementById('exportMissingConfigBtn');
+        const compressBtn = document.getElementById('compressOversizeBtn');
+        const qualityLabel = document.getElementById('compressQualityLabel');
+        if (bar) bar.classList.toggle('show', hasMissingExport || hasOversized);
+        if (exportBtn) exportBtn.style.display = hasMissingExport ? '' : 'none';
+        if (compressBtn) compressBtn.style.display = hasOversized ? '' : 'none';
+        if (qualityLabel) qualityLabel.style.display = hasOversized ? 'flex' : 'none';
+    }
+
+    function sanitizeTestFilename(name, fallback = '文件') {
+        const s = String(name || '').trim().replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ');
+        return s || fallback;
+    }
+
+    function buildConfigTxtLine(config, reason) {
+        return `【序号】${config.id}\r\n【描述名称】${reason ? `【${reason}】` : ''}${config.name || '规格'}\r\n【格式(jpg/png)】${config.ext}\r\n【宽】${config.width}\r\n【高】${config.height}\r\n【限制KB】${config.sizeLimit}\r\n【需求详述】${config.requirementDetail || '无其他需求'}`;
+    }
+
+    function exportMissingConfigTxt() {
+        const rows = [
+            ...missingConfigEntries.map((entry) => ({ config: entry.config, reason: '缺图' })),
+            ...oversizedEntries.map((entry) => ({ config: entry.config, reason: '过大' }))
+        ];
+        if (!rows.length) {
+            alert('没有缺失或过大的配置');
+            return;
+        }
+        const content = rows.map((entry) => buildConfigTxtLine(entry.config, entry.reason)).join('\r\n\r\n');
+        const filename = `缺失-${sanitizeTestFilename(currentConfigSourceName, '导入配置')}.txt`;
+        downloadBlob('\ufeff' + content, filename, 'text/plain;charset=utf-8');
+    }
+
+    function loadImageElement(src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = src;
+        });
+    }
+
+    function canvasToBlob(canvas, mime, quality) {
+        return new Promise((resolve) => canvas.toBlob(resolve, mime, quality));
+    }
+
+    function quantizeCanvas(canvas, step) {
+        if (step <= 1) return canvas;
+        const out = document.createElement('canvas');
+        out.width = canvas.width;
+        out.height = canvas.height;
+        const ctx = out.getContext('2d');
+        ctx.drawImage(canvas, 0, 0);
+        const imageData = ctx.getImageData(0, 0, out.width, out.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = Math.round(data[i] / step) * step;
+            data[i + 1] = Math.round(data[i + 1] / step) * step;
+            data[i + 2] = Math.round(data[i + 2] / step) * step;
+        }
+        ctx.putImageData(imageData, 0, 0);
+        return out;
+    }
+
+    async function compressImageForConfig(image, config, prioritizeQuality) {
+        const src = await loadImageElement(image.dataUrl);
+        const canvas = document.createElement('canvas');
+        canvas.width = config.width;
+        canvas.height = config.height;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(src, 0, 0, config.width, config.height);
+
+        const maxKb = Math.max(1, Number(config.sizeLimit) || 1000);
+        const ext = config.ext === 'png' ? 'png' : 'jpg';
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+        let bestBlob = null;
+        let warning = false;
+
+        if (ext === 'jpg') {
+            let minQ = 0.1;
+            let maxQ = 0.95;
+            bestBlob = await canvasToBlob(canvas, mime, maxQ);
+            if (bestBlob.size / 1024 > maxKb) {
+                for (let i = 0; i < 7; i++) {
+                    const q = (minQ + maxQ) / 2;
+                    const blob = await canvasToBlob(canvas, mime, q);
+                    if (blob.size / 1024 <= maxKb) {
+                        bestBlob = blob;
+                        minQ = q;
+                    } else {
+                        maxQ = q;
+                    }
+                }
+                if (bestBlob.size / 1024 > maxKb && !prioritizeQuality) {
+                    bestBlob = await canvasToBlob(canvas, mime, 0.1);
+                    warning = true;
+                }
+            }
+        } else {
+            const steps = prioritizeQuality ? [1, 2, 4] : [1, 2, 4, 8, 12, 16, 24, 32];
+            bestBlob = await canvasToBlob(canvas, mime);
+            for (const step of steps) {
+                const testCanvas = quantizeCanvas(canvas, step);
+                const blob = await canvasToBlob(testCanvas, mime);
+                if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob;
+                if (blob.size / 1024 <= maxKb) {
+                    bestBlob = blob;
+                    break;
+                }
+            }
+            if (bestBlob.size / 1024 > maxKb) warning = true;
+        }
+
+        return {
+            blob: bestBlob,
+            sizeKb: Math.round(bestBlob.size / 1024),
+            ext,
+            warning: warning || (bestBlob.size / 1024 > maxKb)
+        };
+    }
+
+    async function compressOversizedImages() {
+        if (!oversizedEntries.length) return;
+        const btn = document.getElementById('compressOversizeBtn');
+        const prioritizeQuality = !!(document.getElementById('testPriorityQuality') && document.getElementById('testPriorityQuality').checked);
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '压缩中…';
+        }
+        try {
+            compressedEntries = [];
+            for (const entry of oversizedEntries) {
+                const output = await compressImageForConfig(entry.image, entry.config, prioritizeQuality);
+                const url = URL.createObjectURL(output.blob);
+                compressedEntries.push({ ...entry, ...output, url });
+            }
+            renderCompressedResults();
+        } catch (err) {
+            console.error(err);
+            alert('压缩失败，请重试或减少图片数量');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '压缩规格';
+            }
+        }
+    }
+
+    function renderCompressedResults() {
+        const area = document.getElementById('compressedArea');
+        const body = document.getElementById('compressedBody');
+        if (!compressedEntries.length) {
+            area.classList.add('hidden');
+            body.innerHTML = '';
+            return;
+        }
+        area.classList.remove('hidden');
+        body.innerHTML = compressedEntries.map((entry) => {
+            const ok = entry.sizeKb <= entry.config.sizeLimit;
+            return `
+                <tr>
+                    <td>${entry.config.id}</td>
+                    <td>${escapeTestHtml(entry.image.name)}</td>
+                    <td>${entry.config.width}x${entry.config.height} (${escapeTestHtml(entry.config.ext)})<br><small>${entry.config.sizeLimit}KB</small></td>
+                    <td>${entry.image.size}KB</td>
+                    <td><small style="${ok ? 'color:var(--success)' : 'color:var(--orange)'}">${entry.sizeKb}KB</small></td>
+                    <td><span class="status-badge ${ok ? 'status-match' : 'status-mismatch'}">${ok ? '符合限制' : '保清晰度超限'}</span></td>
+                    <td><img src="${entry.url}" class="img-preview" onclick="showModal('${entry.url}')"></td>
+                </tr>`;
+        }).join('');
+    }
+
+    async function downloadCompressedImages() {
+        if (!compressedEntries.length) {
+            alert('请先压缩规格');
+            return;
+        }
+        const makeName = (entry, used) => {
+            const base = sanitizeTestFilename(`${entry.config.width}x${entry.config.height}-${entry.config.name || entry.image.name.replace(/\.[^/.]+$/, '')}`, '压缩图片');
+            let name = `${base}.${entry.ext}`;
+            let i = 2;
+            while (used.has(name)) {
+                name = `${base}-${i}.${entry.ext}`;
+                i++;
+            }
+            used.add(name);
+            return name;
+        };
+        if (compressedEntries.length === 1) {
+            const used = new Set();
+            const entry = compressedEntries[0];
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(entry.blob);
+            a.download = makeName(entry, used);
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+            return;
+        }
+        const zip = new JSZip();
+        const folder = zip.folder('压缩后素材');
+        const used = new Set();
+        compressedEntries.forEach((entry) => folder.file(makeName(entry, used), entry.blob));
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `压缩后素材_${new Date().toISOString().slice(0, 10)}.zip`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     }
 
     function showModal(src) {

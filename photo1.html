@@ -9,6 +9,7 @@
     <script src="assets/vendor/lucide.min.js"></script>
     <script src="assets/vendor/xlsx.full.min.js"></script>
     <script src="assets/vendor/jszip.min.js"></script>
+    <script src="assets/config-parser.js"></script>
     <style>
         input[type="range"] { accent-color: #002FA7; }
         ::-webkit-scrollbar { width: 6px; }
@@ -233,6 +234,23 @@
             outline: none;
             border-color: #002FA7;
         }
+        .req-detail { display: none; }
+        .req-hover .req-detail,
+        .req-open .req-detail,
+        .req-force-show .req-detail { display: block; }
+        @font-face { font-family: "内置-思源黑体"; src: url("assets/ziti/SourceHanSansCN-Regular.otf") format("opentype"); font-display: swap; }
+        @font-face { font-family: "内置-思源黑体 Medium"; src: url("assets/ziti/SourceHanSansCN-Medium.otf") format("opentype"); font-display: swap; }
+        @font-face { font-family: "内置-思源黑体 Bold"; src: url("assets/ziti/SourceHanSansCN-Bold.otf") format("opentype"); font-display: swap; }
+        @font-face { font-family: "内置-Source Code Pro"; src: url("assets/ziti/SourceCodePro-Regular.otf") format("opentype"); font-display: swap; }
+        @font-face { font-family: "内置-方圆体"; src: url("assets/ziti/方圆体.otf") format("opentype"); font-display: swap; }
+        @font-face { font-family: "内置-方正兰亭黑"; src: url("assets/ziti/方正兰亭黑.TTF") format("truetype"); font-display: swap; }
+        @font-face { font-family: "内置-字魂朗圆体"; src: url("assets/ziti/字魂144号-朗圆体.ttf") format("truetype"); font-display: swap; }
+        @font-face { font-family: "内置-简中倩"; src: url("assets/ziti/简中倩.ttf") format("truetype"); font-display: swap; }
+        @font-face { font-family: "内置-简准圆"; src: url("assets/ziti/简准圆.ttf") format("truetype"); font-display: swap; }
+        @font-face { font-family: "内置-经典特黑简"; src: url("assets/ziti/经典特黑简.TTF") format("truetype"); font-display: swap; }
+        @font-face { font-family: "内置-经典细空艺"; src: url("assets/ziti/经典细空艺.TTF") format("truetype"); font-display: swap; }
+        @font-face { font-family: "内置-造字工坊悦黑"; src: url("assets/ziti/造字工坊 悦黑 (3).otf") format("opentype"); font-display: swap; }
+        @font-face { font-family: "内置-造字工房朗宋"; src: url("assets/ziti/造字工房朗宋常规体.ttf") format("truetype"); font-display: swap; }
         .spec-fmt-chevron {
             position: absolute;
             right: 3px;
@@ -286,6 +304,10 @@
                 <div class="flex items-center space-x-4">
                 <div class="flex items-center space-x-2 border-r pr-4 mr-2 border-gray-200">
                     <input type="text" id="globalFolderName" placeholder="导出总文件夹名" class="px-3 py-1.5 text-sm border rounded w-32 focus:outline-none focus:border-[#002FA7]">
+                    <label class="flex items-center space-x-1 text-sm text-gray-600 cursor-pointer" title="显示每个配置的需求详述">
+                        <input type="checkbox" id="showRequirementDetail" class="rounded text-[#002FA7] focus:ring-[#002FA7]" checked>
+                        <span>显示需求详述</span>
+                    </label>
                     <label class="flex items-center space-x-1 text-sm text-gray-600 cursor-pointer" title="勾选后如果画质损失严重，将允许超过指定的KB大小">
                         <input type="checkbox" id="priorityQuality" class="rounded text-[#002FA7] focus:ring-[#002FA7]">
                         <span>保清晰度(可超限)</span>
@@ -310,6 +332,9 @@
                         <i data-lucide="file-up" class="w-4 h-4 mr-2"></i> 上传配置 (Excel/TXT)
                         <input type="file" id="configInput" accept=".xlsx, .xls, .txt" class="hidden">
                     </label>
+                    <button type="button" id="openTextConfigImport" class="flex items-center px-4 py-2 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors shadow-sm">
+                        <i data-lucide="keyboard" class="w-4 h-4 mr-2"></i> 直接输入配置
+                    </button>
                     <button type="button" id="openConfigModal" class="flex items-center px-4 py-2 text-sm font-medium text-[#002FA7] border border-[#002FA7] rounded bg-white hover:bg-blue-50 transition-colors shadow-sm">
                         <i data-lucide="archive" class="w-4 h-4 mr-2"></i> 导入以往配置
                     </button>
@@ -951,7 +976,8 @@
                 width: c.width|0,
                 height: c.height|0,
                 maxSize: c.maxSize|0,
-                useNatural: !!c.useNatural
+                useNatural: !!c.useNatural,
+                requirementDetail: String(c.requirementDetail || '').trim()
             }));
         }
 
@@ -1050,6 +1076,7 @@
 【宽】数字
 【高】数字
 【限制KB】数字
+【需求详述】无法被尺寸、格式、大小限制涵盖但会影响验收的设计要求（没有则留空）
 
 要求：
 1. 只输出这个格式的内容，不要解释。
@@ -1058,6 +1085,7 @@
 4. 若未写限制KB，默认 1000。
 5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
 6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
+7. 【需求详述】是给设计师看的补充要求，只写固定字段无法表达的信息，例如 Logo 不能放左上角、需要/不需要副标题、元素安全区、文案位置限制等；不要重复尺寸、格式、大小限制。
 
 待处理数据如下：
 [在此粘贴你的原始数据]`;
@@ -1194,23 +1222,157 @@
                     showImportToast('导入失败，未读取到有效配置', false);
                     return false;
                 }
-                config = newCfg;
-                sourceImages.forEach(img => img.results = {});
                 const cfgBaseName = file.name.replace(/\.[^/.]+$/, '');
-                const folderInp = document.getElementById('globalFolderName');
-                if (folderInp) folderInp.value = cfgBaseName;
-                const rid = await saveConfigRecord(cfgBaseName, lowerName.endsWith('.txt') ? 'txt' : 'xlsx', newCfg);
-                configLoadedFromId = rid || null;
-                clearConfigDirty();
-                if (currentImageId) await selectImage(currentImageId);
-                showImportToast('导入配置成功', true);
-                if (window.UsageTracker) UsageTracker.trackPhotoConfigImported();
+                await applyImportedConfigRows(newCfg, cfgBaseName, lowerName.endsWith('.txt') ? 'txt' : 'xlsx', true);
                 return true;
             } catch (err) {
                 console.error("配置解析失败:", err);
                 showImportToast('导入失败，配置解析失败，请检查是否为 TXT、XLSX、XLS 格式', false);
                 return false;
             }
+        }
+
+        async function applyImportedConfigRows(newCfg, cfgBaseName, ext, trackUsage) {
+            config = (Array.isArray(newCfg) ? newCfg : []).map((c, idx) => ({
+                ...c,
+                id: String(c.id || idx + 1),
+                name: String(c.name || `规格${idx + 1}`).trim(),
+                format: c.format === 'png' ? 'png' : 'jpg',
+                width: Math.max(1, parseInt(c.width, 10) || 500),
+                height: Math.max(1, parseInt(c.height, 10) || 500),
+                maxSize: Math.max(1, parseInt(c.maxSize, 10) || 1000),
+                requirementDetail: String(c.requirementDetail || '').trim()
+            }));
+            sourceImages.forEach(img => img.results = {});
+            const folderInp = document.getElementById('globalFolderName');
+            if (folderInp) folderInp.value = cfgBaseName || '手动输入配置';
+            const rid = await saveConfigRecord(cfgBaseName || '手动输入配置', ext || 'txt', cleanCfgForStore(config));
+            configLoadedFromId = rid || null;
+            clearConfigDirty();
+            if (currentImageId) await selectImage(currentImageId);
+            showImportToast('导入配置成功', true);
+            if (trackUsage && window.UsageTracker) UsageTracker.trackPhotoConfigImported();
+        }
+
+        function ensureTextConfigImportModal() {
+            let modal = document.getElementById('textConfigImportModal');
+            if (modal) return modal;
+            document.body.insertAdjacentHTML('beforeend', `
+                <div id="textConfigImportModal" class="hidden fixed inset-0 z-[80] flex items-center justify-center p-4" style="background:rgba(15,23,42,.55)">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+                        <div class="px-5 py-4 border-b flex items-center justify-between">
+                            <h3 class="text-lg font-bold text-[#002FA7]">直接输入配置</h3>
+                            <button type="button" id="textConfigClose" class="p-2 text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
+                        </div>
+                        <div class="p-5 space-y-4 overflow-auto">
+                            <textarea id="textConfigInputArea" class="w-full h-48 border rounded-lg p-3 text-sm font-mono focus:outline-none focus:border-[#002FA7]" placeholder="可粘贴标准 TXT、表格复制内容，或如：开屏 1080x1920 png 800KB Logo 不要放左上角"></textarea>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <input id="textConfigName" class="border rounded px-3 py-2 text-sm min-w-[220px]" placeholder="配置名称（默认：手动输入配置）">
+                                <button type="button" id="textConfigRecognize" class="px-4 py-2 rounded bg-[#002FA7] text-white text-sm font-semibold">识别配置</button>
+                                <button type="button" id="textConfigAddRow" class="px-3 py-2 rounded border border-[#002FA7] text-[#002FA7] text-sm font-semibold bg-white">新增一条</button>
+                                <span id="textConfigHint" class="text-sm text-gray-500"></span>
+                            </div>
+                            <div id="textConfigPreview" class="border rounded-lg overflow-hidden hidden"></div>
+                        </div>
+                        <div class="px-5 py-4 border-t flex justify-end gap-2">
+                            <button type="button" id="textConfigCancel" class="px-4 py-2 rounded border text-gray-600">取消</button>
+                            <button type="button" id="textConfigConfirm" class="px-5 py-2 rounded bg-[#FF6B00] text-white font-semibold disabled:opacity-40" disabled>确认导入</button>
+                        </div>
+                    </div>
+                </div>`);
+            modal = document.getElementById('textConfigImportModal');
+            modal._recognizedRows = [];
+            const close = () => modal.classList.add('hidden');
+            document.getElementById('textConfigClose').onclick = close;
+            document.getElementById('textConfigCancel').onclick = close;
+            document.getElementById('textConfigRecognize').onclick = () => {
+                const text = document.getElementById('textConfigInputArea').value || '';
+                const rows = window.ConfigTextParser ? ConfigTextParser.parseText(text, { kind: 'image' }) : [];
+                modal._recognizedRows = rows;
+                renderTextConfigPreview(rows);
+            };
+            document.getElementById('textConfigAddRow').onclick = () => {
+                const rows = modal._recognizedRows || [];
+                rows.push({ id: String(rows.length + 1), name: `规格${rows.length + 1}`, format: 'jpg', width: 1000, height: 1000, maxSize: 1000, requirementDetail: '' });
+                modal._recognizedRows = rows;
+                renderTextConfigPreview(rows);
+            };
+            document.getElementById('textConfigConfirm').onclick = async () => {
+                const rows = normalizeTextConfigPreviewRows(modal._recognizedRows || []);
+                if (!rows.length) return;
+                const name = (document.getElementById('textConfigName').value || '').trim() || '手动输入配置';
+                await applyImportedConfigRows(rows, name, 'txt', true);
+                close();
+            };
+            if (window.lucide) lucide.createIcons();
+            return modal;
+        }
+
+        function normalizeTextConfigPreviewRows(rows) {
+            return (Array.isArray(rows) ? rows : []).map((r, idx) => ({
+                id: String(r.id || idx + 1),
+                name: String(r.name || `规格${idx + 1}`).trim(),
+                format: r.format === 'png' ? 'png' : 'jpg',
+                width: Math.max(1, parseInt(r.width, 10) || 1),
+                height: Math.max(1, parseInt(r.height, 10) || 1),
+                maxSize: Math.max(1, parseInt(r.maxSize, 10) || 1000),
+                requirementDetail: String(r.requirementDetail || '').trim()
+            }));
+        }
+
+        function updateTextConfigPreviewRow(index, field, value) {
+            const modal = document.getElementById('textConfigImportModal');
+            const rows = modal && modal._recognizedRows ? modal._recognizedRows : [];
+            if (!rows[index]) return;
+            if (field === 'width' || field === 'height' || field === 'maxSize') rows[index][field] = Math.max(1, parseInt(value, 10) || 1);
+            else if (field === 'format') rows[index].format = value === 'png' ? 'png' : 'jpg';
+            else rows[index][field] = String(value || '');
+        }
+
+        function deleteTextConfigPreviewRow(index) {
+            const modal = document.getElementById('textConfigImportModal');
+            if (!modal || !Array.isArray(modal._recognizedRows)) return;
+            modal._recognizedRows.splice(index, 1);
+            renderTextConfigPreview(modal._recognizedRows);
+        }
+
+        function renderTextConfigPreview(rows) {
+            const modal = document.getElementById('textConfigImportModal');
+            if (modal) modal._recognizedRows = normalizeTextConfigPreviewRows(rows);
+            rows = modal && modal._recognizedRows ? modal._recognizedRows : [];
+            const box = document.getElementById('textConfigPreview');
+            const hint = document.getElementById('textConfigHint');
+            const confirm = document.getElementById('textConfigConfirm');
+            if (!rows.length) {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+                hint.textContent = '未识别到有效配置，请检查是否包含尺寸信息';
+                confirm.disabled = true;
+                return;
+            }
+            hint.textContent = `识别到 ${rows.length} 条配置，请核对后确认`;
+            confirm.disabled = false;
+            box.classList.remove('hidden');
+            box.innerHTML = `<table class="w-full text-sm">
+                <thead class="bg-slate-50 text-gray-600"><tr>
+                    <th class="text-left p-2">名称</th><th class="text-left p-2">宽</th><th class="text-left p-2">高</th><th class="text-left p-2">后缀</th><th class="text-left p-2">大小限制</th><th class="text-left p-2">需求详述</th><th class="text-left p-2">操作</th>
+                </tr></thead>
+                <tbody>${rows.map((r) => `<tr class="border-t">
+                    <td class="p-2"><input class="w-full border rounded px-2 py-1" value="${escapeHtml(r.name)}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'name', this.value)"></td>
+                    <td class="p-2"><input type="number" min="1" class="w-20 border rounded px-2 py-1" value="${r.width}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'width', this.value)"></td>
+                    <td class="p-2"><input type="number" min="1" class="w-20 border rounded px-2 py-1" value="${r.height}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'height', this.value)"></td>
+                    <td class="p-2"><select class="border rounded px-2 py-1 uppercase" onchange="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'format', this.value)"><option value="jpg"${r.format === 'png' ? '' : ' selected'}>JPG</option><option value="png"${r.format === 'png' ? ' selected' : ''}>PNG</option></select></td>
+                    <td class="p-2"><input type="number" min="1" class="w-24 border rounded px-2 py-1" value="${r.maxSize}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'maxSize', this.value)"> KB</td>
+                    <td class="p-2 text-gray-600"><input class="w-full border rounded px-2 py-1" value="${escapeHtml(r.requirementDetail || '')}" placeholder="无其他需求" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'requirementDetail', this.value)"></td>
+                    <td class="p-2"><button type="button" class="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50" onclick="deleteTextConfigPreviewRow(${rows.indexOf(r)})">删除</button></td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        function openTextConfigImportModal() {
+            const modal = ensureTextConfigImportModal();
+            modal.classList.remove('hidden');
+            renderTextConfigPreview([]);
         }
 
         async function importSourceImages(files) {
@@ -1717,7 +1879,20 @@
                 { v: 'SimSun, serif', t: '宋体' },
                 { v: '"PingFang SC", sans-serif', t: '苹果苹方' },
                 { v: '"Noto Sans SC", sans-serif', t: 'Noto Sans SC' },
-                { v: 'Arial, sans-serif', t: 'Arial' }
+                { v: 'Arial, sans-serif', t: 'Arial' },
+                { v: '内置-思源黑体', t: '内置：思源黑体' },
+                { v: '内置-思源黑体 Medium', t: '内置：思源黑体 Medium' },
+                { v: '内置-思源黑体 Bold', t: '内置：思源黑体 Bold' },
+                { v: '内置-Source Code Pro', t: '内置：Source Code Pro' },
+                { v: '内置-方圆体', t: '内置：方圆体' },
+                { v: '内置-方正兰亭黑', t: '内置：方正兰亭黑' },
+                { v: '内置-字魂朗圆体', t: '内置：字魂朗圆体' },
+                { v: '内置-简中倩', t: '内置：简中倩' },
+                { v: '内置-简准圆', t: '内置：简准圆' },
+                { v: '内置-经典特黑简', t: '内置：经典特黑简' },
+                { v: '内置-经典细空艺', t: '内置：经典细空艺' },
+                { v: '内置-造字工坊悦黑', t: '内置：造字工坊悦黑' },
+                { v: '内置-造字工房朗宋', t: '内置：造字工房朗宋' }
             ];
             const chunks = builtins.map((b) => `<option value="${escAttr(b.v)}">${escText(b.t)}</option>`).join('');
             const imp = logoImportedTextFonts.map((x) =>
@@ -2035,22 +2210,24 @@
             }
         }
 
+        function normalizePhotoFormat(v) {
+            const s = String(v || '').toLowerCase().trim().replace('jpeg', 'jpg');
+            if (s === 'png') return 'png';
+            if (s === 'jpg' || s === 'jpeg') return 'jpg';
+            return 'jpg';
+        }
+
         function normalizeConfigRows(rows) {
-            const normalizeFormat = (v) => {
-                const s = String(v || '').toLowerCase().trim().replace('jpeg', 'jpg');
-                if (s === 'png') return 'png';
-                if (s === 'jpg' || s === 'jpeg') return 'jpg';
-                return 'jpg';
-            };
             return rows
                 .filter((r) => r && r[0] !== undefined && r[0] !== null && String(r[0]).trim())
                 .map((r) => ({
                     id: String(r[0]).trim(),
                     name: String(r[1] || '规格').trim(),
-                    format: normalizeFormat(r[2]),
+                    format: normalizePhotoFormat(r[2]),
                     width: parseInt(r[3], 10) || 500,
                     height: parseInt(r[4], 10) || 500,
-                    maxSize: parseInt(r[5], 10) || 1000
+                    maxSize: parseInt(r[5], 10) || 1000,
+                    requirementDetail: String(r[6] || '').trim()
                 }));
         }
 
@@ -2060,16 +2237,8 @@
         }
 
         function parseTxtConfigText(text) {
-            const blocks = String(text || '').match(/【序号】[\s\S]*?(?=(\n\s*【序号】)|$)/g) || [];
-            const rows = blocks.map((block, index) => ([
-                extractTxtValue(block, '【序号】') || String(index + 1),
-                extractTxtValue(block, '【描述名称】') || `规格${index + 1}`,
-                extractTxtValue(block, '【格式\\(jpg/png\\)】') || 'jpg',
-                extractTxtValue(block, '【宽】') || '500',
-                extractTxtValue(block, '【高】') || '500',
-                extractTxtValue(block, '【限制KB】') || '1000'
-            ]));
-            return normalizeConfigRows(rows);
+            if (window.ConfigTextParser) return ConfigTextParser.parseText(text, { kind: 'image' });
+            return normalizeConfigRows([]);
         }
 
         function parseExcelConfigArrayBuffer(arrayBuffer) {
@@ -2622,7 +2791,7 @@
                     return;
                 }
                 if (field === 'format') {
-                    cfg.format = normalizeFormat(t.value);
+                    cfg.format = normalizePhotoFormat(t.value);
                     t.value = cfg.format;
                     markConfigDirty();
                     reprocessSpecEverywhere(cfgId);
@@ -2693,6 +2862,14 @@
                     }
                     const cfg = config.find((c) => String(c.id) === String(cfgId));
                     if (cfg) window.LogoWorkbench.openLayoutModal(cfg.id);
+                    return;
+                }
+                const delSpecBtn = e.target.closest('[data-action="delete-spec"]');
+                if (delSpecBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    deleteCurrentConfigSpec(decodeURIComponent(delSpecBtn.getAttribute('data-cfg-id') || ''));
+                    return;
                 }
             });
         }
@@ -2704,15 +2881,16 @@
                 lucide.createIcons();
                 return;
             }
-            const firstCfgIdJs = config.length ? JSON.stringify(String(config[0].id)) : 'undefined';
+            const showSourceTools = !!(config.length && !(config.length === 1 && config[0] && config[0].useNatural));
+            const firstCfgIdJs = showSourceTools ? JSON.stringify(String(config[0].id)) : 'undefined';
             list.innerHTML = sourceImages.map(img => `
                 <div onclick="selectImage('${img.id}')" class="group relative rounded-lg border-2 p-1 transition-all cursor-pointer ${currentImageId === img.id ? 'border-[#002FA7] bg-blue-50' : 'border-transparent hover:bg-gray-100'}">
                     <div class="relative rounded overflow-hidden">
                         <img src="${img.url}" class="w-full h-16 object-cover rounded">
-                        <div class="absolute inset-0 flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 pointer-events-none group-hover:pointer-events-auto">
-                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); selectImage('${img.id}'); ${config.length ? `Modal.open('${img.id}', ${firstCfgIdJs})` : ''}" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">裁剪</button>
-                            <button type="button" ${config.length ? '' : 'disabled'} onclick="event.stopPropagation(); selectImage('${img.id}'); ${config.length ? `LogoWorkbench.openLayoutModal(${firstCfgIdJs})` : ''}" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow disabled:opacity-40">Logo</button>
-                        </div>
+                        ${showSourceTools ? `<div class="absolute inset-0 flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 pointer-events-none group-hover:pointer-events-auto">
+                            <button type="button" onclick="event.stopPropagation(); selectImage('${img.id}'); Modal.open('${img.id}', ${firstCfgIdJs})" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow">裁剪</button>
+                            <button type="button" onclick="event.stopPropagation(); selectImage('${img.id}'); LogoWorkbench.openLayoutModal(${firstCfgIdJs})" class="px-2 py-1 rounded-full bg-white text-[10px] font-bold text-[#002FA7] shadow">Logo</button>
+                        </div>` : ''}
                     </div>
                     <div class="mt-1 flex items-center bg-white rounded px-1 shadow-sm">
                         <input type="text" value="${img.customName !== undefined ? img.customName : img.name.replace(/\.[^/.]+$/, "")}" 
@@ -2732,6 +2910,22 @@
         function updateImgName(id, newName) {
             const img = sourceImages.find(i => i.id === id);
             if (img) img.customName = newName.trim();
+        }
+
+        function deleteCurrentConfigSpec(cfgId) {
+            const cfg = config.find((c) => String(c.id) === String(cfgId));
+            if (!cfg) return;
+            if (!confirm(`删除当前配置中的「${cfg.name || '规格'}」？`)) return;
+            config = config.filter((c) => String(c.id) !== String(cfgId));
+            sourceImages.forEach((img) => {
+                if (img && img.results) {
+                    const old = img.results[cfgId];
+                    if (old && old.url) { try { URL.revokeObjectURL(old.url); } catch (e) {} }
+                    delete img.results[cfgId];
+                }
+            });
+            markConfigDirty();
+            renderResults();
         }
 
         async function selectImage(id) {
@@ -2779,12 +2973,18 @@
                 const effH = eff.height;
                 const maxKb = Math.max(1, (cfg.maxSize|0) || 1000);
                 const isOver = res && parseFloat(res.size) > maxKb;
+                const reqDetail = String(cfg.requirementDetail || '').trim() || '无其他需求';
+                const showReqAll = !!(document.getElementById('showRequirementDetail') && document.getElementById('showRequirementDetail').checked);
 
                 return `
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group" data-cfg-card="${escapeHtml(String(cfg.id))}">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden group req-host ${showReqAll ? 'req-force-show' : ''}" data-cfg-card="${escapeHtml(String(cfg.id))}">
                         <div class="bg-gray-50 border-b px-4 py-2 flex justify-between items-center gap-2">
-                            <input type="text" class="spec-name-input flex-1 min-w-0 text-xs font-bold text-gray-600 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-[#002FA7] focus:outline-none px-0.5 py-0.5" data-spec-field="name" maxlength="32" title="点击修改规格名称" value="${escapeHtml(String(cfg.name || '规格'))}">
+                            <div class="flex items-center gap-1 flex-1 min-w-0">
+                                <input type="text" class="spec-name-input flex-1 min-w-0 text-xs font-bold text-gray-600 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-[#002FA7] focus:outline-none px-0.5 py-0.5" data-spec-field="name" maxlength="32" title="点击修改规格名称" value="${escapeHtml(String(cfg.name || '规格'))}">
+                                <button type="button" onclick="event.stopPropagation(); this.closest('[data-cfg-card]').classList.toggle('req-open')" onmouseenter="this.closest('[data-cfg-card]').classList.add('req-hover')" onmouseleave="this.closest('[data-cfg-card]').classList.remove('req-hover')" class="req-toggle w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none flex items-center justify-center shrink-0" title="查看需求详述">?</button>
+                            </div>
                             <div class="flex items-center gap-1 shrink-0">
+                                <button type="button" data-action="delete-spec" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50" title="删除该配置"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
                                 <div class="spec-fmt-select-wrap" title="输出格式">
                                     <select class="spec-fmt-select text-[9px] font-bold text-gray-600 uppercase" data-spec-field="format" aria-label="输出格式">
                                         <option value="jpg"${cfg.format === 'png' ? '' : ' selected'}>JPG</option>
@@ -2797,6 +2997,7 @@
                                 <span class="text-[9px] text-gray-500">KB</span>
                             </div>
                         </div>
+                        <div class="req-detail px-4 py-2 bg-amber-50 text-[12px] text-gray-700 border-b border-amber-100">${escapeHtml(reqDetail)}</div>
                         <div class="p-4">
                             <div class="w-full aspect-video bg-gray-50 rounded-lg flex items-center justify-center relative overflow-hidden border">
                                 ${res ? `
@@ -2870,6 +3071,7 @@
         const PRESET_CONFIG_TAGS = PRESET_CHANNEL_TAGS;
         let configFilterTags = new Set();
         let configSelectedIds = new Set();
+        const configExpandedIds = new Set();
         let configRecords = [];
 
         function galleryUuid() {
@@ -3217,7 +3419,10 @@
 
         async function galleryPurgeBySavedAtMs(maxAgeMs) {
             const cutoff = Date.now() - maxAgeMs;
-            const ids = galleryListRecords.filter((r) => (r.savedAt | 0) < cutoff).map((r) => r.id);
+            const ids = galleryListRecords.filter((r) => {
+                const savedAt = Number(r && r.savedAt);
+                return Number.isFinite(savedAt) && savedAt > 0 && savedAt < cutoff;
+            }).map((r) => r.id);
             if (!ids.length) { alert('没有符合条件的图库图片'); return; }
             if (!confirm(`将删除图库中 ${ids.length} 张早于期限的图片，且不可恢复。确定？`)) return;
             await galleryDeleteIds(ids);
@@ -4012,7 +4217,19 @@
                 const checked = configSelectedIds.has(r.id) ? 'checked' : '';
                 const cfgs = Array.isArray(r.configs) ? r.configs : [];
                 const counts = configTypeCounts(cfgs);
-                const top5 = cfgs.slice(0, 5).map((c) => `${c.id}.${c.name} ${c.format} ${c.width}x${c.height} ${c.maxSize}KB`).join(' | ');
+                const expanded = configExpandedIds.has(r.id);
+                const visibleCfgs = expanded ? cfgs : cfgs.slice(0, 4);
+                const cfgPreview = visibleCfgs.map((c) => `
+                    <div class="grid grid-cols-[minmax(80px,1.4fr)_90px_70px_60px_minmax(120px,2fr)] gap-2 py-1 border-b border-gray-100 last:border-0 text-[11px] text-gray-600">
+                        <span class="font-medium text-gray-800 truncate">${escapeHtml(c.name || '规格')}</span>
+                        <span>${c.width}×${c.height}</span>
+                        <span class="uppercase">${escapeHtml(c.format || 'jpg')}</span>
+                        <span>${c.maxSize || 1000}KB</span>
+                        <span class="truncate">${escapeHtml(c.requirementDetail || '无其他需求')}</span>
+                    </div>`).join('');
+                const expandBtn = cfgs.length > 4
+                    ? `<button type="button" class="config-expand text-[11px] mt-1 text-[#002FA7] hover:underline" data-id="${escapeGalleryAttr(r.id)}">${expanded ? '收起' : `共 ${cfgs.length} 个配置 点击展开`}</button>`
+                    : '';
                 const tags = (r.tags || []).map((t) => `<button type="button" class="config-row-tag text-[10px] px-1.5 py-0.5 bg-gray-100 hover:bg-red-50 rounded border border-transparent hover:border-red-200" data-id="${escapeGalleryAttr(r.id)}" data-tag="${escapeGalleryAttr(t)}">${escapeHtml(t)}</button>`).join(' ');
                 return `
                 <div class="relative border rounded-xl p-3 ${configSelectedIds.has(r.id) ? 'border-[#002FA7] ring-2 ring-[#002FA7]/20' : 'border-gray-200'} bg-white pr-10" data-config-row="${escapeGalleryAttr(r.id)}">
@@ -4027,7 +4244,8 @@
                                 <span class="text-[11px] text-gray-500">png ${counts.png} / jpg ${counts.jpg}</span>
                                 <span class="text-[11px] text-gray-500">${formatDateTime(r.savedAt)}</span>
                             </div>
-                            <p class="text-[11px] text-gray-600 mt-1 break-words">${escapeHtml(top5 || '（空配置）')}</p>
+                            <div class="mt-2 rounded border border-gray-100 bg-gray-50/60 px-2 py-1">${cfgPreview || '<div class="text-[11px] text-gray-400 py-1">（空配置）</div>'}</div>
+                            ${expandBtn}
                             <div class="mt-2 flex flex-wrap gap-1">${tags || '<span class="text-[10px] text-gray-300">无标签</span>'}</div>
                         </div>
                     </div>
@@ -4051,6 +4269,15 @@
                 btn.onclick = (e) => {
                     e.stopPropagation();
                     configDeleteOne(btn.getAttribute('data-id'));
+                };
+            });
+            box.querySelectorAll('.config-expand').forEach((btn) => {
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const id = btn.getAttribute('data-id');
+                    if (configExpandedIds.has(id)) configExpandedIds.delete(id);
+                    else configExpandedIds.add(id);
+                    renderConfigList();
                 };
             });
             updateConfigSelectedCount();
@@ -6596,6 +6823,7 @@
             await importConfigFile(file);
             e.target.value = '';
         };
+        document.getElementById('openTextConfigImport').onclick = openTextConfigImportModal;
 
         document.getElementById('downloadAll').onclick = async () => {
             if (sourceImages.length === 0) return;
@@ -6603,7 +6831,8 @@
             
             const globalFolderName = sanitizeFileName(document.getElementById('globalFolderName').value.trim() || `批量导出_${new Date().getTime()}`, '批量导出');
             const rootFolder = zip.folder(globalFolderName);
-            const groupByCfg = sourceImages.length > (config || []).length;
+            const singleSourceExport = sourceImages.length === 1;
+            const groupByCfg = !singleSourceExport && sourceImages.length > (config || []).length;
             if (groupByCfg) {
                 // 素材数量远大于配置条数：按“配置/描述名称”分文件夹，避免每个素材一个文件夹
                 for (let cfg of config) {
@@ -6622,6 +6851,21 @@
                             const uniqueBase = uniqueNameWithSuffix(baseFile, fileNameUsed, '-', 1);
                             cfgFolder.file(`${uniqueBase}.${ext}`, res.blob);
                         }
+                    }
+                }
+            } else if (singleSourceExport) {
+                const img = sourceImages[0];
+                const fileNameUsed = {};
+                for (let cfg of config) {
+                    const res = img.results[cfg.id];
+                    if (res && res.blob) {
+                        const ext = res.ext || cfg.format;
+                        const eff = getEffectiveConfig(cfg, img);
+                        const sizePart = `${eff.width}x${eff.height}`;
+                        const descPart = String(cfg.name || '').trim() || '未命名';
+                        const baseFile = sanitizeFileName(`${sizePart}-${descPart}`, 'image');
+                        const uniqueBase = uniqueNameWithSuffix(baseFile, fileNameUsed, '-', 1);
+                        rootFolder.file(`${uniqueBase}.${ext}`, res.blob);
                     }
                 }
             } else {
@@ -6679,7 +6923,7 @@
 
         function downloadExcelTemplate() {
             closeTemplateDownloadMenu();
-            const data = [["序号", "描述名称", "格式(jpg/png)", "宽", "高", "限制KB"], ...config.map(c => [c.id, c.name, c.format, c.width, c.height, c.maxSize])];
+            const data = [["序号", "描述名称", "格式(jpg/png)", "宽", "高", "限制KB", "需求详述"], ...config.map(c => [c.id, c.name, c.format, c.width, c.height, c.maxSize, c.requirementDetail || '无其他需求'])];
             const ws = XLSX.utils.aoa_to_sheet(data);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Config");
@@ -6734,7 +6978,7 @@
 
         document.getElementById('downloadTemplateTxt').onclick = () => {
             closeTemplateDownloadMenu();
-            const lines = config.map((c, idx) => `【序号】${idx + 1}\r\n【描述名称】${c.name}\r\n【格式(jpg/png)】${c.format}\r\n【宽】${c.width}\r\n【高】${c.height}\r\n【限制KB】${c.maxSize}`);
+            const lines = config.map((c, idx) => `【序号】${idx + 1}\r\n【描述名称】${c.name}\r\n【格式(jpg/png)】${c.format}\r\n【宽】${c.width}\r\n【高】${c.height}\r\n【限制KB】${c.maxSize}\r\n【需求详述】${c.requirementDetail || '无其他需求'}`);
             const content = lines.join('\r\n\r\n');
             const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             triggerBlobDownload(blob, '批量图片处理_配置模板.txt');
@@ -6763,6 +7007,7 @@
                 if (currentImageId) selectImage(currentImageId);
             }
         };
+        document.getElementById('showRequirementDetail').onchange = () => renderResults();
 
         // --- PWA & 离线缓存支持 ---
         const setupPWA = () => {

@@ -16,6 +16,7 @@
             --card: #ffffff;
         }
         * { box-sizing: border-box; }
+        .hidden { display: none !important; }
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -145,7 +146,7 @@
 
         <div id="formPanel" class="hidden">
             <div class="form-card">
-                <p style="margin:0 0 16px;color:var(--muted);font-size:16px;">填写后可在新页面查看建议全文与您的使用回顾，并支持导出长图或复制全文。</p>
+                <p style="margin:0 0 16px;color:var(--muted);font-size:16px;">填写后可在新页面查看建议全文与您的使用回顾，并支持导出长图或 TXT。</p>
                 <label for="fbSection">建议板块</label>
                 <select id="fbSection">
                     <option value="test">图片尺寸核对</option>
@@ -375,23 +376,82 @@
                 </div>`;
         }
 
+        function pushPlainToolSummary(lines, toolKey, data) {
+            if (!toolHasAny(toolKey, data)) return;
+            const b = data[toolKey];
+            const rows = [];
+            if (toolKey === 'test') {
+                if (b.verifyRuns > 0) rows.push(`核对过 ${b.verifyRuns} 次图片是否符合配置`);
+                if (b.copyAi > 0) rows.push(`复制了 ${b.copyAi} 次 AI 指令`);
+                if (b.mismatchRuns > 0) rows.push(`发现了 ${b.mismatchRuns} 次规格有出入的情况`);
+                if (b.perfectMatchRuns > 0) rows.push(`验收过 ${b.perfectMatchRuns} 次完美匹配的素材`);
+            } else if (toolKey === 'photo') {
+                if (b.imagesImported > 0) rows.push(`导入了 ${b.imagesImported} 张图片`);
+                if (b.configsImported > 0) rows.push(`导入了 ${b.configsImported} 份配置`);
+                if (b.copyAi > 0) rows.push(`复制了 ${b.copyAi} 次 AI 指令`);
+                if (b.specsCreated > 0) rows.push(`单独创建了 ${b.specsCreated} 个图片规格`);
+                if (b.configsSaved > 0) rows.push(`修改了 ${b.configsSaved} 份配置`);
+                if (b.quickCrop > 0 || b.logoEditor > 0) {
+                    rows.push(`使用快速剪裁 ${b.quickCrop || 0} 次，Logo 编辑器 ${b.logoEditor || 0} 次`);
+                }
+                if (b.logosImported > 0) rows.push(`导入了 ${b.logosImported} 个 Logo`);
+                if (b.logoSave > 0) rows.push(`保存带 Logo 的素材 ${b.logoSave} 次`);
+            } else {
+                if (b.videosImported > 0) rows.push(`导入了 ${b.videosImported} 个视频`);
+                if (b.configsImported > 0) rows.push(`导入了 ${b.configsImported} 份视频配置`);
+                if (b.quickCrop > 0 || b.logoEditor > 0) {
+                    rows.push(`使用快速剪裁 ${b.quickCrop || 0} 次，Logo 编辑器 ${b.logoEditor || 0} 次`);
+                }
+                if (b.logosImported > 0) rows.push(`导入了 ${b.logosImported} 个 Logo`);
+                if (b.logoSave > 0) rows.push(`保存带 Logo 的视频 ${b.logoSave} 次`);
+            }
+            if (!rows.length) return;
+            lines.push(`【${TOOL_NAMES[toolKey]}】`);
+            rows.forEach((row) => lines.push(`- ${row}`));
+            lines.push('');
+        }
+
+        function pushPlainMonthMetrics(lines, toolKey, data) {
+            if (!toolHasAny(toolKey, data)) return;
+            const tmp = document.createElement('div');
+            tmp.innerHTML = renderMonthMetrics(toolKey, data[toolKey]);
+            const text = (tmp.innerText || tmp.textContent || '').trim();
+            if (!text) return;
+            lines.push(`【${TOOL_NAMES[toolKey]}】`);
+            text.split(/\n+/).map((s) => s.trim()).filter(Boolean).forEach((row) => lines.push(`- ${row}`));
+            lines.push('');
+        }
+
         function buildPlainTextExport(store, draft) {
             const lines = [];
             if (draft && draft.text) {
                 lines.push('【我的建议】');
                 lines.push(`板块：${SECTION_LABELS[draft.section] || draft.section}`);
                 lines.push(`类型：${TYPE_LABELS[draft.type] || draft.type}`);
+                if (draft.submittedAt) lines.push(`时间：${new Date(draft.submittedAt).toLocaleString('zh-CN')}`);
                 lines.push('');
                 lines.push(draft.text);
                 lines.push('');
-                lines.push('────────────────');
+                lines.push('==============================');
                 lines.push('');
             }
             lines.push('总使用情况统计');
+            lines.push('==============================');
             lines.push('');
-            const tmp = document.createElement('div');
-            tmp.innerHTML = renderReviewHtml(store);
-            lines.push(tmp.innerText || tmp.textContent || '');
+            const totals = store.totals || {};
+            ['test', 'photo', 'video'].forEach((tool) => pushPlainToolSummary(lines, tool, totals));
+            if (lines[lines.length - 1] !== '') lines.push('');
+            const months = Object.keys(store.months || {})
+                .filter((k) => toolHasAny('test', store.months[k]) || toolHasAny('photo', store.months[k]) || toolHasAny('video', store.months[k]))
+                .sort((a, b) => b.localeCompare(a));
+            months.forEach((ym) => {
+                lines.push(formatMonthLabel(ym));
+                lines.push('------------------------------');
+                ['test', 'photo', 'video'].forEach((tool) => pushPlainMonthMetrics(lines, tool, store.months[ym]));
+            });
+            if (!months.length && !toolHasAny('test', totals) && !toolHasAny('photo', totals) && !toolHasAny('video', totals)) {
+                lines.push('暂无使用记录。');
+            }
             return lines.join('\n').trim();
         }
 
@@ -438,19 +498,15 @@
             }
         }
 
-        function copyFullText(store, draft) {
+        function exportTxt(store, draft) {
             const text = buildPlainTextExport(store, draft);
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            document.body.appendChild(ta);
-            ta.select();
-            try {
-                document.execCommand('copy');
-                showToast('已复制全文');
-            } catch (e) {
-                alert('复制失败，请手动选择页面内容复制');
-            }
-            document.body.removeChild(ta);
+            const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${draft && draft.text ? '建议与使用回顾' : '使用回顾'}_${new Date().toISOString().slice(0, 10)}.txt`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+            showToast('TXT 已下载');
         }
 
         function setupTopActions(mode, store, draft) {
@@ -468,14 +524,13 @@
             exportBtn.onclick = () => exportJpg();
             box.appendChild(exportBtn);
 
-            if (mode === 'result') {
-                const copyBtn = document.createElement('button');
-                copyBtn.type = 'button';
-                copyBtn.className = 'btn btn-outline';
-                copyBtn.textContent = '复制全文';
-                copyBtn.onclick = () => copyFullText(store, draft);
-                box.appendChild(copyBtn);
-            }
+            const txtBtn = document.createElement('button');
+            txtBtn.type = 'button';
+            txtBtn.className = 'btn btn-outline';
+            txtBtn.textContent = '导出为 TXT';
+            txtBtn.onclick = () => exportTxt(store, draft);
+            box.appendChild(txtBtn);
+
             const formLink = document.createElement('a');
             formLink.href = 'suggest.html?view=form';
             formLink.className = 'btn btn-ghost';
