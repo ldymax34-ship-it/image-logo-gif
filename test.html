@@ -701,14 +701,57 @@
         renderTestConfigLibrary();
     }
 
+    const TEST_TEXT_CONFIG_DEFAULT_TEMPLATE = `【序号】数字
+【描述名称】名称（15字以内、不可重复）
+【格式(jpg/png)】jpg或png
+【宽】数字
+【高】数字
+【限制KB】数字
+【需求详述】无法被尺寸、格式、大小限制涵盖但会影响验收的设计要求（没有则留空）`;
+
+    function showTestTextConfigCopyHint() {
+        const banner = document.getElementById('copySuccess');
+        if (!banner) return;
+        banner.textContent = '指令已复制！你可以将其粘贴给 AI (如飞书的知识问答)，让它帮你把杂乱的需求转换为标准 TXT 格式。';
+        banner.style.display = 'flex';
+        setTimeout(() => banner.style.display = 'none', 5000);
+    }
+
+    function copyTestTextConfigAiPrompt() {
+        const prompt = `请帮我将以下图片规格需求整理成标准的 TXT 格式。
+如果是多行描述，请严格按照以下格式输出（每个项目之间空一行）：
+
+${TEST_TEXT_CONFIG_DEFAULT_TEMPLATE}
+
+要求：
+1. 只输出这个格式的内容，不要解释。
+2. 宽度、高度和KB必须是纯数字。
+3. 格式只能是 jpg 或 png；若未写格式，默认 jpg。
+4. 若未写限制KB，默认 1000。
+5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
+6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
+7. 【需求详述】是给设计师看的补充要求，只写固定字段无法表达的信息，例如 Logo 不能放左上角、需要/不需要副标题、元素安全区、文案位置限制等；不要重复尺寸、格式、大小限制。
+
+待处理数据如下：
+[在此粘贴你的原始数据]`;
+        const textarea = document.createElement('textarea');
+        textarea.value = prompt;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showTestTextConfigCopyHint();
+        if (window.UsageTracker) UsageTracker.trackTestCopyAi();
+    }
+
     function openTextConfigImportModal() {
         if (!document.getElementById('testTextConfigModal')) {
             document.body.insertAdjacentHTML('beforeend', `
                 <div id="testTextConfigModal" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;">
                     <div style="background:white;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
-                        <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;"><h3 style="margin:0;color:var(--klein-blue);">直接输入配置</h3><button class="btn" onclick="closeTextConfigImportModal()">关闭</button></div>
+                        <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:10px;"><div style="display:flex;align-items:center;gap:8px;"><h3 style="margin:0;color:var(--klein-blue);">直接输入配置</h3><button class="btn btn-orange" style="padding:6px 10px;font-size:13px;" onclick="copyTestTextConfigAiPrompt()">复制AI指令</button></div><button class="btn" onclick="closeTextConfigImportModal()">关闭</button></div>
                         <div style="padding:16px 18px;overflow:auto;">
-                            <textarea id="testTextConfigInput" style="width:100%;height:180px;border:1px solid #ddd;border-radius:8px;padding:10px;font-family:monospace;" placeholder="粘贴标准 TXT、表格内容，或如：开屏 1080x1920 png 800KB logo不要左上角"></textarea>
+                            <textarea id="testTextConfigInput" style="width:100%;height:180px;border:1px solid #ddd;border-radius:8px;padding:10px;font-family:monospace;"></textarea>
                             <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><input id="testTextConfigName" placeholder="配置名称" style="padding:8px;border:1px solid #ddd;border-radius:6px;"><button class="btn btn-primary" onclick="recognizeTestTextConfig()">识别配置</button><button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="addTestTextConfigRow()">新增一条</button><span id="testTextConfigHint" style="color:#666;font-size:13px;"></span></div>
                             <div id="testTextConfigPreview" style="margin-top:12px;"></div>
                         </div>
@@ -717,6 +760,8 @@
                 </div>`);
         }
         document.getElementById('testTextConfigModal').style.display = 'flex';
+        const input = document.getElementById('testTextConfigInput');
+        if (input && !input.value.trim()) input.value = TEST_TEXT_CONFIG_DEFAULT_TEMPLATE;
         document.getElementById('testTextConfigPreview').innerHTML = '';
         document.getElementById('testTextConfigConfirm').disabled = true;
     }
@@ -735,10 +780,25 @@
         return (Array.isArray(rows) ? rows : []).map(toTestConfigItem);
     }
 
+    function validateTestTextConfigRows(rows) {
+        let hasInvalid = false;
+        (Array.isArray(rows) ? rows : []).forEach((r) => {
+            r._errors = {};
+            if (!String(r.name || '').trim()) r._errors.name = true;
+            if (!['jpg', 'png'].includes(String(r.ext || '').toLowerCase())) r._errors.ext = true;
+            if (!(parseInt(r.width, 10) > 0)) r._errors.width = true;
+            if (!(parseInt(r.height, 10) > 0)) r._errors.height = true;
+            if (!(parseInt(r.sizeLimit, 10) > 0)) r._errors.sizeLimit = true;
+            if (Object.keys(r._errors).length) hasInvalid = true;
+        });
+        return hasInvalid;
+    }
+
     function updateTestTextConfigRow(index, field, value) {
         const rows = window.__testTextConfigRows || [];
         if (!rows[index]) return;
-        if (field === 'width' || field === 'height' || field === 'sizeLimit') rows[index][field] = Math.max(1, parseInt(value, 10) || 1);
+        if (rows[index]._errors) delete rows[index]._errors[field];
+        if (field === 'width' || field === 'height' || field === 'sizeLimit') rows[index][field] = value;
         else if (field === 'ext') rows[index].ext = value === 'png' ? 'png' : 'jpg';
         else rows[index][field] = String(value || '');
     }
@@ -752,28 +812,35 @@
 
     function addTestTextConfigRow() {
         const rows = window.__testTextConfigRows || [];
-        rows.push(toTestConfigItem({ id: String(rows.length + 1), name: `规格${rows.length + 1}`, ext: 'jpg', width: 1000, height: 1000, sizeLimit: 1000, requirementDetail: '' }));
+        rows.push({ id: String(rows.length + 1), name: '', ext: '', width: '', height: '', sizeLimit: '', requirementDetail: '' });
         window.__testTextConfigRows = rows;
         renderTestTextConfigPreview();
     }
 
     function renderTestTextConfigPreview() {
-        const rows = normalizeTestTextConfigRows(window.__testTextConfigRows || []);
+        const rows = window.__testTextConfigRows || [];
         window.__testTextConfigRows = rows;
         document.getElementById('testTextConfigHint').textContent = rows.length ? `识别到 ${rows.length} 条，请核对后确认` : '未识别到有效配置';
         document.getElementById('testTextConfigConfirm').disabled = !rows.length;
+        const errStyle = (r, field) => r._errors && r._errors[field] ? 'border:1px solid #ef4444;background:#fff1f2;' : 'border:1px solid #ddd;';
         document.getElementById('testTextConfigPreview').innerHTML = rows.length ? `<table style="width:100%;border-collapse:collapse;font-size:13px;"><tr><th>名称</th><th>宽</th><th>高</th><th>后缀</th><th>大小限制</th><th>需求详述</th><th>操作</th></tr>${rows.map((r, idx) => `<tr>
-            <td><input value="${escapeTestHtml(r.name)}" oninput="updateTestTextConfigRow(${idx}, 'name', this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
-            <td><input type="number" min="1" value="${r.width}" oninput="updateTestTextConfigRow(${idx}, 'width', this.value)" style="width:80px;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
-            <td><input type="number" min="1" value="${r.height}" oninput="updateTestTextConfigRow(${idx}, 'height', this.value)" style="width:80px;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
-            <td><select onchange="updateTestTextConfigRow(${idx}, 'ext', this.value)" style="padding:6px;border:1px solid #ddd;border-radius:5px;"><option value="jpg"${r.ext === 'png' ? '' : ' selected'}>JPG</option><option value="png"${r.ext === 'png' ? ' selected' : ''}>PNG</option></select></td>
-            <td><input type="number" min="1" value="${r.sizeLimit}" oninput="updateTestTextConfigRow(${idx}, 'sizeLimit', this.value)" style="width:90px;padding:6px;border:1px solid #ddd;border-radius:5px;"> KB</td>
+            <td><input value="${escapeTestHtml(r.name || '')}" oninput="updateTestTextConfigRow(${idx}, 'name', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="width:100%;padding:6px;${errStyle(r, 'name')}border-radius:5px;"></td>
+            <td><input type="number" min="1" value="${escapeTestHtml(r.width || '')}" oninput="updateTestTextConfigRow(${idx}, 'width', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="width:80px;padding:6px;${errStyle(r, 'width')}border-radius:5px;"></td>
+            <td><input type="number" min="1" value="${escapeTestHtml(r.height || '')}" oninput="updateTestTextConfigRow(${idx}, 'height', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="width:80px;padding:6px;${errStyle(r, 'height')}border-radius:5px;"></td>
+            <td><select onchange="updateTestTextConfigRow(${idx}, 'ext', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="padding:6px;${errStyle(r, 'ext')}border-radius:5px;"><option value="">请选择</option><option value="jpg"${r.ext === 'jpg' ? ' selected' : ''}>JPG</option><option value="png"${r.ext === 'png' ? ' selected' : ''}>PNG</option></select></td>
+            <td><input type="number" min="1" value="${escapeTestHtml(r.sizeLimit || '')}" oninput="updateTestTextConfigRow(${idx}, 'sizeLimit', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="width:90px;padding:6px;${errStyle(r, 'sizeLimit')}border-radius:5px;"> KB</td>
             <td><input value="${escapeTestHtml(r.requirementDetail || '')}" placeholder="无其他需求" oninput="updateTestTextConfigRow(${idx}, 'requirementDetail', this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
             <td><button class="btn" style="padding:6px 10px;color:#dc2626;border:1px solid #fecaca;background:white;" onclick="deleteTestTextConfigRow(${idx})">删除</button></td>
         </tr>`).join('')}</table>` : '';
     }
 
     function confirmTestTextConfig() {
+        if (validateTestTextConfigRows(window.__testTextConfigRows || [])) {
+            document.getElementById('testTextConfigHint').textContent = '请填写必要配置';
+            alert('请填写必要配置');
+            renderTestTextConfigPreview();
+            return;
+        }
         const rows = normalizeTestTextConfigRows(window.__testTextConfigRows || []);
         if (!rows.length) return;
         applyTestConfigItems(rows, (document.getElementById('testTextConfigName').value || '').trim() || '手动输入配置', 'txt');

@@ -64,6 +64,16 @@
             white-space: pre-wrap; font-size: 17px; color: var(--ink);
             background: rgba(255,255,255,0.7); padding: 12px; border-radius: 8px;
         }
+        .result-tip {
+            background: #edf3ff; border: 1px solid #bfdbfe; border-left: 4px solid var(--blue);
+            color: #17316f; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;
+            font-size: 16px; font-weight: 600;
+        }
+        .start-code {
+            margin-top: 24px; padding: 16px 18px; border-top: 2px solid var(--line);
+            color: var(--muted); font-size: 16px;
+        }
+        .start-code strong { display: block; color: var(--ink); margin-bottom: 4px; }
         .section-title {
             font-size: 24px; font-weight: 700; color: var(--blue);
             margin: 28px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--line);
@@ -104,7 +114,7 @@
         }
         .form-card {
             background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-            padding: 22px; max-width: 640px;
+            padding: 22px; max-width: 760px;
         }
         .form-card label { display: block; font-size: 16px; font-weight: 600; color: var(--ink); margin: 14px 0 6px; }
         .form-card label:first-of-type { margin-top: 0; }
@@ -117,6 +127,25 @@
             outline: none; border-color: var(--blue);
         }
         .form-actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+        .feedback-form-list { display: flex; flex-direction: column; gap: 18px; }
+        .feedback-form-item {
+            border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+            background: #fff;
+        }
+        .feedback-form-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            color: var(--blue); font-weight: 700; font-size: 18px; margin-bottom: 6px;
+        }
+        .feedback-form-remove {
+            border: 1px solid #fecaca; color: #dc2626; background: #fff;
+            border-radius: 8px; padding: 4px 9px; cursor: pointer;
+        }
+        .add-feedback-btn {
+            width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--blue);
+            color: var(--blue); background: #fff; font-size: 26px; line-height: 1;
+            cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+        }
+        .add-feedback-btn:hover { background: #edf3ff; }
         .toast {
             position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
             background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7;
@@ -146,24 +175,10 @@
 
         <div id="formPanel" class="hidden">
             <div class="form-card">
-                <p style="margin:0 0 16px;color:var(--muted);font-size:16px;">填写后可在新页面查看建议全文与您的使用回顾，并支持导出长图或 TXT。</p>
-                <label for="fbSection">建议板块</label>
-                <select id="fbSection">
-                    <option value="test">图片尺寸核对</option>
-                    <option value="photo">批量修改图片尺寸</option>
-                    <option value="video">批量修改视频规格</option>
-                    <option value="overall">整体 / 其他</option>
-                </select>
-                <label for="fbType">建议类型</label>
-                <select id="fbType">
-                    <option value="bug">问题反馈</option>
-                    <option value="ux">体验优化</option>
-                    <option value="feature">功能建议</option>
-                    <option value="other">其他</option>
-                </select>
-                <label for="fbText">建议内容</label>
-                <textarea id="fbText" placeholder="请描述您遇到的问题或改进想法…" maxlength="4000"></textarea>
+                <p style="margin:0 0 16px;color:var(--muted);font-size:16px;">请先填写建议，点击提交</p>
+                <div id="feedbackFormList" class="feedback-form-list"></div>
                 <div class="form-actions">
+                    <button type="button" class="add-feedback-btn" id="fbAdd" title="增加一条建议">+</button>
                     <button type="button" class="btn btn-primary" id="fbSubmit">确认提交</button>
                     <a href="suggest.html?view=review" class="btn btn-ghost">先看使用回顾</a>
                 </div>
@@ -338,7 +353,7 @@
                 renderToolBlock('video', totals)
             ].filter(Boolean);
             if (!totalBlocks.length) {
-                return '<div class="empty-hint">暂无使用记录。去任一工具页操作后，统计会自动保存在本机。</div>';
+                return '<div class="empty-hint">暂无使用记录。去任一工具页操作后，统计会自动保存在本机。</div>' + renderStartCodeHtml(store);
             }
             html += totalBlocks.join('');
 
@@ -360,19 +375,43 @@
                         </div>`;
                 });
             });
+            html += renderStartCodeHtml(store);
             return html;
         }
 
+        function renderStartCodeHtml(store) {
+            const code = store && store.startedAt ? store.startedAt : '';
+            if (!code) return '';
+            return `<div class="start-code"><strong>【统计起始时间】</strong><div>${escapeHtml(code)}</div></div>`;
+        }
+
+        function normalizeFeedbackDraft(draft) {
+            const source = Array.isArray(draft) ? draft : (draft && Array.isArray(draft.items) ? draft.items : (draft && draft.text ? [draft] : []));
+            return source.map((item) => ({
+                section: item && item.section ? item.section : 'test',
+                type: item && item.type ? item.type : 'bug',
+                text: String(item && item.text || '').trim(),
+                submittedAt: item && item.submittedAt ? item.submittedAt : Date.now()
+            })).filter((item) => item.text);
+        }
+
         function renderFeedbackBlock(draft) {
-            if (!draft || !draft.text) return '';
-            const sec = SECTION_LABELS[draft.section] || draft.section;
-            const typ = TYPE_LABELS[draft.type] || draft.type;
-            const time = draft.submittedAt ? new Date(draft.submittedAt).toLocaleString('zh-CN') : '';
+            const items = normalizeFeedbackDraft(draft);
+            if (!items.length) return '';
             return `
+                <div class="result-tip">请将该页面导出为TXT，在飞书提供给@海星罐头 感谢您的反馈~</div>
                 <div class="feedback-card">
                     <h2>我的建议</h2>
-                    <div class="feedback-meta">板块：${escapeHtml(sec)}　|　类型：${escapeHtml(typ)}${time ? `　|　${escapeHtml(time)}` : ''}</div>
-                    <div class="feedback-body" id="feedbackTextBody">${escapeHtml(draft.text)}</div>
+                    ${items.map((item, idx) => {
+                        const sec = SECTION_LABELS[item.section] || item.section;
+                        const typ = TYPE_LABELS[item.type] || item.type;
+                        const time = item.submittedAt ? new Date(item.submittedAt).toLocaleString('zh-CN') : '';
+                        return `<div style="${idx ? 'margin-top:18px;padding-top:18px;border-top:1px solid #fed7aa;' : ''}">
+                            <h3 style="margin:0 0 8px;color:var(--blue);font-size:18px;">第${idx + 1}条建议</h3>
+                            <div class="feedback-meta">板块：${escapeHtml(sec)}　|　类型：${escapeHtml(typ)}${time ? `　|　${escapeHtml(time)}` : ''}</div>
+                            <div class="feedback-body">${escapeHtml(item.text)}</div>
+                        </div>`;
+                    }).join('')}
                 </div>`;
         }
 
@@ -424,14 +463,19 @@
 
         function buildPlainTextExport(store, draft) {
             const lines = [];
-            if (draft && draft.text) {
+            const feedbackItems = normalizeFeedbackDraft(draft);
+            if (feedbackItems.length) {
                 lines.push('【我的建议】');
-                lines.push(`板块：${SECTION_LABELS[draft.section] || draft.section}`);
-                lines.push(`类型：${TYPE_LABELS[draft.type] || draft.type}`);
-                if (draft.submittedAt) lines.push(`时间：${new Date(draft.submittedAt).toLocaleString('zh-CN')}`);
                 lines.push('');
-                lines.push(draft.text);
-                lines.push('');
+                feedbackItems.forEach((item, idx) => {
+                    lines.push(`第${idx + 1}条建议`);
+                    lines.push(`板块：${SECTION_LABELS[item.section] || item.section}`);
+                    lines.push(`类型：${TYPE_LABELS[item.type] || item.type}`);
+                    if (item.submittedAt) lines.push(`时间：${new Date(item.submittedAt).toLocaleString('zh-CN')}`);
+                    lines.push('');
+                    lines.push(item.text);
+                    lines.push('');
+                });
                 lines.push('==============================');
                 lines.push('');
             }
@@ -451,6 +495,11 @@
             });
             if (!months.length && !toolHasAny('test', totals) && !toolHasAny('photo', totals) && !toolHasAny('video', totals)) {
                 lines.push('暂无使用记录。');
+            }
+            if (store && store.startedAt) {
+                lines.push('');
+                lines.push('【统计起始时间】');
+                lines.push(store.startedAt);
             }
             return lines.join('\n').trim();
         }
@@ -503,7 +552,7 @@
             const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `${draft && draft.text ? '建议与使用回顾' : '使用回顾'}_${new Date().toISOString().slice(0, 10)}.txt`;
+            a.download = `${normalizeFeedbackDraft(draft).length ? '建议与使用回顾' : '使用回顾'}_${new Date().toISOString().slice(0, 10)}.txt`;
             a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 2000);
             showToast('TXT 已下载');
@@ -515,6 +564,13 @@
             if (mode === 'form') {
                 box.innerHTML = `<a href="suggest.html?view=review" class="btn btn-outline">使用回顾</a>`;
                 return;
+            }
+            if (mode === 'result') {
+                const editBtn = document.createElement('a');
+                editBtn.href = 'suggest.html?view=form';
+                editBtn.className = 'btn btn-outline';
+                editBtn.textContent = '修改建议';
+                box.appendChild(editBtn);
             }
             const exportBtn = document.createElement('button');
             exportBtn.type = 'button';
@@ -531,11 +587,62 @@
             txtBtn.onclick = () => exportTxt(store, draft);
             box.appendChild(txtBtn);
 
-            const formLink = document.createElement('a');
-            formLink.href = 'suggest.html?view=form';
-            formLink.className = 'btn btn-ghost';
-            formLink.textContent = '我要提建议';
-            box.appendChild(formLink);
+            if (mode !== 'result') {
+                const formLink = document.createElement('a');
+                formLink.href = 'suggest.html?view=form';
+                formLink.className = 'btn btn-ghost';
+                formLink.textContent = '我要提建议';
+                box.appendChild(formLink);
+            }
+        }
+
+        function renderFeedbackForm(items) {
+            const list = document.getElementById('feedbackFormList');
+            const rows = items && items.length ? items : [{ section: 'test', type: 'bug', text: '' }];
+            list.innerHTML = rows.map((item, idx) => `
+                <div class="feedback-form-item" data-feedback-index="${idx}">
+                    <div class="feedback-form-head">
+                        <span>第${idx + 1}条建议</span>
+                        ${rows.length > 1 ? `<button type="button" class="feedback-form-remove" onclick="removeFeedbackFormItem(${idx})">删除</button>` : ''}
+                    </div>
+                    <label>建议板块</label>
+                    <select data-field="section">
+                        <option value="test"${item.section === 'test' ? ' selected' : ''}>图片尺寸核对</option>
+                        <option value="photo"${item.section === 'photo' ? ' selected' : ''}>批量修改图片尺寸</option>
+                        <option value="video"${item.section === 'video' ? ' selected' : ''}>批量修改视频规格</option>
+                        <option value="overall"${item.section === 'overall' ? ' selected' : ''}>整体 / 其他</option>
+                    </select>
+                    <label>建议类型</label>
+                    <select data-field="type">
+                        <option value="bug"${item.type === 'bug' ? ' selected' : ''}>问题反馈</option>
+                        <option value="ux"${item.type === 'ux' ? ' selected' : ''}>体验优化</option>
+                        <option value="feature"${item.type === 'feature' ? ' selected' : ''}>功能建议</option>
+                        <option value="other"${item.type === 'other' ? ' selected' : ''}>其他</option>
+                    </select>
+                    <label>建议内容</label>
+                    <textarea data-field="text" placeholder="请描述您遇到的问题或改进想法…" maxlength="4000">${escapeHtml(item.text || '')}</textarea>
+                </div>`).join('');
+        }
+
+        function collectFeedbackForm() {
+            return Array.from(document.querySelectorAll('.feedback-form-item')).map((card) => ({
+                section: card.querySelector('[data-field="section"]').value,
+                type: card.querySelector('[data-field="type"]').value,
+                text: (card.querySelector('[data-field="text"]').value || '').trim(),
+                submittedAt: Date.now()
+            }));
+        }
+
+        function addFeedbackFormItem() {
+            const rows = collectFeedbackForm();
+            rows.push({ section: 'test', type: 'bug', text: '' });
+            renderFeedbackForm(rows);
+        }
+
+        function removeFeedbackFormItem(index) {
+            const rows = collectFeedbackForm();
+            rows.splice(index, 1);
+            renderFeedbackForm(rows.length ? rows : [{ section: 'test', type: 'bug', text: '' }]);
         }
 
         function init() {
@@ -553,19 +660,16 @@
                 reviewContent.innerHTML = '';
                 feedbackBlock.classList.add('hidden');
                 setupTopActions('form', store, null);
+                renderFeedbackForm(normalizeFeedbackDraft(UsageTracker.loadFeedbackDraft()));
+                document.getElementById('fbAdd').onclick = addFeedbackFormItem;
                 document.getElementById('fbSubmit').onclick = () => {
-                    const text = (document.getElementById('fbText').value || '').trim();
-                    if (!text) {
-                        alert('请填写建议内容');
+                    const rows = collectFeedbackForm();
+                    const blankIndex = rows.findIndex((row) => !row.text);
+                    if (blankIndex >= 0) {
+                        alert(`请填写第 ${blankIndex + 1} 条建议内容`);
                         return;
                     }
-                    const draft = {
-                        section: document.getElementById('fbSection').value,
-                        type: document.getElementById('fbType').value,
-                        text,
-                        submittedAt: Date.now()
-                    };
-                    UsageTracker.saveFeedbackDraft(draft);
+                    UsageTracker.saveFeedbackDraft({ items: rows });
                     location.href = 'suggest.html?view=result';
                 };
                 return;

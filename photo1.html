@@ -1254,6 +1254,49 @@
             if (trackUsage && window.UsageTracker) UsageTracker.trackPhotoConfigImported();
         }
 
+        const TEXT_CONFIG_DEFAULT_TEMPLATE = `【序号】数字
+【描述名称】名称（15字以内、不可重复）
+【格式(jpg/png)】jpg或png
+【宽】数字
+【高】数字
+【限制KB】数字
+【需求详述】无法被尺寸、格式、大小限制涵盖但会影响验收的设计要求（没有则留空）`;
+
+        function showTextConfigCopyHint() {
+            const banner = document.getElementById('copySuccess');
+            if (!banner) return;
+            banner.textContent = '指令已复制！你可以将其粘贴给 AI (如飞书的知识问答)，让它帮你把杂乱的需求转换为标准 TXT 格式。';
+            banner.classList.remove('hidden');
+            setTimeout(() => banner.classList.add('hidden'), 5000);
+        }
+
+        function copyTextConfigAiPrompt() {
+            const prompt = `请帮我将以下图片规格需求整理成标准的 TXT 格式。
+如果是多行描述，请严格按照以下格式输出（每个项目之间空一行）：
+
+${TEXT_CONFIG_DEFAULT_TEMPLATE}
+
+要求：
+1. 只输出这个格式的内容，不要解释。
+2. 宽度、高度和KB必须是纯数字。
+3. 格式只能是 jpg 或 png；若未写格式，默认 jpg。
+4. 若未写限制KB，默认 1000。
+5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
+6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
+7. 【需求详述】是给设计师看的补充要求，只写固定字段无法表达的信息，例如 Logo 不能放左上角、需要/不需要副标题、元素安全区、文案位置限制等；不要重复尺寸、格式、大小限制。
+
+待处理数据如下：
+[在此粘贴你的原始数据]`;
+            const textarea = document.createElement('textarea');
+            textarea.value = prompt;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showTextConfigCopyHint();
+            if (window.UsageTracker) UsageTracker.trackPhotoCopyAi();
+        }
+
         function ensureTextConfigImportModal() {
             let modal = document.getElementById('textConfigImportModal');
             if (modal) return modal;
@@ -1261,11 +1304,14 @@
                 <div id="textConfigImportModal" class="hidden fixed inset-0 z-[80] flex items-center justify-center p-4" style="background:rgba(15,23,42,.55)">
                     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
                         <div class="px-5 py-4 border-b flex items-center justify-between">
-                            <h3 class="text-lg font-bold text-[#002FA7]">直接输入配置</h3>
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-lg font-bold text-[#002FA7]">直接输入配置</h3>
+                                <button type="button" id="textConfigCopyAi" class="px-3 py-1.5 rounded bg-[#FF6B00] text-white text-xs font-semibold">复制AI指令</button>
+                            </div>
                             <button type="button" id="textConfigClose" class="p-2 text-gray-400 hover:text-gray-700"><i data-lucide="x" class="w-5 h-5"></i></button>
                         </div>
                         <div class="p-5 space-y-4 overflow-auto">
-                            <textarea id="textConfigInputArea" class="w-full h-48 border rounded-lg p-3 text-sm font-mono focus:outline-none focus:border-[#002FA7]" placeholder="可粘贴标准 TXT、表格复制内容，或如：开屏 1080x1920 png 800KB Logo 不要放左上角"></textarea>
+                            <textarea id="textConfigInputArea" class="w-full h-48 border rounded-lg p-3 text-sm font-mono focus:outline-none focus:border-[#002FA7]"></textarea>
                             <div class="flex flex-wrap items-center gap-2">
                                 <input id="textConfigName" class="border rounded px-3 py-2 text-sm min-w-[220px]" placeholder="配置名称（默认：手动输入配置）">
                                 <button type="button" id="textConfigRecognize" class="px-4 py-2 rounded bg-[#002FA7] text-white text-sm font-semibold">识别配置</button>
@@ -1285,6 +1331,7 @@
             const close = () => modal.classList.add('hidden');
             document.getElementById('textConfigClose').onclick = close;
             document.getElementById('textConfigCancel').onclick = close;
+            document.getElementById('textConfigCopyAi').onclick = copyTextConfigAiPrompt;
             document.getElementById('textConfigRecognize').onclick = () => {
                 const text = document.getElementById('textConfigInputArea').value || '';
                 const rows = window.ConfigTextParser ? ConfigTextParser.parseText(text, { kind: 'image' }) : [];
@@ -1293,11 +1340,18 @@
             };
             document.getElementById('textConfigAddRow').onclick = () => {
                 const rows = modal._recognizedRows || [];
-                rows.push({ id: String(rows.length + 1), name: `规格${rows.length + 1}`, format: 'jpg', width: 1000, height: 1000, maxSize: 1000, requirementDetail: '' });
+                rows.push({ id: String(rows.length + 1), name: '', format: '', width: '', height: '', maxSize: '', requirementDetail: '' });
                 modal._recognizedRows = rows;
                 renderTextConfigPreview(rows);
             };
             document.getElementById('textConfigConfirm').onclick = async () => {
+                if (validateTextConfigPreviewRows(modal._recognizedRows || [])) {
+                    const hint = document.getElementById('textConfigHint');
+                    if (hint) hint.textContent = '请填写必要配置';
+                    alert('请填写必要配置');
+                    renderTextConfigPreview(modal._recognizedRows || []);
+                    return;
+                }
                 const rows = normalizeTextConfigPreviewRows(modal._recognizedRows || []);
                 if (!rows.length) return;
                 const name = (document.getElementById('textConfigName').value || '').trim() || '手动输入配置';
@@ -1311,7 +1365,7 @@
         function normalizeTextConfigPreviewRows(rows) {
             return (Array.isArray(rows) ? rows : []).map((r, idx) => ({
                 id: String(r.id || idx + 1),
-                name: String(r.name || `规格${idx + 1}`).trim(),
+                name: String(r.name || '').trim(),
                 format: r.format === 'png' ? 'png' : 'jpg',
                 width: Math.max(1, parseInt(r.width, 10) || 1),
                 height: Math.max(1, parseInt(r.height, 10) || 1),
@@ -1320,11 +1374,26 @@
             }));
         }
 
+        function validateTextConfigPreviewRows(rows) {
+            let hasInvalid = false;
+            (Array.isArray(rows) ? rows : []).forEach((r) => {
+                r._errors = {};
+                if (!String(r.name || '').trim()) r._errors.name = true;
+                if (!['jpg', 'png'].includes(String(r.format || '').toLowerCase())) r._errors.format = true;
+                if (!(parseInt(r.width, 10) > 0)) r._errors.width = true;
+                if (!(parseInt(r.height, 10) > 0)) r._errors.height = true;
+                if (!(parseInt(r.maxSize, 10) > 0)) r._errors.maxSize = true;
+                if (Object.keys(r._errors).length) hasInvalid = true;
+            });
+            return hasInvalid;
+        }
+
         function updateTextConfigPreviewRow(index, field, value) {
             const modal = document.getElementById('textConfigImportModal');
             const rows = modal && modal._recognizedRows ? modal._recognizedRows : [];
             if (!rows[index]) return;
-            if (field === 'width' || field === 'height' || field === 'maxSize') rows[index][field] = Math.max(1, parseInt(value, 10) || 1);
+            if (rows[index]._errors) delete rows[index]._errors[field];
+            if (field === 'width' || field === 'height' || field === 'maxSize') rows[index][field] = value;
             else if (field === 'format') rows[index].format = value === 'png' ? 'png' : 'jpg';
             else rows[index][field] = String(value || '');
         }
@@ -1338,7 +1407,7 @@
 
         function renderTextConfigPreview(rows) {
             const modal = document.getElementById('textConfigImportModal');
-            if (modal) modal._recognizedRows = normalizeTextConfigPreviewRows(rows);
+            if (modal) modal._recognizedRows = Array.isArray(rows) ? rows : [];
             rows = modal && modal._recognizedRows ? modal._recognizedRows : [];
             const box = document.getElementById('textConfigPreview');
             const hint = document.getElementById('textConfigHint');
@@ -1353,16 +1422,17 @@
             hint.textContent = `识别到 ${rows.length} 条配置，请核对后确认`;
             confirm.disabled = false;
             box.classList.remove('hidden');
+            const errCls = (r, field) => r._errors && r._errors[field] ? ' border-red-500 bg-red-50' : '';
             box.innerHTML = `<table class="w-full text-sm">
                 <thead class="bg-slate-50 text-gray-600"><tr>
                     <th class="text-left p-2">名称</th><th class="text-left p-2">宽</th><th class="text-left p-2">高</th><th class="text-left p-2">后缀</th><th class="text-left p-2">大小限制</th><th class="text-left p-2">需求详述</th><th class="text-left p-2">操作</th>
                 </tr></thead>
                 <tbody>${rows.map((r) => `<tr class="border-t">
-                    <td class="p-2"><input class="w-full border rounded px-2 py-1" value="${escapeHtml(r.name)}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'name', this.value)"></td>
-                    <td class="p-2"><input type="number" min="1" class="w-20 border rounded px-2 py-1" value="${r.width}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'width', this.value)"></td>
-                    <td class="p-2"><input type="number" min="1" class="w-20 border rounded px-2 py-1" value="${r.height}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'height', this.value)"></td>
-                    <td class="p-2"><select class="border rounded px-2 py-1 uppercase" onchange="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'format', this.value)"><option value="jpg"${r.format === 'png' ? '' : ' selected'}>JPG</option><option value="png"${r.format === 'png' ? ' selected' : ''}>PNG</option></select></td>
-                    <td class="p-2"><input type="number" min="1" class="w-24 border rounded px-2 py-1" value="${r.maxSize}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'maxSize', this.value)"> KB</td>
+                    <td class="p-2"><input class="w-full border rounded px-2 py-1${errCls(r, 'name')}" value="${escapeHtml(r.name || '')}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'name', this.value); this.classList.remove('border-red-500','bg-red-50')"></td>
+                    <td class="p-2"><input type="number" min="1" class="w-20 border rounded px-2 py-1${errCls(r, 'width')}" value="${escapeHtml(r.width || '')}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'width', this.value); this.classList.remove('border-red-500','bg-red-50')"></td>
+                    <td class="p-2"><input type="number" min="1" class="w-20 border rounded px-2 py-1${errCls(r, 'height')}" value="${escapeHtml(r.height || '')}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'height', this.value); this.classList.remove('border-red-500','bg-red-50')"></td>
+                    <td class="p-2"><select class="border rounded px-2 py-1 uppercase${errCls(r, 'format')}" onchange="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'format', this.value); this.classList.remove('border-red-500','bg-red-50')"><option value="">请选择</option><option value="jpg"${r.format === 'jpg' ? ' selected' : ''}>JPG</option><option value="png"${r.format === 'png' ? ' selected' : ''}>PNG</option></select></td>
+                    <td class="p-2"><input type="number" min="1" class="w-24 border rounded px-2 py-1${errCls(r, 'maxSize')}" value="${escapeHtml(r.maxSize || '')}" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'maxSize', this.value); this.classList.remove('border-red-500','bg-red-50')"> KB</td>
                     <td class="p-2 text-gray-600"><input class="w-full border rounded px-2 py-1" value="${escapeHtml(r.requirementDetail || '')}" placeholder="无其他需求" oninput="updateTextConfigPreviewRow(${rows.indexOf(r)}, 'requirementDetail', this.value)"></td>
                     <td class="p-2"><button type="button" class="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50" onclick="deleteTextConfigPreviewRow(${rows.indexOf(r)})">删除</button></td>
                 </tr>`).join('')}</tbody>
@@ -1372,6 +1442,8 @@
         function openTextConfigImportModal() {
             const modal = ensureTextConfigImportModal();
             modal.classList.remove('hidden');
+            const input = document.getElementById('textConfigInputArea');
+            if (input && !input.value.trim()) input.value = TEXT_CONFIG_DEFAULT_TEMPLATE;
             renderTextConfigPreview([]);
         }
 
@@ -2981,7 +3053,7 @@
                         <div class="bg-gray-50 border-b px-4 py-2 flex justify-between items-center gap-2">
                             <div class="flex items-center gap-1 flex-1 min-w-0">
                                 <input type="text" class="spec-name-input flex-1 min-w-0 text-xs font-bold text-gray-600 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-[#002FA7] focus:outline-none px-0.5 py-0.5" data-spec-field="name" maxlength="32" title="点击修改规格名称" value="${escapeHtml(String(cfg.name || '规格'))}">
-                                <button type="button" onclick="event.stopPropagation(); this.closest('[data-cfg-card]').classList.toggle('req-open')" onmouseenter="this.closest('[data-cfg-card]').classList.add('req-hover')" onmouseleave="this.closest('[data-cfg-card]').classList.remove('req-hover')" class="req-toggle w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none flex items-center justify-center shrink-0" title="查看需求详述">?</button>
+                                ${showReqAll ? '' : `<button type="button" onclick="event.stopPropagation(); this.closest('[data-cfg-card]').classList.toggle('req-open')" onmouseenter="this.closest('[data-cfg-card]').classList.add('req-hover')" onmouseleave="this.closest('[data-cfg-card]').classList.remove('req-hover')" class="req-toggle w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] leading-none flex items-center justify-center shrink-0" title="查看需求详述">?</button>`}
                             </div>
                             <div class="flex items-center gap-1 shrink-0">
                                 <button type="button" data-action="delete-spec" data-cfg-id="${encodeURIComponent(String(cfg.id))}" class="p-0.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50" title="删除该配置"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>

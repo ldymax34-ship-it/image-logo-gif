@@ -8,6 +8,13 @@
     const STORAGE_KEY = 'channelMaterialUsageStats_v1';
     const FEEDBACK_SESSION_KEY = 'channelMaterialFeedbackDraft_v1';
 
+    function makeStartLabel() {
+        const d = new Date();
+        const ms = String(d.getMilliseconds()).padStart(3, '0');
+        const tail = String(Math.floor(Math.random() * 10));
+        return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}.${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}:${ms}${tail}`;
+    }
+
     function emptyBucket() {
         return {
             test: { verifyRuns: 0, copyAi: 0, mismatchRuns: 0, perfectMatchRuns: 0 },
@@ -32,15 +39,23 @@
     function loadStore() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
-            if (!raw) return { totals: emptyBucket(), months: {} };
+            if (!raw) {
+                const fresh = { totals: emptyBucket(), months: {}, startedAt: makeStartLabel() };
+                saveStore(fresh);
+                return fresh;
+            }
             const parsed = JSON.parse(raw);
             const totals = { ...emptyBucket(), ...(parsed.totals || {}) };
             totals.test = { ...emptyBucket().test, ...(totals.test || {}) };
             totals.photo = { ...emptyBucket().photo, ...(totals.photo || {}) };
             totals.video = { ...emptyBucket().video, ...(totals.video || {}) };
-            return { totals, months: parsed.months && typeof parsed.months === 'object' ? parsed.months : {} };
+            const store = { totals, months: parsed.months && typeof parsed.months === 'object' ? parsed.months : {}, startedAt: parsed.startedAt || makeStartLabel() };
+            if (!parsed.startedAt) saveStore(store);
+            return store;
         } catch (e) {
-            return { totals: emptyBucket(), months: {} };
+            const fresh = { totals: emptyBucket(), months: {}, startedAt: makeStartLabel() };
+            saveStore(fresh);
+            return fresh;
         }
     }
 
