@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.4 全画板总览与单画板配置
+## 当前版本：0.1.5 默认 Logo 资源与品牌层样式
 
 ### 产品方向
 
@@ -50,6 +50,12 @@
 - [x] 中间预览区默认展示所有画板缩略预览
 - [x] 总览中的每个画板都显示当前素材裁切、安全区、Logo / CPR 状态
 - [x] 点击任一画板后保留单个画板配置权限，裁切 / 缩放只作用于当前素材 x 当前画板
+- [x] 接入公司常用 Logo 静态 PNG：`KURO 英文标识 黑色 / 白色`
+- [x] 接入鸣潮 Logo 静态 PNG：简中、繁中 / 日文、英文、韩文
+- [x] 默认 Logo 资源来自用户提供文件夹中的静态优先资源，不接入动态素材
+- [x] Logo 支持改色、简单描边、外发光、阴影
+- [x] CPR 样式控制复用同一套改色、描边、外发光、阴影状态结构
+- [x] PNG Logo 和上传 SVG 共用 `BrandAsset`、`BrandLayerState` 和 `renderBrandLayer`
 
 ### 本轮验证记录
 
@@ -57,6 +63,7 @@
 - [x] 0.1.2 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.3 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.4 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
+- [x] 0.1.5 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 
 ### 第一阶段剩余目标
 
@@ -86,9 +93,10 @@
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在 0.1.4 导出前继续收紧。
 
-### 下一步建议给 Codex：0.1.5
+### 下一步建议给 Codex：0.1.6
 
 1. 建立 Canvas 导出基础：把素材裁切、Logo、CPR 安全绘制到 Canvas。
 2. 导出设置区增加是否添加 Logo / CPR、选择语种、选择 JPG / PNG。
 3. 先支持单张当前画板导出，再扩展批量导出。
 4. 继续补充 SVG 到 Canvas 的离线渲染验证。
+5. 后续可增加“将当前裁切 / Logo 样式套用到同版型画板”。

@@ -1,6 +1,9 @@
 import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
+  DEFAULT_BRAND_ASSETS,
+  DEFAULT_CPR_EFFECT,
+  DEFAULT_LOGO_EFFECT,
   buildOutputFileName,
   classifyAspect,
   clampCropState,
@@ -9,8 +12,8 @@ import {
   createBrandAssetFromFile,
   createInitialCropState,
   createMaterialAsset,
-  createSvgObjectUrl,
   formatFileSize,
+  getBrandAssetUrl,
   getBoardPreviewKey,
   getBrandLanguageLabel,
   panCropState,
@@ -20,6 +23,7 @@ import {
   zoomCropState,
   type BoardPreviewState,
   type BrandAsset,
+  type BrandEffectState,
   type BrandLanguage,
   type BrandLayerState,
   type CropState,
@@ -39,7 +43,10 @@ const SAMPLE_TEXT = `1080x1920 jpg 1200KB
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
-  cprEnabled: true
+  cprEnabled: true,
+  selectedLogoId: DEFAULT_BRAND_ASSETS[1]?.id,
+  logoEffect: DEFAULT_LOGO_EFFECT,
+  cprEffect: DEFAULT_CPR_EFFECT
 };
 
 function getAspectLabel(spec: MaterialSpec): string {
@@ -78,27 +85,79 @@ function ensurePreviewStates(
   return next;
 }
 
-function SvgImageLayer({ asset, className, color }: { asset: BrandAsset; className: string; color?: string }) {
-  const objectUrl = useMemo(() => createSvgObjectUrl(asset.svgText), [asset.svgText]);
+function buildDropShadowFilter(effect: BrandEffectState, scale = 1): string | undefined {
+  const filters: string[] = [];
+  if (effect.strokeEnabled && effect.strokeWidth > 0) {
+    const width = Math.max(1, effect.strokeWidth * scale);
+    const directions = [
+      [width, 0],
+      [-width, 0],
+      [0, width],
+      [0, -width],
+      [width, width],
+      [-width, width],
+      [width, -width],
+      [-width, -width]
+    ];
+    for (const [x, y] of directions) {
+      filters.push(`drop-shadow(${x}px ${y}px 0 ${effect.strokeColor})`);
+    }
+  }
+  if (effect.glowEnabled && effect.glowBlur > 0) {
+    filters.push(`drop-shadow(0 0 ${effect.glowBlur * scale}px ${effect.glowColor})`);
+  }
+  if (effect.shadowEnabled && effect.shadowBlur > 0) {
+    filters.push(
+      `drop-shadow(${effect.shadowOffsetX * scale}px ${effect.shadowOffsetY * scale}px ${effect.shadowBlur * scale}px ${hexToRgba(
+        effect.shadowColor,
+        effect.shadowOpacity
+      )})`
+    );
+  }
+  return filters.length ? filters.join(' ') : undefined;
+}
+
+function hexToRgba(hex: string, opacity: number): string {
+  const normalized = hex.replace('#', '').trim();
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return `rgba(0,0,0,${opacity})`;
+  const value = Number.parseInt(normalized, 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return `rgba(${red},${green},${blue},${Math.min(1, Math.max(0, opacity))})`;
+}
+
+function SvgImageLayer({
+  asset,
+  className,
+  effect
+}: {
+  asset: BrandAsset;
+  className: string;
+  effect: BrandEffectState;
+}) {
+  const media = useMemo(() => getBrandAssetUrl(asset), [asset]);
 
   useEffect(() => {
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [objectUrl]);
+    return () => {
+      if (media.revoke) URL.revokeObjectURL(media.url);
+    };
+  }, [media]);
 
-  if (color) {
+  if (effect.colorEnabled) {
     return (
       <span
         className={`${className} brand-mask`}
         style={{
-          backgroundColor: color,
-          WebkitMaskImage: `url("${objectUrl}")`,
-          maskImage: `url("${objectUrl}")`
+          backgroundColor: effect.color,
+          WebkitMaskImage: `url("${media.url}")`,
+          maskImage: `url("${media.url}")`
         }}
       />
     );
   }
 
-  return <img className={className} src={objectUrl} alt={asset.name} draggable={false} />;
+  return <img className={className} src={media.url} alt={asset.name} draggable={false} />;
 }
 
 function PreviewStage({
@@ -109,7 +168,6 @@ function PreviewStage({
   logoAsset,
   cprAsset,
   brandLayer,
-  cprColor,
   onSelectSpec,
   onCropChange,
   onFitModeChange
@@ -121,7 +179,6 @@ function PreviewStage({
   logoAsset: BrandAsset | undefined;
   cprAsset: BrandAsset | undefined;
   brandLayer: BrandLayerState;
-  cprColor: string;
   onSelectSpec: (specId: string) => void;
   onCropChange: (crop: CropState) => void;
   onFitModeChange: (mode: FitMode) => void;
@@ -200,7 +257,7 @@ function PreviewStage({
             cprAnchor: 'center',
             logoSize: 'standard',
             cprSize: 'standard',
-            cprColor
+            cprColor: brandLayer.cprEffect.color
           });
 
           return (
@@ -253,19 +310,14 @@ function PreviewStage({
                           top: rect.y * scale,
                           width: rect.width * scale,
                           height: rect.height * scale,
-                          zIndex: layer.zIndex,
-                          filter:
-                            layer.type === 'cpr'
-                              ? `drop-shadow(${layer.layout.shadow.offsetX * scale}px ${layer.layout.shadow.offsetY * scale}px ${
-                                  layer.layout.shadow.blurPx * scale
-                                }px rgba(0,0,0,${layer.layout.shadow.opacity}))`
-                              : undefined
+                        zIndex: layer.zIndex,
+                          filter: buildDropShadowFilter(layer.type === 'logo' ? brandLayer.logoEffect : brandLayer.cprEffect, scale)
                         }}
                       >
                         <SvgImageLayer
                           asset={selectedAsset}
                           className={`brand-svg ${layer.type}`}
-                          color={layer.type === 'cpr' ? cprColor : undefined}
+                          effect={layer.type === 'logo' ? brandLayer.logoEffect : brandLayer.cprEffect}
                         />
                       </div>
                     );
@@ -330,11 +382,10 @@ export function App() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>();
   const [selectedSpecId, setSelectedSpecId] = useState<string | undefined>();
   const [previewStates, setPreviewStates] = useState<Record<string, BoardPreviewState>>({});
-  const [brandAssets, setBrandAssets] = useState<BrandAsset[]>([]);
+  const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
   const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
   const [logoLanguage, setLogoLanguage] = useState<BrandLanguage>('zh-CN');
   const [cprLanguage, setCprLanguage] = useState<BrandLanguage>('zh-CN');
-  const [cprColor, setCprColor] = useState('#ffffff');
   const [message, setMessage] = useState<string>('');
 
   const result = useMemo(() => parseSpecText(text), [text]);
@@ -448,7 +499,7 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Brand Material Workbench · 0.1.4</p>
+          <p className="eyebrow">Brand Material Workbench · 0.1.5</p>
           <h1>品宣物料工作台</h1>
         </div>
         <div className="topbar-status">
@@ -502,7 +553,7 @@ export function App() {
 
           <div className="brand-section">
             <div className="panel-heading">
-              <h2>Logo SVG</h2>
+              <h2>Logo 资源</h2>
               <button type="button" onClick={() => logoInputRef.current?.click()}>
                 导入
               </button>
@@ -562,13 +613,6 @@ export function App() {
                   </option>
                 ))}
               </select>
-              <input
-                className="color-input"
-                type="color"
-                value={cprColor}
-                onChange={(event) => setCprColor(event.target.value)}
-                aria-label="CPR 颜色"
-              />
               <label className="toggle">
                 <input
                   type="checkbox"
@@ -584,6 +628,16 @@ export function App() {
               onSelect={(id) => setBrandLayer((previous) => ({ ...previous, selectedCprId: id }))}
             />
           </div>
+          <BrandEffectControls
+            title="Logo 样式"
+            effect={brandLayer.logoEffect}
+            onChange={(logoEffect) => setBrandLayer((previous) => ({ ...previous, logoEffect }))}
+          />
+          <BrandEffectControls
+            title="CPR 样式"
+            effect={brandLayer.cprEffect}
+            onChange={(cprEffect) => setBrandLayer((previous) => ({ ...previous, cprEffect }))}
+          />
         </aside>
 
         <section className="panel preview-panel">
@@ -599,7 +653,6 @@ export function App() {
             logoAsset={selectedLogo}
             cprAsset={selectedCpr}
             brandLayer={brandLayer}
-            cprColor={cprColor}
             onSelectSpec={setSelectedSpecId}
             onCropChange={(crop) => updateSelectedPreview({ crop })}
             onFitModeChange={resetSelectedCrop}
@@ -675,12 +728,139 @@ function BrandAssetList({
           <span>
             <strong>{asset.name}</strong>
             <small>
-              {getBrandLanguageLabel(asset.language)}
+              {asset.sourceKind.toUpperCase()} · {getBrandLanguageLabel(asset.language)}
               {asset.viewBoxSize ? ` · ${Math.round(asset.viewBoxSize.width)}x${Math.round(asset.viewBoxSize.height)}` : ''}
             </small>
           </span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function BrandEffectControls({
+  title,
+  effect,
+  onChange
+}: {
+  title: string;
+  effect: BrandEffectState;
+  onChange: (effect: BrandEffectState) => void;
+}) {
+  function patch(next: Partial<BrandEffectState>) {
+    onChange({ ...effect, ...next });
+  }
+
+  return (
+    <div className="brand-section effect-section">
+      <div className="panel-heading">
+        <h2>{title}</h2>
+      </div>
+      <div className="effect-grid">
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={effect.colorEnabled}
+            onChange={(event) => patch({ colorEnabled: event.target.checked })}
+          />
+          改色
+        </label>
+        <input
+          className="color-input"
+          type="color"
+          value={effect.color}
+          onChange={(event) => patch({ color: event.target.value })}
+          aria-label={`${title} 颜色`}
+        />
+
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={effect.strokeEnabled}
+            onChange={(event) => patch({ strokeEnabled: event.target.checked })}
+          />
+          描边
+        </label>
+        <input
+          className="color-input"
+          type="color"
+          value={effect.strokeColor}
+          onChange={(event) => patch({ strokeColor: event.target.value })}
+          aria-label={`${title} 描边颜色`}
+        />
+        <label className="range-field">
+          <span>粗细</span>
+          <input
+            type="range"
+            min="1"
+            max="8"
+            step="1"
+            value={effect.strokeWidth}
+            onChange={(event) => patch({ strokeWidth: Number(event.target.value) })}
+          />
+        </label>
+
+        <label className="toggle">
+          <input checked={effect.glowEnabled} type="checkbox" onChange={(event) => patch({ glowEnabled: event.target.checked })} />
+          外发光
+        </label>
+        <input
+          className="color-input"
+          type="color"
+          value={effect.glowColor}
+          onChange={(event) => patch({ glowColor: event.target.value })}
+          aria-label={`${title} 外发光颜色`}
+        />
+        <label className="range-field">
+          <span>强度</span>
+          <input
+            type="range"
+            min="2"
+            max="32"
+            step="1"
+            value={effect.glowBlur}
+            onChange={(event) => patch({ glowBlur: Number(event.target.value) })}
+          />
+        </label>
+
+        <label className="toggle">
+          <input
+            checked={effect.shadowEnabled}
+            type="checkbox"
+            onChange={(event) => patch({ shadowEnabled: event.target.checked })}
+          />
+          阴影
+        </label>
+        <input
+          className="color-input"
+          type="color"
+          value={effect.shadowColor}
+          onChange={(event) => patch({ shadowColor: event.target.value })}
+          aria-label={`${title} 阴影颜色`}
+        />
+        <label className="range-field">
+          <span>模糊</span>
+          <input
+            type="range"
+            min="2"
+            max="36"
+            step="1"
+            value={effect.shadowBlur}
+            onChange={(event) => patch({ shadowBlur: Number(event.target.value) })}
+          />
+        </label>
+        <label className="range-field">
+          <span>Y</span>
+          <input
+            type="range"
+            min="-24"
+            max="24"
+            step="1"
+            value={effect.shadowOffsetY}
+            onChange={(event) => patch({ shadowOffsetY: Number(event.target.value) })}
+          />
+        </label>
+      </div>
     </div>
   );
 }

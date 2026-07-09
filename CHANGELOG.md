@@ -1,5 +1,59 @@
 # 更新日志
 
+## 0.1.5
+
+本轮目标：接入用户提供的公司 Logo / 鸣潮 Logo 静态资源，并补充 Logo 改色、描边、外发光、阴影。
+
+修改文件：
+
+- `package.json`
+- `package-lock.json`
+- `public/brand-logos/company/kuro-en-black.png`
+- `public/brand-logos/company/kuro-en-white.png`
+- `public/brand-logos/wuthering-waves/ww-zh-cn.png`
+- `public/brand-logos/wuthering-waves/ww-zh-tw-ja.png`
+- `public/brand-logos/wuthering-waves/ww-en.png`
+- `public/brand-logos/wuthering-waves/ww-ko.png`
+- `src/core/brand/brandAsset.ts`
+- `src/core/brand/brandStore.ts`
+- `src/pages/App.tsx`
+- `src/styles.css`
+- `src/core/core.test.ts`
+- `scripts/verify-core.ts`
+- `TASKS.md`
+- `CHANGELOG.md`
+- `README.md`
+
+主要改动：
+
+1. [资源-中] 从公司 Logo 文件夹的“标识静态素材（优先统一使用）”接入 KURO 英文标识黑 / 白 PNG。
+2. [资源-中] 从鸣潮 Logo 的 PNG 文件夹接入简中、繁中 / 日文、英文、韩文 PNG。
+3. [架构-中] `BrandAsset` 支持 `svg` / `image` 两种来源，默认 PNG 与用户上传 SVG 共用同一套布局和选择逻辑。
+4. [新需求-中] Logo 支持改色、简单描边、外发光、阴影。
+5. [新需求-小] CPR 复用同一套视觉效果状态，可继续调颜色、描边、外发光、阴影。
+6. [体验-小] Logo 资源列表标注 PNG / SVG、语种和尺寸信息。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test`：通过
+- `npm run build`：通过
+
+影响范围：
+
+- 影响品牌资源类型、Logo 资源列表和预览图层样式。
+- 不接入动态素材，不扫描用户文件夹，不依赖运行时外部路径。
+- 运行时仍使用本地静态资源，不引入远程 API / CDN。
+
+未完成 / 风险：
+
+- 描边基于 CSS `drop-shadow` 近似，适合预览和简单描边；后续 Canvas 导出需要用 Canvas/SVG 渲染逻辑复现。
+- 鸣潮白色 PNG 源文件是 1920x1080 画布，容易影响比例判断，本轮未作为默认资源接入。
+
+下一步建议：
+
+- 0.1.6 做 Canvas 单画板导出，并同步复现 Logo / CPR 样式效果。
+
 ## 0.1.4
 
 本轮目标：把预览区从单画板查看改为全画板总览，同时保留单个画板配置权限。

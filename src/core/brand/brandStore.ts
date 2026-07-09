@@ -22,3 +22,13 @@ export async function createBrandAssetFromFile(
 export function createSvgObjectUrl(svgText: string): string {
   return URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
 }
+
+export function getBrandAssetUrl(asset: BrandAsset): { url: string; revoke: boolean } {
+  if (asset.sourceKind === 'image' && asset.sourceUrl) {
+    return { url: asset.sourceUrl, revoke: false };
+  }
+  if (!asset.svgText) {
+    throw new Error(`${asset.name} 缺少 SVG 内容`);
+  }
+  return { url: createSvgObjectUrl(asset.svgText), revoke: true };
+}

@@ -5,7 +5,10 @@ import {
   computeCprLayout,
   computeFitRect,
   computeLogoLayout,
+  DEFAULT_BRAND_ASSETS,
+  DEFAULT_LOGO_EFFECT,
   createBrandAsset,
+  createRasterBrandAsset,
   createInitialCropState,
   getBoardPreviewKey,
   parseSpecText,
@@ -130,6 +133,30 @@ describe('core 0.1.x foundation', () => {
     expect(asset.viewBox).toBe('0 0 420 120');
     expect(asset.viewBoxSize).toEqual({ width: 420, height: 120 });
     expect(asset.aspectRatio).toBe(3.5);
+  });
+
+  it('ships default raster logo assets from local preset folders', () => {
+    expect(DEFAULT_BRAND_ASSETS.length).toBeGreaterThanOrEqual(6);
+    expect(DEFAULT_BRAND_ASSETS.every((asset) => asset.sourceKind === 'image')).toBe(true);
+    expect(DEFAULT_BRAND_ASSETS.map((asset) => asset.sourceUrl)).toContain('/brand-logos/company/kuro-en-white.png');
+    expect(DEFAULT_BRAND_ASSETS.map((asset) => asset.sourceUrl)).toContain('/brand-logos/wuthering-waves/ww-zh-cn.png');
+    expect(DEFAULT_BRAND_ASSETS.every((asset) => asset.aspectRatio && asset.aspectRatio > 0)).toBe(true);
+  });
+
+  it('creates raster brand assets with reusable dimensions and effect defaults', () => {
+    const asset = createRasterBrandAsset({
+      id: 'png',
+      type: 'logo',
+      name: 'Logo PNG',
+      language: 'custom',
+      sourceUrl: '/logo.png',
+      width: 1200,
+      height: 300
+    });
+    expect(asset.aspectRatio).toBe(4);
+    expect(asset.viewBoxSize).toEqual({ width: 1200, height: 300 });
+    expect(DEFAULT_LOGO_EFFECT.strokeWidth).toBeGreaterThan(0);
+    expect(DEFAULT_LOGO_EFFECT.colorEnabled).toBe(false);
   });
 
   it('rejects SVG with script or remote references for local preview safety', () => {

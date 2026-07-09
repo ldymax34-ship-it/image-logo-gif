@@ -3,6 +3,7 @@ import {
   buildOutputFileName,
   classifyAspect,
   computeFitRect,
+  DEFAULT_BRAND_ASSETS,
   createBrandAsset,
   createInitialCropState,
   getBoardPreviewKey,
@@ -68,6 +69,8 @@ const svgAsset = createBrandAsset({
   svgText: '<svg viewBox="0 0 420 120" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10z"/></svg>'
 });
 assert.equal(svgAsset.aspectRatio, 3.5);
+assert.ok(DEFAULT_BRAND_ASSETS.some((asset) => asset.sourceUrl === '/brand-logos/company/kuro-en-white.png'));
+assert.ok(DEFAULT_BRAND_ASSETS.some((asset) => asset.sourceUrl === '/brand-logos/wuthering-waves/ww-en.png'));
 assert.throws(
   () =>
     createBrandAsset({

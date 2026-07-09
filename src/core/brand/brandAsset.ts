@@ -1,13 +1,33 @@
 export type BrandLanguage = 'zh-CN' | 'zh-TW' | 'ja-JP' | 'ko-KR' | 'en-US' | 'custom';
 
 export type BrandAssetType = 'logo' | 'cpr';
+export type BrandAssetSourceKind = 'svg' | 'image';
+
+export type BrandEffectState = {
+  colorEnabled: boolean;
+  color: string;
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+  glowEnabled: boolean;
+  glowColor: string;
+  glowBlur: number;
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+};
 
 export type BrandAsset = {
   id: string;
   type: BrandAssetType;
+  sourceKind: BrandAssetSourceKind;
   name: string;
   language: BrandLanguage;
-  svgText: string;
+  svgText?: string;
+  sourceUrl?: string;
   viewBox?: string;
   viewBoxSize?: {
     width: number;
@@ -21,6 +41,8 @@ export type BrandLayerState = {
   cprEnabled: boolean;
   selectedLogoId?: string;
   selectedCprId?: string;
+  logoEffect: BrandEffectState;
+  cprEffect: BrandEffectState;
 };
 
 export const BRAND_LANGUAGE_OPTIONS: Array<{ value: BrandLanguage; label: string }> = [
@@ -109,9 +131,34 @@ export function createBrandAsset(input: {
   const viewBox = getSvgViewBoxText(input.svgText);
   return {
     ...input,
+    sourceKind: 'svg',
     viewBox,
     viewBoxSize,
     aspectRatio: viewBoxSize ? viewBoxSize.width / viewBoxSize.height : undefined
+  };
+}
+
+export function createRasterBrandAsset(input: {
+  id: string;
+  type: BrandAssetType;
+  name: string;
+  language: BrandLanguage;
+  sourceUrl: string;
+  width: number;
+  height: number;
+}): BrandAsset {
+  return {
+    id: input.id,
+    type: input.type,
+    sourceKind: 'image',
+    name: input.name,
+    language: input.language,
+    sourceUrl: input.sourceUrl,
+    viewBoxSize: {
+      width: input.width,
+      height: input.height
+    },
+    aspectRatio: input.width / input.height
   };
 }
 
@@ -126,3 +173,87 @@ export function toBrandSvgAsset(asset: BrandAsset) {
     aspectRatio: asset.aspectRatio
   } as const;
 }
+
+export const DEFAULT_LOGO_EFFECT: BrandEffectState = {
+  colorEnabled: false,
+  color: '#ffffff',
+  strokeEnabled: false,
+  strokeColor: '#000000',
+  strokeWidth: 1,
+  glowEnabled: false,
+  glowColor: '#ffffff',
+  glowBlur: 8,
+  shadowEnabled: false,
+  shadowColor: '#000000',
+  shadowOpacity: 0.45,
+  shadowBlur: 10,
+  shadowOffsetX: 0,
+  shadowOffsetY: 5
+};
+
+export const DEFAULT_CPR_EFFECT: BrandEffectState = {
+  ...DEFAULT_LOGO_EFFECT,
+  colorEnabled: true,
+  color: '#ffffff',
+  shadowEnabled: true,
+  shadowOpacity: 0.45,
+  shadowBlur: 12,
+  shadowOffsetY: 4
+};
+
+export const DEFAULT_BRAND_ASSETS: BrandAsset[] = [
+  createRasterBrandAsset({
+    id: 'preset_kuro_en_black',
+    type: 'logo',
+    name: 'KURO 英文标识 黑色',
+    language: 'custom',
+    sourceUrl: '/brand-logos/company/kuro-en-black.png',
+    width: 7500,
+    height: 750
+  }),
+  createRasterBrandAsset({
+    id: 'preset_kuro_en_white',
+    type: 'logo',
+    name: 'KURO 英文标识 白色',
+    language: 'custom',
+    sourceUrl: '/brand-logos/company/kuro-en-white.png',
+    width: 7500,
+    height: 750
+  }),
+  createRasterBrandAsset({
+    id: 'preset_ww_zh_cn',
+    type: 'logo',
+    name: '鸣潮 Logo 简中',
+    language: 'zh-CN',
+    sourceUrl: '/brand-logos/wuthering-waves/ww-zh-cn.png',
+    width: 1333,
+    height: 872
+  }),
+  createRasterBrandAsset({
+    id: 'preset_ww_zh_tw_ja',
+    type: 'logo',
+    name: '鸣潮 Logo 繁中 / 日文',
+    language: 'zh-TW',
+    sourceUrl: '/brand-logos/wuthering-waves/ww-zh-tw-ja.png',
+    width: 1332,
+    height: 872
+  }),
+  createRasterBrandAsset({
+    id: 'preset_ww_en',
+    type: 'logo',
+    name: '鸣潮 Logo 英文',
+    language: 'en-US',
+    sourceUrl: '/brand-logos/wuthering-waves/ww-en.png',
+    width: 1820,
+    height: 593
+  }),
+  createRasterBrandAsset({
+    id: 'preset_ww_ko',
+    type: 'logo',
+    name: '鸣潮 Logo 韩文',
+    language: 'ko-KR',
+    sourceUrl: '/brand-logos/wuthering-waves/ww-ko.png',
+    width: 1325,
+    height: 872
+  })
+];
