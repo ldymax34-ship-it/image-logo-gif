@@ -103,83 +103,63 @@ function SvgImageLayer({ asset, className, color }: { asset: BrandAsset; classNa
 
 function PreviewStage({
   asset,
-  spec,
-  previewState,
+  specs,
+  selectedSpecId,
+  previewStates,
   logoAsset,
   cprAsset,
   brandLayer,
   cprColor,
+  onSelectSpec,
   onCropChange,
   onFitModeChange
 }: {
   asset: MaterialAsset | undefined;
-  spec: MaterialSpec | undefined;
-  previewState: BoardPreviewState | undefined;
+  specs: MaterialSpec[];
+  selectedSpecId: string | undefined;
+  previewStates: Record<string, BoardPreviewState>;
   logoAsset: BrandAsset | undefined;
   cprAsset: BrandAsset | undefined;
   brandLayer: BrandLayerState;
   cprColor: string;
+  onSelectSpec: (specId: string) => void;
   onCropChange: (crop: CropState) => void;
   onFitModeChange: (mode: FitMode) => void;
 }) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
+  const selectedPreviewKey = asset && selectedSpec ? getBoardPreviewKey(asset.id, selectedSpec.id) : undefined;
+  const selectedPreviewState = selectedPreviewKey ? previewStates[selectedPreviewKey] : undefined;
 
-  const stage = useMemo(() => {
-    if (!spec) return undefined;
-    const scale = Math.min(740 / spec.width, 560 / spec.height, 1);
-    return { scale, width: spec.width * scale, height: spec.height * scale };
-  }, [spec]);
-
-  const transform = useMemo(() => {
-    if (!asset || !spec || !previewState) return undefined;
-    return computeCropTransform(asset, spec, previewState.crop);
-  }, [asset, spec, previewState]);
-
-  const brandPreview = useMemo(() => {
-    if (!spec) return undefined;
-    return renderBrandLayer({
-      canvas: { width: spec.width, height: spec.height },
-      includeLogo: brandLayer.logoEnabled && Boolean(logoAsset),
-      includeCpr: brandLayer.cprEnabled && Boolean(cprAsset),
-      logoAsset: logoAsset ? toBrandSvgAsset(logoAsset) : undefined,
-      cprAsset: cprAsset ? toBrandSvgAsset(cprAsset) : undefined,
-      logoAnchor: 'top-right',
-      cprAnchor: 'center',
-      logoSize: 'standard',
-      cprSize: 'standard',
-      cprColor
-    });
-  }, [brandLayer.cprEnabled, brandLayer.logoEnabled, cprAsset, cprColor, logoAsset, spec]);
-
-  if (!spec || !stage) {
+  if (!specs.length) {
     return <div className="empty-state">粘贴尺寸后会生成画板；上传图片后可在这里逐尺寸预览。</div>;
   }
 
-  const crop = previewState?.crop;
-  const coverScale = asset ? computeFitScale(asset, spec, 'cover') : 1;
-  const containScale = asset ? computeFitScale(asset, spec, 'contain') : coverScale;
-  const sliderMinScale = previewState?.fitMode === 'contain' ? containScale : coverScale;
+  const crop = selectedPreviewState?.crop;
+  const coverScale = asset && selectedSpec ? computeFitScale(asset, selectedSpec, 'cover') : 1;
+  const containScale = asset && selectedSpec ? computeFitScale(asset, selectedSpec, 'contain') : coverScale;
+  const sliderMinScale = selectedPreviewState?.fitMode === 'contain' ? containScale : coverScale;
   const maxScale = Math.max(coverScale, sliderMinScale) * 6;
 
   function updateCrop(nextCrop: CropState) {
-    if (!asset || !spec || !previewState) return;
-    onCropChange(clampCropState(asset, spec, nextCrop, previewState.fitMode));
+    if (!asset || !selectedSpec || !selectedPreviewState) return;
+    onCropChange(clampCropState(asset, selectedSpec, nextCrop, selectedPreviewState.fitMode));
   }
 
   function resetCrop(mode: FitMode) {
-    if (!asset || !spec) return;
+    if (!asset || !selectedSpec) return;
     onFitModeChange(mode);
   }
 
-  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (!asset || !spec || !previewState) return;
+  function handlePointerDown(event: PointerEvent<HTMLDivElement>, spec: MaterialSpec, stageScale: number, previewState: BoardPreviewState | undefined) {
+    onSelectSpec(spec.id);
+    if (!asset || spec.id !== selectedSpec?.id || !previewState) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
   }
 
-  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (!asset || !spec || !previewState || !stage || !dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
-    const stageScale = stage.scale;
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>, spec: MaterialSpec, stageScale: number, previewState: BoardPreviewState | undefined) {
+    if (!asset || spec.id !== selectedSpec?.id || !previewState || !dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
     const deltaX = (event.clientX - dragRef.current.x) / stageScale;
     const deltaY = (event.clientY - dragRef.current.y) / stageScale;
     dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
@@ -195,62 +175,108 @@ function PreviewStage({
   return (
     <div className="preview-shell">
       <div className="preview-meta">
-        <span>{spec.width} x {spec.height}</span>
-        <span>{getAspectLabel(spec)}</span>
-      </div>
-      <div
-        className={`preview-canvas ${asset ? 'is-draggable' : ''}`}
-        style={{ width: stage.width, height: stage.height }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        {asset && transform ? (
-          <img
-            className="preview-image"
-            src={asset.objectUrl}
-            alt={asset.fileName}
-            draggable={false}
-            style={{
-              left: transform.offsetX * stage.scale,
-              top: transform.offsetY * stage.scale,
-              width: transform.width * stage.scale,
-              height: transform.height * stage.scale
-            }}
-          />
-        ) : (
-          <div className="canvas-placeholder">上传图片后显示主视觉</div>
+        <span>总览 {specs.length} 个画板</span>
+        {selectedSpec && (
+          <span>
+            当前 {selectedSpec.width} x {selectedSpec.height} · {getAspectLabel(selectedSpec)}
+          </span>
         )}
-        <div className="safe-area" />
-        {brandPreview?.layers.map((layer) => {
-          const rect = layer.layout.rect;
-          const selectedAsset = layer.type === 'logo' ? logoAsset : cprAsset;
-          if (!selectedAsset) return null;
+      </div>
+
+      <div className="board-overview">
+        {specs.map((spec) => {
+          const key = asset ? getBoardPreviewKey(asset.id, spec.id) : undefined;
+          const previewState = key ? previewStates[key] : undefined;
+          const isSelected = spec.id === selectedSpec?.id;
+          const scale = Math.min(220 / spec.width, 160 / spec.height, 1);
+          const transform = asset && previewState ? computeCropTransform(asset, spec, previewState.crop) : undefined;
+          const brandPreview = renderBrandLayer({
+            canvas: { width: spec.width, height: spec.height },
+            includeLogo: brandLayer.logoEnabled && Boolean(logoAsset),
+            includeCpr: brandLayer.cprEnabled && Boolean(cprAsset),
+            logoAsset: logoAsset ? toBrandSvgAsset(logoAsset) : undefined,
+            cprAsset: cprAsset ? toBrandSvgAsset(cprAsset) : undefined,
+            logoAnchor: 'top-right',
+            cprAnchor: 'center',
+            logoSize: 'standard',
+            cprSize: 'standard',
+            cprColor
+          });
+
           return (
-            <div
-              key={layer.id}
-              className={`brand-layer ${layer.type}`}
-              style={{
-                left: rect.x * stage.scale,
-                top: rect.y * stage.scale,
-                width: rect.width * stage.scale,
-                height: rect.height * stage.scale,
-                zIndex: layer.zIndex,
-                filter:
-                  layer.type === 'cpr'
-                    ? `drop-shadow(${layer.layout.shadow.offsetX * stage.scale}px ${layer.layout.shadow.offsetY * stage.scale}px ${
-                        layer.layout.shadow.blurPx * stage.scale
-                      }px rgba(0,0,0,${layer.layout.shadow.opacity}))`
-                    : undefined
-              }}
-            >
-              <SvgImageLayer
-                asset={selectedAsset}
-                className={`brand-svg ${layer.type}`}
-                color={layer.type === 'cpr' ? cprColor : undefined}
-              />
-            </div>
+            <article key={spec.id} className={`board-card ${isSelected ? 'active' : ''}`}>
+              <button
+                type="button"
+                className="board-card-button"
+                onClick={() => onSelectSpec(spec.id)}
+                aria-pressed={isSelected}
+              >
+                <div className="board-card-title">
+                  <strong>{spec.name}</strong>
+                  <small>{spec.width} x {spec.height}</small>
+                </div>
+                <div
+                  className={`preview-canvas board-canvas ${asset && isSelected ? 'is-draggable' : ''}`}
+                  style={{ width: spec.width * scale, height: spec.height * scale }}
+                  onPointerDown={(event) => handlePointerDown(event, spec, scale, previewState)}
+                  onPointerMove={(event) => handlePointerMove(event, spec, scale, previewState)}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                >
+                  {asset && transform ? (
+                    <img
+                      className="preview-image"
+                      src={asset.objectUrl}
+                      alt={asset.fileName}
+                      draggable={false}
+                      style={{
+                        left: transform.offsetX * scale,
+                        top: transform.offsetY * scale,
+                        width: transform.width * scale,
+                        height: transform.height * scale
+                      }}
+                    />
+                  ) : (
+                    <div className="canvas-placeholder">上传图片</div>
+                  )}
+                  <div className="safe-area" />
+                  {brandPreview.layers.map((layer) => {
+                    const rect = layer.layout.rect;
+                    const selectedAsset = layer.type === 'logo' ? logoAsset : cprAsset;
+                    if (!selectedAsset) return null;
+                    return (
+                      <div
+                        key={layer.id}
+                        className={`brand-layer ${layer.type}`}
+                        style={{
+                          left: rect.x * scale,
+                          top: rect.y * scale,
+                          width: rect.width * scale,
+                          height: rect.height * scale,
+                          zIndex: layer.zIndex,
+                          filter:
+                            layer.type === 'cpr'
+                              ? `drop-shadow(${layer.layout.shadow.offsetX * scale}px ${layer.layout.shadow.offsetY * scale}px ${
+                                  layer.layout.shadow.blurPx * scale
+                                }px rgba(0,0,0,${layer.layout.shadow.opacity}))`
+                              : undefined
+                        }}
+                      >
+                        <SvgImageLayer
+                          asset={selectedAsset}
+                          className={`brand-svg ${layer.type}`}
+                          color={layer.type === 'cpr' ? cprColor : undefined}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="board-card-footer">
+                  <span>{getAspectLabel(spec)}</span>
+                  <span>{previewState?.fitMode === 'contain' ? '适应' : '填满'}</span>
+                </div>
+              </button>
+            </article>
           );
         })}
       </div>
@@ -262,7 +288,7 @@ function PreviewStage({
         <button type="button" onClick={() => resetCrop('contain')} disabled={!asset}>
           适应画布
         </button>
-        <button type="button" onClick={() => resetCrop(previewState?.fitMode ?? 'cover')} disabled={!asset}>
+        <button type="button" onClick={() => resetCrop(selectedPreviewState?.fitMode ?? 'cover')} disabled={!asset}>
           重置裁切
         </button>
         <label>
@@ -275,15 +301,15 @@ function PreviewStage({
             value={crop?.scale ?? sliderMinScale}
             disabled={!asset || !crop}
             onChange={(event) => {
-              if (!asset || !spec || !crop || !previewState) return;
+              if (!asset || !selectedSpec || !crop || !selectedPreviewState) return;
               updateCrop(
                 zoomCropState(
                   asset,
-                  spec,
+                  selectedSpec,
                   crop,
                   Number(event.target.value),
-                  { x: spec.width / 2, y: spec.height / 2 },
-                  previewState.fitMode
+                  { x: selectedSpec.width / 2, y: selectedSpec.height / 2 },
+                  selectedPreviewState.fitMode
                 )
               );
             }}
@@ -422,7 +448,7 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Brand Material Workbench · 0.1.3</p>
+          <p className="eyebrow">Brand Material Workbench · 0.1.4</p>
           <h1>品宣物料工作台</h1>
         </div>
         <div className="topbar-status">
@@ -567,12 +593,14 @@ export function App() {
           </div>
           <PreviewStage
             asset={selectedAsset}
-            spec={selectedSpec}
-            previewState={previewState}
+            specs={specs}
+            selectedSpecId={selectedSpec?.id}
+            previewStates={previewStates}
             logoAsset={selectedLogo}
             cprAsset={selectedCpr}
             brandLayer={brandLayer}
             cprColor={cprColor}
+            onSelectSpec={setSelectedSpecId}
             onCropChange={(crop) => updateSelectedPreview({ crop })}
             onFitModeChange={resetSelectedCrop}
           />

@@ -264,6 +264,56 @@ code {
   font-size: 13px;
 }
 
+.board-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  align-items: start;
+  gap: 10px;
+  max-height: calc(100vh - 258px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.board-card {
+  min-width: 0;
+}
+
+.board-card-button {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 9px;
+  text-align: left;
+  border-color: #202a37;
+  background: #0f151d;
+}
+
+.board-card.active .board-card-button {
+  border-color: #79addd;
+  background: #152235;
+}
+
+.board-card-title,
+.board-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.board-card-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-card-footer {
+  color: #8ea0b5;
+  font-size: 12px;
+}
+
 .preview-canvas {
   position: relative;
   overflow: hidden;
@@ -277,6 +327,10 @@ code {
     #151b25;
   background-size: 22px 22px;
   touch-action: none;
+}
+
+.board-canvas {
+  pointer-events: auto;
 }
 
 .preview-canvas.is-draggable {

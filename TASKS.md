@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.3 SVG Logo / CPR 资源与语种预览
+## 当前版本：0.1.4 全画板总览与单画板配置
 
 ### 产品方向
 
@@ -47,12 +47,16 @@
 - [x] SVG 保留 viewBox 和原始比例，不修改 SVG 文本
 - [x] SVG 预览拦截 script、foreignObject、远程 / 协议相对 / data 引用和外部 CSS 引用
 - [x] 使用本地 `.env` + opencode CLI 做只读审查，由 Codex 总控筛选并修复高风险项
+- [x] 中间预览区默认展示所有画板缩略预览
+- [x] 总览中的每个画板都显示当前素材裁切、安全区、Logo / CPR 状态
+- [x] 点击任一画板后保留单个画板配置权限，裁切 / 缩放只作用于当前素材 x 当前画板
 
 ### 本轮验证记录
 
 - [x] 0.1.1 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.2 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.3 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
+- [x] 0.1.4 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 
 ### 第一阶段剩余目标
 
@@ -82,7 +86,7 @@
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在 0.1.4 导出前继续收紧。
 
-### 下一步建议给 Codex：0.1.4
+### 下一步建议给 Codex：0.1.5
 
 1. 建立 Canvas 导出基础：把素材裁切、Logo、CPR 安全绘制到 Canvas。
 2. 导出设置区增加是否添加 Logo / CPR、选择语种、选择 JPG / PNG。
