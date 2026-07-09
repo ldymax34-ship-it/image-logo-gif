@@ -2,53 +2,201 @@
 
 ## 身份
 
-你是一个离线工具项目的维护者。项目是「一站式渠道素材辅助工具」，纯前端 HTML 单文件应用，不联网、不调 API。
+你是一个内部离线设计生产工具项目的维护者。当前仓库从「一站式渠道素材辅助工具」转向「品宣物料工作台」。
 
-## 能做
+仓库仍沿用原 Git，不新建仓库。旧的 `photo1.html` / `video1.html` / `test.html` / `suggest.html` 暂时作为 legacy 页面保留，后续只做必要修复，不再在旧单文件结构里继续叠新品宣功能。
 
-- 修改 `photo1.html` / `video1.html` / `test.html` / `suggest.html` 及 `assets/` 下的本地资源
-- 用 `assets/vendor/` 下已有的本地库（ffmpeg.wasm、jszip、lucide、tailwind、xlsx、html2canvas）
-- 用 `apply_patch` 或 Python 脚本编辑文件
-- 在 `CHANGELOG.md` 记录每轮改动
-- 在 `TASKS.md` 更新任务状态
+## 当前产品目标
 
-## 不能做
+做一个纯本地运行的品宣物料工作台，用于品宣 / 市场平面物料的批量适配、裁切、导出和复核。
 
-- 禁止引入任何外部 URL / CDN / 远程 API
-- 禁止新增 fetch / XHR / WebSocket / sendBeacon（`file://` 本地 fetch bridge 除外）
-- 禁止放宽 CSP 离线策略
-- 禁止用 `cat` 或 shell 写文件，用 `apply_patch` 或 Python
-- 禁止 `git reset --hard` 或 `git checkout --` 除非用户明确要求
-- 禁止 revert 不是自己做的改动
+核心工作流：
+
+```txt
+新建批次
+↓
+上传主视觉 / 已设计图
+↓
+选择或粘贴物料尺寸矩阵
+↓
+逐尺寸预览、裁切、安全区检查
+↓
+批量导出 JPG / PNG
+↓
+生成复核清单
+```
+
+## 重构方向
+
+优先新建模块化前端应用，不继续把新品宣能力写进单个 HTML 文件。
+
+推荐结构：
+
+```txt
+src/
+  core/
+    image/
+      crop.ts
+      resize.ts
+      exportImage.ts
+    layout/
+      layoutProfile.ts
+      logoLayout.ts
+      cprLayout.ts
+    spec/
+      specParser.ts
+      presetTemplates.ts
+    export/
+      zipExport.ts
+      reviewReport.ts
+    storage/
+      localStore.ts
+  components/
+  pages/
+  App.tsx
+```
+
+推荐技术栈：
+
+- Vite
+- React
+- TypeScript
+- Ant Design / Arco Design / 原生 CSS 均可，但不要继续堆 Tailwind 内联类
+- JSZip 用于 ZIP 导出
+- 浏览器 Canvas 用于图片裁切和导出
+
+## 必须保留 / 迁移的核心能力
+
+### 1. 纯离线原则
+
+- 运行时不联网
+- 不调用远程 API
+- 不依赖 CDN
+- 第三方依赖必须打包在本地或随构建产物安装
+- 不上传用户素材
+
+### 2. 尺寸解析能力
+
+可以参考旧 `assets/config-parser.js` 的解析逻辑，迁移为 `src/core/spec/specParser.ts`。
+
+需要支持：
+
+- `1080x1920`
+- `1920*1080`
+- `900 383`
+- `1:1 1024`
+- `16:9 1920`
+- 表格粘贴
+- TXT 配置
+- JPG / PNG
+- KB / MB 大小限制
+
+### 3. 版型适配规则
+
+这是新品宣工具的核心模块，不是普通按比例缩放。
+
+Logo / CPR 的大小和位置必须先识别版型族，再按版型族规则计算：
+
+```txt
+landscape: aspect >= 1.25
+square:    0.85 <= aspect < 1.25
+portrait:  aspect < 0.85
+```
+
+每个版型族拥有独立参数：
+
+- logoWidthRatio
+- logoMinWidth / logoMaxWidth
+- marginRatio
+- marginMin / marginMax
+- cprWidthRatio
+- cprMinWidth / cprMaxWidth
+- CPR 字号 / 投影 / 边距
+
+计算必须基于短边 `shortSide = Math.min(width, height)`，并使用 clamp 做上下限保护。
+
+目标：
+
+- 21:9、16:9、4:3 等横版视觉一致
+- 9:16、9:21、3:4 等竖版视觉一致
+- 同一批物料的 Logo / CPR 位置和视觉大小稳定
+- 预览和导出使用同一套计算函数
+
+UI 不要暴露公式，只展示：
+
+- 版型规则：自动
+- 当前识别：横版 / 方图 / 竖版
+- 推荐位置：左上 / 右上 / 居中
+- 推荐大小：小 / 标准 / 大
+- 高级参数折叠展示
+
+## 不再优先维护的旧能力
+
+除非用户明确要求，不要继续投入：
+
+- 渠道水印逻辑
+- `suggest.html` 使用回顾
+- `test.html` 独立尺寸核对页
+- `video1.html` 旧水印 / Logo 死代码
+- 旧 Wireframe / 暗色补丁 CSS
+- 单 HTML 内继续堆复杂状态
+
+视频 / GIF 功能暂不作为新品宣工作台第一阶段目标。
+
+## 第一阶段范围
+
+只做图片，不做视频。
+
+必须完成：
+
+1. 新建模块化前端应用入口。
+2. 支持上传一张或多张图片。
+3. 支持尺寸矩阵创建、粘贴、解析。
+4. 支持每个尺寸独立预览和裁切。
+5. 支持安全区显示。
+6. 支持 Logo / CPR 版型适配规则。
+7. 支持批量导出 JPG / PNG。
+8. 支持 ZIP 打包。
+9. 支持 TXT / CSV 复核清单。
+10. 保留旧 HTML 页面可打开，直到新工具功能闭环完成。
+
+## 开发约束
+
+- 先读代码再改，不假设。
+- 大迁移必须小步提交。
+- 不要删除旧功能，除非已经完成替代并确认无用。
+- 不要在半残文件上继续叠改动，出错就恢复备份重来。
+- 不要引入在线字体、远程图片、远程脚本、远程 API。
+- 不要把用户素材、项目素材、Logo 数据写死进公开代码。
+- 不要把新品宣能力继续硬塞进旧 `photo1.html`。
 
 ## 每轮结束必须写清
 
-在 `CHANGELOG.md` 追加一个版本段落（或追加到当前版本段落），格式：
+每轮改动后更新：
 
-```
-## 0.6.x
+- `CHANGELOG.md`
+- `TASKS.md`
+
+格式：
+
+```md
+## 0.8.x
 
 1. [类型-大小] `文件名` 改动描述
 2. ...
 ```
 
-类型标签：`新需求` / `体验` / `问题修复` / `功能调整` / `维护` / `性能`
+类型标签：`新需求` / `体验` / `问题修复` / `功能调整` / `维护` / `性能` / `重构`
+
 大小标签：`小` / `中` / `大`
 
-同时在 `TASKS.md` 更新对应任务的状态。
+## 验证清单
 
-## 验证清单（每次改动后自检）
+每轮改动后至少检查：
 
-1. `node -e "new Function(...)"` 语法检查通过
-2. `<div>` 开闭平衡
-3. 无新增网络调用（rg 检查 fetch/XHR/WebSocket）
-4. CSP 仍满足离线限制
-5. 不破坏现有离线功能
-
-## 工作习惯
-
-- 先读代码再改，不假设
-- 大块替换前先 `cp file file.bak` 备份
-- 删除顺序：先删 JS 大块（行号稳定）→ 再删 HTML → 最后注入新代码
-- 不要在半残文件上继续叠改动，出错就恢复备份重来
-- 每轮结束后在 `CHANGELOG.md` 和 `TASKS.md` 留痕
+1. TypeScript / JavaScript 语法检查通过。
+2. 页面能本地启动。
+3. 无新增运行时网络请求。
+4. 旧 HTML 页面未被误删。
+5. 预览和导出使用同一套 layout 计算函数。
+6. ZIP 导出文件名、尺寸、格式、体积符合复核清单。
