@@ -230,3 +230,23 @@ python3 -m http.server 8765
 ```
 
 后续新工具启动方式以实际 Vite / 构建配置为准。
+
+## 新工具开发方式
+
+0.8.x 新应用使用 Vite + React + TypeScript：
+
+```bash
+npm install
+npm run dev
+# 浏览器打开 http://127.0.0.1:5173/
+```
+
+核心验证：
+
+```bash
+npm run verify:core
+npm test
+npm run build
+```
+
+当前 0.8.0 已建立工程骨架、尺寸片段解析、版型适配、Logo / CPR 品牌层 layout、文件命名清理和最小工作台壳。上传、裁切、真实 SVG 管理、批量导出和复核清单仍在后续阶段。

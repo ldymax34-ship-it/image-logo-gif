@@ -1,5 +1,16 @@
 # 更新日志
 
+## 0.8.0
+
+1. [重构-大] 新增 Vite + React + TypeScript 新应用骨架：`package.json`、`package-lock.json`、`index.html`、`vite.config.ts`、`tsconfig*.json`、`src/main.tsx`、`src/pages/App.tsx`、`src/styles.css`；旧 `photo1.html` / `video1.html` / `test.html` / `suggest.html` 保持 legacy 可打开，不再往旧单 HTML 里叠新品宣能力。
+2. [新需求-中] 新增 `src/core/layout/layoutProfile.ts`、`logoLayout.ts`、`cprLayout.ts`、`brandLayer.ts`：实现 aspect 版型识别（landscape / square / portrait）、短边 shortSide + clamp 的 Logo / CPR 尺寸和边距计算、左上 / 右上 / 居中锚点，以及统一 `renderBrandLayer` 结果，供预览和后续导出共用。
+3. [新需求-中] 新增 `src/core/spec/specParser.ts` 与 `presetTemplates.ts`：支持尺寸片段解析，不做整份需求文档语义识别；已支持 `1080x1920`、`1920*1080`、`3840×2160`、`900 383`、`1:1 1024`、`16:9 1920`、`9:16 1080`、逗号 / 顿号 / 多行 / 表格粘贴、JPG / PNG、KB / MB 大小限制。
+4. [新需求-中] 新增 `src/core/export/fileNaming.ts`：实现跨平台文件名清理与输出命名，保留中文与 Unicode 字符，替换 Windows 非法字符，移除前导 / 尾随点空格，处理 Windows 保留名，避免 `../` 路径段残留。
+5. [重构-中] 新增 `src/platform/` 抽象层占位（`fileSystem.ts` / `dialog.ts` / `path.ts` / `desktopBridge.ts`），0.8.x 暂不接 Tauri，但为后续 macOS / Windows 桌面化保留边界。
+6. [体验-中] 新应用首页提供最小工作台壳：顶部批次操作、左侧素材占位、中间画板预览 / 安全区 / Logo / CPR 占位、右侧「粘贴尺寸」文本框与解析列表，用真实核心函数驱动画板数量、版型识别和品牌层位置。
+7. [维护-中] 新增 `scripts/verify-core.ts` 与 `src/core/core.test.ts`，覆盖尺寸解析、版型识别、品牌层布局不出界、短边一致性、文件名安全等验证；`npm run verify:core`、`npm test`、`npm run build` 全部通过。
+8. [验证-小] 生产构建后用本地 preview + Chrome 桌面 / 移动视口验证：页面无 JS 错误、无横向溢出、无外部请求；`index.html` 保持离线 CSP，运行时不依赖 CDN / 远程 API。
+
 ## 0.7.4
 
 1. [新需求-大] `photo1.html` / `video1.html` / `test.html` / `suggest.html` 全站改为暗色模式：深色背景 token（`--paper:#0f172a` / `--ink:#e2e8f0`）、面板深灰蓝（`#1e293b`）、主色由橙红 `#df4a2f` 改为冷蓝/青 `#38bdf8`，主按钮文字深色高对比；并新增 scoped 覆盖将残留 `bg-white` / `text-gray-*` / `amber` / `orange` 等 Tailwind 工具类映射到深色，保证文字可读。
