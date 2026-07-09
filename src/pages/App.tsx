@@ -94,7 +94,7 @@ export function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Brand Material Workbench · 0.8.0</p>
+          <p className="eyebrow">Brand Material Workbench · 0.1.1</p>
           <h1>品宣物料工作台</h1>
         </div>
         <div className="topbar-actions">

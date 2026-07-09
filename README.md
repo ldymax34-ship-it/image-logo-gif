@@ -4,9 +4,9 @@
 
 ## 当前状态
 
-当前项目已进入 0.8.x 新应用阶段，使用 Vite + React + TypeScript 搭建模块化前端应用。
+当前项目已进入 0.1.x 新应用阶段，使用 Vite + React + TypeScript 搭建模块化前端应用。
 
-当前 0.8.0 已建立：
+当前 0.1.0 已建立：
 
 - 新应用工程骨架
 - 尺寸片段解析
@@ -50,9 +50,9 @@
 
 跨平台桌面应用是中期目标：
 
-- 0.8.x：先完成 Vite + React + TypeScript Web 工作台闭环
-- 0.9.x：再接 Tauri，做 macOS / Windows 双平台桌面化
-- 0.8.x 可预留 `platform/` 抽象层，但不做 `.dmg` / `.msi` / Tauri 打包
+- 0.1.x：先完成 Vite + React + TypeScript Web 工作台闭环
+- 0.2.x：再接 Tauri，做 macOS / Windows 双平台桌面化
+- 0.1.x 可预留 `platform/` 抽象层，但不做 `.dmg` / `.msi` / Tauri 打包
 
 ## UI 方向
 
@@ -169,7 +169,7 @@ Logo 和 CPR 第一阶段都按 SVG 资源处理，用于保证跨尺寸、跨�
 
 第一阶段先降级处理，不做完整字体系统，不内嵌完整思源黑体 / 思源宋体。
 
-0.8.x 先保证：
+0.1.x 先保证：
 
 - UTF-8
 - CSV 可选 BOM
@@ -224,7 +224,7 @@ src/
 
 ## 开发方式
 
-0.8.x 新应用使用 Vite + React + TypeScript：
+0.1.x 新应用使用 Vite + React + TypeScript：
 
 ```bash
 npm install
