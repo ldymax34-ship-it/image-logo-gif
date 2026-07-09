@@ -3,13 +3,19 @@ import {
   buildOutputFileName,
   classifyAspect,
   computeCprLayout,
+  computeFitRect,
   computeLogoLayout,
+  createBrandAsset,
+  createInitialCropState,
+  getBoardPreviewKey,
   parseSpecText,
+  panCropState,
   renderBrandLayer,
-  sanitizeFileNamePart
+  sanitizeFileNamePart,
+  zoomCropState
 } from './index';
 
-describe('core 0.8.0 foundation', () => {
+describe('core 0.1.x foundation', () => {
   it('parses size fragments and keeps unrecognized lines', () => {
     const result = parseSpecText('1080x1920\n16:9 1920\nbad line');
     expect(result.specs.map((spec) => `${spec.width}x${spec.height}`)).toEqual(['1080x1920', '1920x1080']);
@@ -89,5 +95,79 @@ describe('core 0.8.0 foundation', () => {
 
   it('prefixes reserved windows names after normalization', () => {
     expect(sanitizeFileNamePart('nul')).toBe('_nul');
+  });
+
+  it('computes cover and contain image fit without distortion', () => {
+    const cover = computeFitRect({ width: 1000, height: 500 }, { width: 300, height: 300 }, 'cover');
+    const contain = computeFitRect({ width: 1000, height: 500 }, { width: 300, height: 300 }, 'contain');
+    expect(cover.width).toBe(600);
+    expect(cover.height).toBe(300);
+    expect(cover.x).toBe(-150);
+    expect(contain.width).toBe(300);
+    expect(contain.height).toBe(150);
+    expect(contain.y).toBe(75);
+  });
+
+  it('keeps crop state reusable by asset and board key', () => {
+    expect(getBoardPreviewKey('asset_a', 'spec_b')).toBe('asset_a:spec_b');
+    const crop = createInitialCropState({ width: 1000, height: 500 }, { width: 300, height: 300 }, 'cover');
+    expect(crop.scale).toBe(0.6);
+    const panned = panCropState({ width: 1000, height: 500 }, { width: 300, height: 300 }, crop, 40, 0, 'cover');
+    expect(panned.offsetX).toBeGreaterThan(crop.offsetX);
+    const zoomed = zoomCropState({ width: 1000, height: 500 }, { width: 300, height: 300 }, crop, 1.2, { x: 150, y: 150 });
+    expect(zoomed.scale).toBe(1.2);
+    expect(zoomed.offsetX).toBeLessThan(crop.offsetX);
+  });
+
+  it('creates SVG brand assets with language and viewBox metadata', () => {
+    const asset = createBrandAsset({
+      id: 'logo_1',
+      type: 'logo',
+      name: 'logo.svg',
+      language: 'zh-CN',
+      svgText: '<svg viewBox="0 0 420 120" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10z"/></svg>'
+    });
+    expect(asset.viewBox).toBe('0 0 420 120');
+    expect(asset.viewBoxSize).toEqual({ width: 420, height: 120 });
+    expect(asset.aspectRatio).toBe(3.5);
+  });
+
+  it('rejects SVG with script or remote references for local preview safety', () => {
+    expect(() =>
+      createBrandAsset({
+        id: 'bad',
+        type: 'cpr',
+        name: 'bad.svg',
+        language: 'en-US',
+        svgText: '<svg viewBox="0 0 1 1"><script>alert(1)</script></svg>'
+      })
+    ).toThrow(/script/);
+    expect(() =>
+      createBrandAsset({
+        id: 'remote',
+        type: 'logo',
+        name: 'remote.svg',
+        language: 'en-US',
+        svgText: '<svg viewBox="0 0 1 1"><image href="https://example.com/a.png"/></svg>'
+      })
+    ).toThrow(/远程资源/);
+    expect(() =>
+      createBrandAsset({
+        id: 'protocol-relative',
+        type: 'logo',
+        name: 'protocol.svg',
+        language: 'en-US',
+        svgText: '<svg viewBox="0 0 1 1"><use href="//example.com/icon.svg#x"/></svg>'
+      })
+    ).toThrow(/远程资源/);
+    expect(() =>
+      createBrandAsset({
+        id: 'style-remote',
+        type: 'cpr',
+        name: 'style.svg',
+        language: 'en-US',
+        svgText: '<svg viewBox="0 0 1 1"><style>@import url("https://example.com/a.css");</style></svg>'
+      })
+    ).toThrow(/外部资源/);
   });
 });

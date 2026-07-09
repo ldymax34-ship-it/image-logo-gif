@@ -1,5 +1,15 @@
 import { strict as assert } from 'node:assert';
-import { buildOutputFileName, classifyAspect, parseSpecText, renderBrandLayer, sanitizeFileNamePart } from '../src/core';
+import {
+  buildOutputFileName,
+  classifyAspect,
+  computeFitRect,
+  createBrandAsset,
+  createInitialCropState,
+  getBoardPreviewKey,
+  parseSpecText,
+  renderBrandLayer,
+  sanitizeFileNamePart
+} from '../src/core';
 
 const parsed = parseSpecText(`
 1080x1920 jpg 1200KB
@@ -42,5 +52,32 @@ assert.ok(brand.layers[1].layout.rect.width > 0, 'cpr width should be computed')
 assert.equal(sanitizeFileNamePart('CON'), '_CON');
 assert.equal(sanitizeFileNamePart('中文/文件:名*测试'), '中文_文件_名_测试');
 assert.match(buildOutputFileName(parsed.specs[0], { batchName: '批次A', sourceName: '主视觉', index: 0 }), /^01_批次A_主视觉_/);
+
+const cover = computeFitRect({ width: 1000, height: 500 }, { width: 300, height: 300 }, 'cover');
+assert.equal(cover.width, 600);
+assert.equal(cover.height, 300);
+assert.equal(getBoardPreviewKey('asset', 'spec'), 'asset:spec');
+const crop = createInitialCropState({ width: 1000, height: 500 }, { width: 300, height: 300 }, 'cover');
+assert.equal(crop.scale, 0.6);
+
+const svgAsset = createBrandAsset({
+  id: 'logo',
+  type: 'logo',
+  name: 'logo.svg',
+  language: 'zh-CN',
+  svgText: '<svg viewBox="0 0 420 120" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10z"/></svg>'
+});
+assert.equal(svgAsset.aspectRatio, 3.5);
+assert.throws(
+  () =>
+    createBrandAsset({
+      id: 'remote',
+      type: 'logo',
+      name: 'remote.svg',
+      language: 'en-US',
+      svgText: '<svg viewBox="0 0 1 1"><use href="//example.com/icon.svg#x"/></svg>'
+    }),
+  /远程资源/
+);
 
 console.log('verify-core: OK');

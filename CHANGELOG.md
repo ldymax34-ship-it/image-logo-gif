@@ -1,19 +1,157 @@
 # 更新日志
 
+## 0.1.3
+
+本轮目标：把 Logo / CPR 从占位层推进到真实 SVG 资源预览，并支持语种切换。
+
+修改文件：
+
+- `package.json`
+- `package-lock.json`
+- `src/core/brand/brandAsset.ts`
+- `src/core/brand/brandStore.ts`
+- `src/core/brand/index.ts`
+- `src/core/index.ts`
+- `src/pages/App.tsx`
+- `src/styles.css`
+- `src/core/core.test.ts`
+- `scripts/verify-core.ts`
+- `README.md`
+- `TASKS.md`
+- `CHANGELOG.md`
+
+主要改动：
+
+1. [新需求-中] 新增 Brand 资源模块，建立 `BrandLanguage`、`BrandAsset`、`BrandLayerState`。
+2. [新需求-中] 支持上传多个 Logo SVG / CPR SVG，并给资源绑定简中、繁中、日文、韩文、英文、自定义语种标签。
+3. [体验-中] 左侧新增 Logo / CPR 资源区，可启用 / 关闭品牌层，可选择当前 Logo / CPR SVG。
+4. [体验-小] CPR 支持颜色选择与投影预览；当前颜色通过 CSS mask 做单色预览，不修改 SVG 文本。
+5. [架构-中] 预览区继续复用 `renderBrandLayer`、`logoLayout`、`cprLayout` 计算位置、大小、边距和版型适配。
+6. [安全-中] SVG 预览拦截 `script`、`foreignObject`、远程链接、协议相对链接、`data:` 引用、外部 CSS 引用。
+7. [验证-中] 扩充 core 测试，覆盖 SVG viewBox、语种资源、外链拦截。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test`：通过，16 tests
+- `npm run build`：通过
+- 使用本地 `.env` + opencode CLI 做只读审查；采纳并修复 SVG 外链拦截和 Object URL 生命周期问题
+
+影响范围：
+
+- 影响主工作台 UI、品牌资源状态、SVG 预览安全策略。
+- 不影响旧 HTML，因为旧入口已删除。
+- 不引入运行时联网、远程 API 或 CDN。
+
+未完成 / 风险：
+
+- 不做复杂 SVG 编辑器。
+- 不修改 SVG 内容；CPR 单色预览会丢失多色 SVG 的原始颜色。
+- Canvas 导出尚未实现，品牌层导出需要在 0.1.4 复用当前状态和布局。
+
+下一步建议：
+
+- 0.1.4 优先做 Canvas 单画板导出，再扩展批量导出。
+
+## 0.1.2
+
+本轮目标：让每个素材 x 每个画板拥有独立裁切状态，并且状态能服务后续 Canvas 导出。
+
+修改文件：
+
+- `src/core/image/fit.ts`
+- `src/core/image/crop.ts`
+- `src/core/image/index.ts`
+- `src/pages/App.tsx`
+- `src/styles.css`
+- `src/core/core.test.ts`
+- `scripts/verify-core.ts`
+- `TASKS.md`
+- `CHANGELOG.md`
+
+主要改动：
+
+1. [新需求-中] 新增 `CropState`、`BoardPreviewState`、`getBoardPreviewKey`，以 `assetId:specId` 保存独立预览状态。
+2. [新需求-中] 支持拖动画面位置，拖动位移按画布像素换算回原始裁切状态。
+3. [新需求-中] 支持缩放画面，缩放以画布中心为焦点计算。
+4. [新需求-小] 支持重置裁切、填满画布、适应画布。
+5. [架构-中] 抽离 `createInitialCropState`、`computeCropTransform`、`clampCropState`、`panCropState`、`zoomCropState`。
+6. [验证-中] 补充 cover / contain、裁切 key、裁切缩放和平移测试。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test`：通过
+- `npm run build`：通过
+
+影响范围：
+
+- 影响预览画布交互和预览状态结构。
+- 为后续 Canvas 导出提供可复用的 scale / offsetX / offsetY。
+
+未完成 / 风险：
+
+- 暂无键盘微调和数值输入。
+- 尚未接 Canvas 导出，导出一致性需要 0.1.4 验证。
+
+下一步建议：
+
+- 结合品牌层状态实现单画板 Canvas 导出。
+
 ## 0.1.1
 
-1. [维护-中] `README.md` / `AGENTS.md` / `TASKS.md` 清理旧项目与旧页面保留描述，文档入口统一聚焦「品宣物料工作台」。
-2. [维护-中] 删除旧 HTML 入口文件：`photo1.html`、`video1.html`、`test.html`、`suggest.html`；后续只维护 Vite + React + TypeScript 新应用入口。
-3. [功能调整-小] `TASKS.md` 将当前阶段调整为 0.1.1：优先接入图片上传、素材列表、画板预览、裁切状态和后续可复用的数据结构。
-4. [维护-小] `CHANGELOG.md` 从 0.1.x 新应用阶段重新记录，移除历史旧工具流水，避免后续任务理解偏移。
-5. [维护-中] 全仓扫描确认新 Vite 应用与剩余源码无 `assets/` 引用后，删除旧资源目录 `assets/`（旧内置 Logo、旧 vendor、旧字体、旧统计/解析脚本），减轻仓库体积并避免误以为旧 HTML 资源仍被维护。
+本轮目标：接入图片上传、素材列表和基于尺寸矩阵的画板预览。
+
+修改文件：
+
+- `src/core/image/imageMeta.ts`
+- `src/core/image/fit.ts`
+- `src/core/image/index.ts`
+- `src/core/index.ts`
+- `src/pages/App.tsx`
+- `src/styles.css`
+- `src/core/core.test.ts`
+- `scripts/verify-core.ts`
+- `TASKS.md`
+- `CHANGELOG.md`
+
+主要改动：
+
+1. [新需求-中] 支持上传一张或多张图片，读取本地图片宽高、文件名、文件大小、MIME 类型。
+2. [体验-中] 左侧素材列表显示缩略图、文件名、原图尺寸和文件大小。
+3. [体验-中] 点击素材后设为当前素材，点击画板后切换当前画板。
+4. [体验-中] 中间画布按目标尺寸比例显示，图片默认按 cover 模式填入画布，不变形。
+5. [体验-小] 显示安全区。
+6. [体验-小] 右侧显示当前画板宽高、格式、landscape / square / portrait 版型识别。
+7. [架构-中] 建立 `MaterialAsset`、`WorkbenchState`、基础 `BoardPreviewState`。
+8. [维护-小] 使用 Object URL 本地预览图片，并在应用卸载时释放。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test`：通过
+- `npm run build`：通过
+
+影响范围：
+
+- 影响主工作台页面和核心图片模块。
+- 不写死用户素材，不恢复旧 assets。
+
+未完成 / 风险：
+
+- 图片上传未设置硬性大小上限，后续可加大图软提示。
+- 尚未支持删除单个素材；增加删除后需要同步释放 Object URL。
+
+下一步建议：
+
+- 继续推进 0.1.2 裁切交互与状态持久。
 
 ## 0.1.0
 
 1. [重构-大] 新增 Vite + React + TypeScript 新应用骨架：`package.json`、`package-lock.json`、`index.html`、`vite.config.ts`、`tsconfig*.json`、`src/main.tsx`、`src/pages/App.tsx`、`src/styles.css`。
-2. [新需求-中] 新增 `src/core/layout/layoutProfile.ts`、`logoLayout.ts`、`cprLayout.ts`、`brandLayer.ts`：实现 aspect 版型识别（landscape / square / portrait）、短边 shortSide + clamp 的 Logo / CPR 尺寸和边距计算、左上 / 右上 / 居中锚点，以及统一 `renderBrandLayer` 结果，供预览和后续导出共用。
-3. [新需求-中] 新增 `src/core/spec/specParser.ts` 与 `presetTemplates.ts`：支持尺寸片段解析，不做整份需求文档语义识别；已支持 `1080x1920`、`1920*1080`、`3840×2160`、`900 383`、`1:1 1024`、`16:9 1920`、`9:16 1080`、逗号 / 顿号 / 多行 / 表格粘贴、JPG / PNG、KB / MB 大小限制。
-4. [新需求-中] 新增 `src/core/export/fileNaming.ts`：实现跨平台文件名清理与输出命名，保留中文与 Unicode 字符，替换 Windows 非法字符，移除前导 / 尾随点空格，处理 Windows 保留名，避免 `../` 路径段残留。
-5. [重构-中] 新增 `src/platform/` 抽象层占位（`fileSystem.ts` / `dialog.ts` / `path.ts` / `desktopBridge.ts`），0.1.x 暂不接 Tauri，但为后续 macOS / Windows 桌面化保留边界。
-6. [体验-中] 新应用首页提供最小工作台壳：顶部批次操作、左侧素材占位、中间画板预览 / 安全区 / Logo / CPR 占位、右侧「粘贴尺寸」文本框与解析列表，用真实核心函数驱动画板数量、版型识别和品牌层位置。
-7. [维护-中] 新增 `scripts/verify-core.ts` 与 `src/core/core.test.ts`，覆盖尺寸解析、版型识别、品牌层布局不出界、短边一致性、文件名安全等验证。
+2. [新需求-中] 新增 `src/core/layout/layoutProfile.ts`、`logoLayout.ts`、`cprLayout.ts`、`brandLayer.ts`：实现 aspect 版型识别、短边 shortSide + clamp 的 Logo / CPR 尺寸和边距计算、左上 / 右上 / 居中锚点，以及统一 `renderBrandLayer` 结果。
+3. [新需求-中] 新增 `src/core/spec/specParser.ts` 与 `presetTemplates.ts`：支持尺寸片段解析，不做整份需求文档语义识别。
+4. [新需求-中] 新增 `src/core/export/fileNaming.ts`：实现跨平台文件名清理与输出命名，保留中文与 Unicode 字符。
+5. [重构-中] 新增 `src/platform/` 抽象层占位，0.1.x 暂不接 Tauri。
+6. [体验-中] 新应用首页提供最小工作台壳。
+7. [维护-中] 新增 `scripts/verify-core.ts` 与 `src/core/core.test.ts`。
