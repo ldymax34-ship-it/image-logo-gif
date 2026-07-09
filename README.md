@@ -4,16 +4,27 @@
 
 ## 当前状态
 
-仓库仍保留旧页面：
+当前项目已进入 0.8.x 新应用阶段，使用 Vite + React + TypeScript 搭建模块化前端应用。
 
-| 文件 | 当前定位 |
-|------|----------|
-| `photo1.html` | legacy 图片批量处理页，后续只做必要修复 |
-| `video1.html` | legacy 视频转 GIF 页，第一阶段不继续扩展 |
-| `test.html` | legacy 图片尺寸核对页，已弱化 / 弃用 |
-| `suggest.html` | legacy 本机使用回顾页，后续不作为重点 |
+当前 0.8.0 已建立：
 
-后续新品宣能力不再继续写进单个 HTML 文件，而是逐步迁移到模块化前端应用。
+- 新应用工程骨架
+- 尺寸片段解析
+- 版型适配规则
+- Logo / CPR 品牌层 layout
+- 文件命名清理
+- 最小工作台壳
+- `platform/` 抽象层占位
+
+待继续接入：
+
+- 图片上传与素材列表
+- 每个画板独立裁切状态
+- 真实 SVG Logo / CPR 管理
+- 多语种 Logo / CPR 切换
+- Canvas 导出
+- ZIP 打包
+- TXT / CSV 复核清单
 
 ## 新工具目标
 
@@ -46,13 +57,6 @@
 ## UI 方向
 
 前端 UI 全部重写。
-
-不迁移：
-
-- 旧 HTML UI
-- 旧暗色补丁 CSS
-- 旧 Tailwind 内联堆叠
-- 旧页面结构
 
 新品宣工作台建议结构：
 
@@ -218,18 +222,7 @@ src/
 
 开发期 Codex 可以按 `AGENTS.md` 读取本地 `.env` 里配置的模型能力辅助开发，但工具运行时仍必须纯本地。
 
-## Legacy 运行方式
-
-旧页面仍可用本地 HTTP server 打开：
-
-```bash
-python3 -m http.server 8765
-# 浏览器打开 http://localhost:8765/photo1.html
-```
-
-后续新工具启动方式以实际 Vite / 构建配置为准。
-
-## 新工具开发方式
+## 开发方式
 
 0.8.x 新应用使用 Vite + React + TypeScript：
 
@@ -246,5 +239,3 @@ npm run verify:core
 npm test
 npm run build
 ```
-
-当前 0.8.0 已建立工程骨架、尺寸片段解析、版型适配、Logo / CPR 品牌层 layout、文件命名清理和最小工作台壳。上传、裁切、真实 SVG 管理、批量导出和复核清单仍在后续阶段。
