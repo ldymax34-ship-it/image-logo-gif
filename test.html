@@ -13,7 +13,7 @@
     <style>
         :root {
             --klein-blue: #002FA7;
-            --orange: #FF6600;
+            --accent-legacy: #38bdf8;
             --light-gray: #F5F5F5;
             --white: #FFFFFF;
             --success: #28a745;
@@ -73,8 +73,8 @@
             font-weight: 600;
         }
         .tab-link.active {
-            background: var(--orange);
-            border-color: var(--orange);
+            background: var(--accent-legacy);
+            border-color: var(--accent-legacy);
             color: #fff;
         }
         .tab-link:hover {
@@ -94,10 +94,10 @@
             gap: 8px;
         }
 
-        .btn-primary { background-color: var(--klein-blue); color: white; }
+        .btn-primary { background-color: var(--klein-blue); color: #0b1220; }
         .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
-        .btn-orange { background-color: var(--orange); color: white; }
-        .btn-orange:hover { opacity: 0.9; }
+        .btn-accent { background-color: var(--accent-legacy); color: #0b1220; }
+        .btn-accent:hover { opacity: 0.9; }
 
         .card {
             background: white;
@@ -156,7 +156,7 @@
 
         .status-match { background: #e8f5e9; color: var(--success); }
         .status-mismatch { background: #ffebee; color: var(--error); }
-        .status-missing { background: #fff3e0; color: var(--orange); }
+        .status-missing { background: #083344; color: var(--accent-legacy); }
 
         table {
             width: 100%;
@@ -185,8 +185,8 @@
         }
 
         .copy-banner {
-            background: #fff3e0;
-            border-left: 4px solid var(--orange);
+            background: #083344;
+            border-left: 4px solid var(--accent-legacy);
             padding: 15px;
             margin-bottom: 20px;
             display: flex;
@@ -239,41 +239,220 @@
             border-radius: 8px;
             text-align: center;
         }
+        /* ===== Wireframe 设计系统 ===== */
+        :root {
+            --paper: #fbf6ec;
+            --paper-tint: #f5eedf;
+            --ink: #2b2620;
+            --pencil: #4d473d;
+            --rule: #c8bfa9;
+            --grid: #e3d8b8;
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --highlight: #f9d27c;
+            --note-yellow: #fff19a;
+            --note-pink: #ffd5c9;
+            --serif: 'DM Serif Display', 'Iowan Old Style', Georgia, serif;
+            --hand: 'Patrick Hand', 'Caveat', cursive;
+            --hand-bold: 'Caveat', 'Patrick Hand', cursive;
+            --mono: 'IBM Plex Mono', ui-monospace, monospace;
+        }
+        body.wf-skin {
+            color: var(--ink);
+            background:
+                radial-gradient(circle, rgba(43,38,32,0.04) 1px, transparent 1.4px) 0 0 / 22px 22px,
+                var(--paper);
+            font-family: var(--hand);
+        }
+        .wf-skin .wf-canvas {
+            background:
+                repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 24px),
+                repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 24px),
+                var(--paper-tint);
+            border: 3px solid var(--ink);
+            border-radius: 14px;
+            box-shadow: 6px 8px 0 -4px rgba(43,38,32,0.18);
+        }
+        .wf-skin .wf-panel {
+            border: 2px solid var(--pencil);
+            border-radius: 10px;
+            background: var(--paper);
+            box-shadow: 4px 6px 0 -3px rgba(43,38,32,0.15);
+        }
+        .wf-skin .wf-btn-primary {
+            background: var(--accent); color: #fff;
+            border: 2px solid var(--ink); border-radius: 8px;
+            font-family: var(--hand); font-size: 15px; padding: 8px 16px;
+            cursor: pointer; transition: background 0.15s;
+            box-shadow: 3px 4px 0 -2px rgba(43,38,32,0.2);
+        }
+        .wf-skin .wf-btn-primary:hover { background: var(--accent-hover); }
+        .wf-skin .wf-btn-ghost {
+            background: var(--paper); color: var(--ink);
+            border: 2px solid var(--pencil); border-radius: 8px;
+            font-family: var(--hand); font-size: 15px; padding: 8px 16px;
+            cursor: pointer; transition: background 0.15s;
+        }
+        .wf-skin .wf-btn-ghost:hover { background: var(--highlight); }
+        .wf-skin .wf-tab {
+            font-family: var(--hand); padding: 8px 14px;
+            border: 2px solid var(--pencil); border-radius: 999px;
+            color: var(--pencil); font-size: 14px; cursor: pointer;
+            transition: all 0.15s; text-decoration: none;
+        }
+        .wf-skin .wf-tab.active { background: var(--highlight); color: var(--ink); border-color: var(--ink); }
+        .wf-skin .wf-tab:hover { border-color: var(--ink); }
+        .wf-skin .wf-input {
+            border: 2px solid var(--pencil); border-radius: 8px;
+            padding: 6px 12px; font-family: var(--hand); font-size: 14px;
+            background: var(--paper); color: var(--ink);
+        }
+        .wf-skin .wf-input:focus { outline: none; border-color: var(--accent); }
+        .wf-skin .wf-section-label { font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pencil); }
+        .wf-skin .wf-title { font-family: var(--serif); font-weight: 800; }
+        .wf-skin .wf-sticky { padding: 10px 12px; font-family: var(--hand); font-size: 15px; line-height: 1.3; box-shadow: 4px 6px 0 -2px rgba(43,38,32,0.18); border-radius: 2px; }
+        .wf-skin input[type="range"] { accent-color: var(--accent); }
+        .wf-skin input[type="checkbox"] { accent-color: var(--accent); }
+        .wf-skin .wf-kpi { border: 2px solid var(--pencil); border-radius: 10px; padding: 12px 14px; background: var(--paper); position: relative; }
+        .wf-skin .wf-kpi .label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--pencil); }
+        .wf-skin .wf-kpi .value { font-family: var(--serif); font-weight: 800; font-size: 28px; color: var(--accent); margin-top: 4px; }
+        /* ===== 0.7.4 暗色模式 refresh ===== */
+        :root {
+            --paper: #0f172a; --paper-tint: #1e293b; --ink: #e2e8f0; --pencil: #94a3b8;
+            --rule: #334155; --grid: rgba(148,163,184,0.10); --accent: #38bdf8;
+            --accent-hover: #0ea5e9; --highlight: #0c4a6e; --klein-blue: #60a5fa;
+            --serif: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            --hand: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            --mono: "SFMono-Regular", Consolas, ui-monospace, monospace;
+        }
+        body.wf-skin {
+            color: var(--ink);
+            background:
+                radial-gradient(circle, rgba(148,163,184,0.07) 1px, transparent 1px) 0 0 / 18px 18px,
+                linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+            font-family: var(--hand);
+        }
+        .wf-skin .wf-canvas {
+            background: rgba(15,23,42,0.92); border: 1px solid var(--rule);
+            border-radius: 16px; box-shadow: 0 16px 38px rgba(0,0,0,0.35);
+        }
+        .wf-skin .wf-panel, .wf-skin .bg-white {
+            background: rgba(30,41,59,0.94) !important; border-color: var(--rule) !important;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.30) !important;
+        }
+        .wf-skin .wf-title { font-family: var(--serif); font-weight: 850; letter-spacing: 0; color: var(--ink); }
+        .wf-skin .wf-tab, .wf-skin .btn { border-radius: 10px; font-weight: 760; box-shadow: none; }
+        .wf-skin .wf-tab {
+            background: #1e293b; border: 1px solid #334155; color: #cbd5e1;
+        }
+        .wf-skin .wf-tab.active { background: var(--highlight); border-color: #38bdf8; color: #e0f2fe; }
+        .wf-skin .btn-primary, .wf-skin .btn-accent {
+            background: var(--accent) !important; border-color: var(--accent) !important; color: #0b1220 !important;
+        }
+        .wf-skin .btn-primary:hover, .wf-skin .btn-accent:hover { background: var(--accent-hover) !important; }
+        .wf-skin input, .wf-skin select, .wf-skin textarea {
+            border-color: #334155 !important; border-radius: 10px !important; background: #0f172a !important; color: var(--ink) !important;
+        }
+        .wf-skin input::placeholder, .wf-skin textarea::placeholder { color: #64748b; }
+        .wf-skin input[type="range"] { accent-color: var(--accent); }
+        .wf-skin input[type="checkbox"] { accent-color: var(--accent); }
+        .wf-skin .container { max-width: 1260px; }
+        .wf-skin header.wf-canvas {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            border-bottom: 0; margin-bottom: 22px; padding: 22px 24px !important;
+        }
+        .wf-skin h2 { color: var(--accent); font-size: 28px; font-weight: 850; margin-top: 8px; }
+        .wf-skin .site-title { font-size: 30px; color: var(--ink) !important; }
+        .wf-skin .tab-link {
+            background: #1e293b; border: 1px solid #334155; color: #cbd5e1;
+            border-radius: 999px; padding: 8px 14px; font-weight: 760;
+        }
+        .wf-skin .tab-link:hover { background: #243449; color: var(--ink); }
+        .wf-skin .tab-link.active {
+            background: var(--highlight); border-color: #38bdf8; color: #e0f2fe;
+        }
+        .wf-skin .card {
+            border: 1px solid var(--rule); border-radius: 16px;
+            background: rgba(30,41,59,0.94); box-shadow: 0 10px 28px rgba(0,0,0,0.30);
+        }
+        .wf-skin .upload-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;
+        }
+        .wf-skin .upload-zone {
+            min-height: 250px; display: flex; flex-direction: column; justify-content: center;
+            border: 1px dashed #475569; border-radius: 14px; background: #162136;
+            padding: 28px; transition: border-color .18s, background .18s, box-shadow .18s;
+        }
+        .wf-skin .upload-zone:hover {
+            border-color: var(--accent); background: #1e293b; box-shadow: inset 0 0 0 1px rgba(56,189,248,.18);
+        }
+        .wf-skin .upload-zone h3 {
+            margin: 0 0 10px; color: var(--ink) !important; font-size: 22px;
+        }
+        .wf-skin .upload-zone p { margin: 0 0 18px; color: #94a3b8; }
+        .wf-skin .upload-zone .btn { min-height: 40px; justify-content: center; }
+        .wf-skin .template-links a { color: #93c5fd; border-bottom-color: #334155; }
+        .wf-skin .template-links a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+        .wf-skin table {
+            border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; display: table;
+        }
+        .wf-skin th { background: #1e293b; color: var(--ink); }
+        .wf-skin td { color: var(--ink); }
+        .wf-skin .btn[style*="background:#1e293b"], .wf-skin .btn[style*="background: white"] {
+            background: #1e293b !important; color: #cbd5e1 !important; border-color: #334155 !important;
+        }
+        .wf-skin .summary-item[style*="#e3f2fd"] { background: #083344 !important; color: #67e8f9 !important; }
+        .wf-skin .copy-banner { background: rgba(56,189,248,0.12) !important; color: #7dd3fc !important; border-color: #0e7490 !important; }
+        .wf-skin ::-webkit-scrollbar-track { background: #0f172a; }
+        .wf-skin ::-webkit-scrollbar-thumb { background: #334155; }
+        @media (max-width: 760px) {
+            body.wf-skin { padding: 12px; }
+            .wf-skin header.wf-canvas { flex-direction: column; gap: 14px; padding: 16px !important; }
+            .wf-skin .site-title { font-size: 28px; line-height: 1.08; }
+            .wf-skin h2 { font-size: 28px; }
+            .wf-skin .upload-grid { grid-template-columns: 1fr; }
+            .wf-skin .upload-zone { min-height: 220px; padding: 22px; }
+            .wf-skin .btn { width: 100%; justify-content: center; margin-top: 8px; }
+            .wf-skin .template-links { display: flex; flex-wrap: wrap; gap: 10px; }
+            .wf-skin .template-links a { margin-right: 0; }
+            .wf-skin table { min-width: 720px; }
+            .wf-skin .card { overflow-x: auto; }
+        }
+        /* 0.7.4 弃用提示横幅 */
+        .deprecation-banner {
+            margin: 0 0 18px; padding: 12px 16px; border: 1px solid #b45309;
+            background: rgba(180,83,9,0.18); color: #fcd34d; border-radius: 12px;
+            font-size: 14px; line-height: 1.5;
+        }
+        .deprecation-banner b { color: #fbbf24; }
     </style>
 </head>
-<body>
+<body class="wf-skin">
 
-<div class="container">
-    <header>
+<div class="container" style="padding: 12px;">
+    <header class="wf-canvas px-6 py-4 rounded-xl">
         <div>
             <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;">
-                <h1 class="site-title" style="margin:0;">一站式渠道素材辅助工具</h1>
+                <h1 class="site-title wf-title" style="color: var(--ink); margin:0;">一站式渠道素材辅助工具</h1>
                 <span style="font-size:13px;color:#888;font-weight:normal;">
-                    <a href="suggest.html?view=review" style="color:#888;text-decoration:none;">使用回顾</a>
-                    <span style="color:#ccc;margin:0 4px;">|</span>
-                    <a href="suggest.html?view=form" style="color:#888;text-decoration:none;">我要提建议</a>
+                    
                 </span>
             </div>
-            <p style="margin: 4px 0 0; color: #666; font-size: 13px;">一站式工具与提示词网站 V0.6</p>
+            <p style="margin: 4px 0 0; color: #666; font-size: 13px;">V0.7 · 离线素材工作台</p>
             <h2>图片尺寸核对</h2>
             <p style="margin: 5px 0 0; color: #666;">本地运行 · 支持 ZIP/图片 · 自动智能匹配</p>
             <nav class="tabs">
                 
-                <a class="tab-link active" href="test.html">图片尺寸核对</a>
                 <a class="tab-link" href="photo1.html">批量修改图片尺寸</a>
-                <a class="tab-link" href="video1.html">批量修改视频规格</a>
+                <a class="tab-link" href="video1.html">视频转 GIF</a>
             </nav>
         </div>
-        <div style="text-align: right;">
-            <p style="margin: 0 0 8px; color: #666; font-size: 13px;">需求文档太复杂？用 AI 转化成可以核对规格的标准文档</p>
-            <button class="btn btn-orange" onclick="copyAiPrompt()">
-                <span>📋</span> 一键复制 AI 指令
-            </button>
+        <div style="text-align: right; color:#64748b; font-size:13px;">
+            <p style="margin: 0 0 8px;">先导入规格，再导入素材，自动匹配尺寸 / 格式 / 体积</p>
         </div>
     </header>
-
-    <div class="copy-banner" id="copySuccess" style="display: none;">
-        <span>指令已复制！你可以将其粘贴给 AI (如飞书的知识问答)，让它帮你把杂乱的需求转换为标准 TXT 格式。</span>
+    <div class="deprecation-banner" role="note">
+        <b>提示：</b>「图片尺寸核对」已合并到主工具流程，不再作为主导航入口。本页仍可使用，但建议优先在 <a href="photo1.html" style="color:#7dd3fc;text-decoration:underline;">批量修改图片尺寸</a> 中通过「尺寸脚本」直接管理规格。
     </div>
     <div class="copy-banner" id="configDropHint" style="display: none;">
         <span>将配置文件拖到这里（支持 TXT / CSV / XLSX / XLS）</span>
@@ -283,12 +462,12 @@
         <div class="upload-grid">
             <!-- 配置文件上传 -->
             <div class="upload-zone" id="configZone">
-                <h3 style="color: var(--klein-blue);">1. 上传规格配置</h3>
+                <h3>1. 上传规格配置</h3>
                 <p>支持 .txt / .csv / .xlsx / .xls</p>
                 <input type="file" id="configFile" class="hidden" accept=".txt,.csv,.xlsx,.xls">
-                <button class="btn btn-primary" onclick="document.getElementById('configFile').click()">选择文件</button>
-                <button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="openTextConfigImportModal()">直接输入配置</button>
-                <button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="openTestConfigLibraryModal()">配置库</button>
+                <button class="btn btn-accent" onclick="document.getElementById('configFile').click()">选择文件</button>
+                <button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:#1e293b;" onclick="openTextConfigImportModal()">直接输入配置</button>
+                <button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:#1e293b;" onclick="openTestConfigLibraryModal()">配置库</button>
                 <div class="template-links">
                     <a href="#" onclick="downloadTxtTemplate()">下载 TXT 模板</a>
                     <a href="#" onclick="downloadCsvTemplate()">下载 CSV 模板</a>
@@ -299,10 +478,10 @@
 
             <!-- 图片/压缩包上传 -->
             <div class="upload-zone" id="imageZone">
-                <h3 style="color: var(--orange);">2. 上传图片文件</h3>
+                <h3>2. 上传图片文件</h3>
                 <p>支持多选图片 或 上传 .zip 压缩包</p>
                 <input type="file" id="imageFiles" class="hidden" multiple accept="image/*,.zip">
-                <button class="btn btn-orange" onclick="document.getElementById('imageFiles').click()">选择图片/压缩包</button>
+                <button class="btn btn-accent" onclick="document.getElementById('imageFiles').click()">选择图片/压缩包</button>
                 <div id="imageStatus" style="margin-top: 10px; font-weight: bold;"></div>
             </div>
         </div>
@@ -312,8 +491,8 @@
         <div class="card">
             <h3 style="color: var(--klein-blue); border-bottom: 2px solid #eee; padding-bottom: 10px;">校验结果摘要</h3>
             <div class="summary-toolbar" id="summaryActions">
-                <button class="btn" id="exportMissingConfigBtn" style="display:none;border:1px solid var(--orange);color:var(--orange);background:white;" onclick="exportMissingConfigTxt()">导出缺失配置</button>
-                <button class="btn btn-orange" id="compressOversizeBtn" style="display:none;" onclick="compressOversizedImages()">压缩规格</button>
+                <button class="btn" id="exportMissingConfigBtn" style="display:none;border:1px solid var(--accent-legacy);color:var(--accent-legacy);background:#1e293b;" onclick="exportMissingConfigTxt()">导出缺失配置</button>
+                <button class="btn btn-accent" id="compressOversizeBtn" style="display:none;" onclick="compressOversizedImages()">压缩规格</button>
                 <label id="compressQualityLabel" style="display:none;align-items:center;gap:6px;font-size:14px;color:#555;">
                     <input type="checkbox" id="testPriorityQuality">
                     <span>保清晰度(可超限)</span>
@@ -341,7 +520,7 @@
             </table>
 
             <div id="extraImagesArea" class="hidden">
-                <h3 style="color: var(--orange); margin-top: 30px;">多余的图片 (未匹配到配置)</h3>
+                <h3 style="color: var(--accent-legacy); margin-top: 30px;">多余的图片 (未匹配到配置)</h3>
                 <table id="extraImagesTable">
                     <thead>
                         <tr>
@@ -357,7 +536,7 @@
             <div id="compressedArea" class="hidden">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:30px;">
                     <h3 style="color: var(--klein-blue); margin:0;">压缩后对比清单</h3>
-                    <button class="btn btn-orange" id="downloadCompressedBtn" onclick="downloadCompressedImages()">下载</button>
+                    <button class="btn btn-accent" id="downloadCompressedBtn" onclick="downloadCompressedImages()">下载</button>
                 </div>
                 <table id="compressedTable" style="margin-top:12px;">
                     <thead>
@@ -425,53 +604,6 @@
     }
 
     // --- AI指令复制 ---
-    function copyAiPrompt() {
-        const prompt = `请帮我将以下图片规格需求整理成标准的格式。
-如果是多行描述，请严格按照以下格式输出（每个项目之间空一行）：
-
-【序号】数字
-【描述名称】名称（15字以内、不可重复）
-【格式(jpg/png)】jpg或png
-【宽】数字
-【高】数字
-【限制KB】数字
-【需求详述】无法被尺寸、格式、大小限制涵盖但会影响验收的设计要求（没有则留空）
-
-要求：
-1. 只输出这个格式的内容，不要解释。
-2. 宽度、高度和KB必须是纯数字。
-3. 格式只能是 jpg 或 png；若未写格式，默认 jpg。
-4. 若未写限制KB，默认 1000。
-5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
-6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
-7. 【需求详述】是给设计师看的补充要求，只写固定字段无法表达的信息，例如 Logo 不能放左上角、需要/不需要副标题、元素安全区、文案位置限制等；不要重复尺寸、格式、大小限制。
-
-待处理数据如下：
-[在此粘贴你的原始数据]`;
-        
-        const textarea = document.createElement('textarea');
-        textarea.value = prompt;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-
-        const banner = document.getElementById('copySuccess');
-        banner.style.display = 'flex';
-        setTimeout(() => banner.style.display = 'none', 5000);
-        if (window.UsageTracker) UsageTracker.trackTestCopyAi();
-    }
-
-    // --- 配置文件处理 ---
-    document.getElementById('configFile').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        await importConfigFile(file);
-    });
-
-    function parseTxtConfig(text) {
-        configItems = (window.ConfigTextParser ? ConfigTextParser.parseText(text, { kind: 'image' }) : []).map(toTestConfigItem);
-    }
 
     function parseCsvConfig(text) {
         configItems = [];
@@ -603,7 +735,7 @@
         if (document.getElementById('testConfigLibraryModal')) return;
         document.body.insertAdjacentHTML('beforeend', `
             <div id="testConfigLibraryModal" style="display:none;position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;">
-                <div style="background:white;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+                <div style="background:#1e293b;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
                     <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
                         <h3 style="margin:0;color:var(--klein-blue);">图片尺寸核对配置库</h3>
                         <button class="btn" onclick="closeTestConfigLibraryModal()">关闭</button>
@@ -632,8 +764,8 @@
         const records = loadTestConfigRecords();
         const tags = Array.from(new Set(records.flatMap((r) => r.tags || [])));
         const tagBox = document.getElementById('testConfigTagFilters');
-        tagBox.innerHTML = `<button class="btn" style="padding:4px 9px;font-size:12px;${testConfigFilterTag ? '' : 'background:var(--orange);color:white;'}" onclick="testConfigFilterTag='';renderTestConfigLibrary()">全部</button>` +
-            tags.map((t) => `<button class="btn" style="padding:4px 9px;font-size:12px;${testConfigFilterTag === t ? 'background:var(--orange);color:white;' : ''}" onclick="testConfigFilterTag='${escapeTestHtml(t)}';renderTestConfigLibrary()">${escapeTestHtml(t)}</button>`).join('');
+        tagBox.innerHTML = `<button class="btn" style="padding:4px 9px;font-size:12px;${testConfigFilterTag ? '' : 'background:var(--accent-legacy);color:#0b1220;'}" onclick="testConfigFilterTag='';renderTestConfigLibrary()">全部</button>` +
+            tags.map((t) => `<button class="btn" style="padding:4px 9px;font-size:12px;${testConfigFilterTag === t ? 'background:var(--accent-legacy);color:#0b1220;' : ''}" onclick="testConfigFilterTag='${escapeTestHtml(t)}';renderTestConfigLibrary()">${escapeTestHtml(t)}</button>`).join('');
         const list = document.getElementById('testConfigList');
         const shown = testConfigFilterTag ? records.filter((r) => (r.tags || []).includes(testConfigFilterTag)) : records;
         if (!shown.length) {
@@ -652,7 +784,7 @@
                     <input value="${escapeTestHtml(r.name)}" onchange="renameTestConfigRecord('${r.id}',this.value)" style="padding:7px 9px;border:1px solid #ddd;border-radius:6px;min-width:220px;">
                     <span style="font-size:12px;color:#777;">共 ${cfgs.length} 条 · ${new Date(r.savedAt || Date.now()).toLocaleString('zh-CN')}</span>
                     <button class="btn btn-primary" onclick="importTestConfigRecord('${r.id}')">导入</button>
-                    <button class="btn" style="color:#dc2626;border:1px solid #fecaca;background:white;" onclick="deleteTestConfigRecord('${r.id}')">删除</button>
+                    <button class="btn" style="color:#dc2626;border:1px solid #fecaca;background:#1e293b;" onclick="deleteTestConfigRecord('${r.id}')">删除</button>
                 </div>
                 <div style="margin-top:10px;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;padding:6px 10px;">${preview || '（空配置）'}${cfgs.length > 4 ? `<div style="font-size:12px;color:var(--klein-blue);margin-top:4px;">共 ${cfgs.length} 个配置，已显示前 4 个</div>` : ''}</div>
                 <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${tagHtml || '<span style="font-size:11px;color:#aaa;">无标签</span>'}<input placeholder="新标签" style="padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:12px;" onkeydown="if(event.key==='Enter'){addTestConfigTag('${r.id}',this.value);this.value='';}"></div>
@@ -709,53 +841,18 @@
 【限制KB】数字
 【需求详述】无法被尺寸、格式、大小限制涵盖但会影响验收的设计要求（没有则留空）`;
 
-    function showTestTextConfigCopyHint() {
-        const banner = document.getElementById('copySuccess');
-        if (!banner) return;
-        banner.textContent = '指令已复制！你可以将其粘贴给 AI (如飞书的知识问答)，让它帮你把杂乱的需求转换为标准 TXT 格式。';
-        banner.style.display = 'flex';
-        setTimeout(() => banner.style.display = 'none', 5000);
-    }
-
-    function copyTestTextConfigAiPrompt() {
-        const prompt = `请帮我将以下图片规格需求整理成标准的 TXT 格式。
-如果是多行描述，请严格按照以下格式输出（每个项目之间空一行）：
-
-${TEST_TEXT_CONFIG_DEFAULT_TEMPLATE}
-
-要求：
-1. 只输出这个格式的内容，不要解释。
-2. 宽度、高度和KB必须是纯数字。
-3. 格式只能是 jpg 或 png；若未写格式，默认 jpg。
-4. 若未写限制KB，默认 1000。
-5. 【描述名称】不可重复，重复则在后面追加 (1)(2)……编号区分。
-6. 【描述名称】控制在15字以内；如果除了尺寸外没有任何其它信息，则用「序号_宽x高」作为描述名称；否则描述名称里不要出现尺寸信息（尺寸只填在宽高字段）。
-7. 【需求详述】是给设计师看的补充要求，只写固定字段无法表达的信息，例如 Logo 不能放左上角、需要/不需要副标题、元素安全区、文案位置限制等；不要重复尺寸、格式、大小限制。
-
-待处理数据如下：
-[在此粘贴你的原始数据]`;
-        const textarea = document.createElement('textarea');
-        textarea.value = prompt;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        showTestTextConfigCopyHint();
-        if (window.UsageTracker) UsageTracker.trackTestCopyAi();
-    }
-
     function openTextConfigImportModal() {
         if (!document.getElementById('testTextConfigModal')) {
             document.body.insertAdjacentHTML('beforeend', `
                 <div id="testTextConfigModal" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:20px;">
-                    <div style="background:white;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
-                        <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:10px;"><div style="display:flex;align-items:center;gap:8px;"><h3 style="margin:0;color:var(--klein-blue);">直接输入配置</h3><button class="btn btn-orange" style="padding:6px 10px;font-size:13px;" onclick="copyTestTextConfigAiPrompt()">复制AI指令</button></div><button class="btn" onclick="closeTextConfigImportModal()">关闭</button></div>
+                    <div style="background:#1e293b;border-radius:14px;max-width:900px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;">
+                        <div style="padding:16px 18px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:10px;"><div style="display:flex;align-items:center;gap:8px;"><h3 style="margin:0;color:var(--klein-blue);">直接输入配置</h3></div><button class="btn" onclick="closeTextConfigImportModal()">关闭</button></div>
                         <div style="padding:16px 18px;overflow:auto;">
                             <textarea id="testTextConfigInput" style="width:100%;height:180px;border:1px solid #ddd;border-radius:8px;padding:10px;font-family:monospace;"></textarea>
-                            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><input id="testTextConfigName" placeholder="配置名称" style="padding:8px;border:1px solid #ddd;border-radius:6px;"><button class="btn btn-primary" onclick="recognizeTestTextConfig()">识别配置</button><button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:white;" onclick="addTestTextConfigRow()">新增一条</button><span id="testTextConfigHint" style="color:#666;font-size:13px;"></span></div>
+                            <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><input id="testTextConfigName" placeholder="配置名称" style="padding:8px;border:1px solid #ddd;border-radius:6px;"><button class="btn btn-primary" onclick="recognizeTestTextConfig()">识别配置</button><button class="btn" style="border:1px solid var(--klein-blue);color:var(--klein-blue);background:#1e293b;" onclick="addTestTextConfigRow()">新增一条</button><span id="testTextConfigHint" style="color:#666;font-size:13px;"></span></div>
                             <div id="testTextConfigPreview" style="margin-top:12px;"></div>
                         </div>
-                        <div style="padding:14px 18px;border-top:1px solid #eee;text-align:right;"><button class="btn btn-orange" id="testTextConfigConfirm" onclick="confirmTestTextConfig()" disabled>确认导入</button></div>
+                        <div style="padding:14px 18px;border-top:1px solid #eee;text-align:right;"><button class="btn btn-accent" id="testTextConfigConfirm" onclick="confirmTestTextConfig()" disabled>确认导入</button></div>
                     </div>
                 </div>`);
         }
@@ -830,7 +927,7 @@ ${TEST_TEXT_CONFIG_DEFAULT_TEMPLATE}
             <td><select onchange="updateTestTextConfigRow(${idx}, 'ext', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="padding:6px;${errStyle(r, 'ext')}border-radius:5px;"><option value="">请选择</option><option value="jpg"${r.ext === 'jpg' ? ' selected' : ''}>JPG</option><option value="png"${r.ext === 'png' ? ' selected' : ''}>PNG</option></select></td>
             <td><input type="number" min="1" value="${escapeTestHtml(r.sizeLimit || '')}" oninput="updateTestTextConfigRow(${idx}, 'sizeLimit', this.value); this.style.borderColor='#ddd'; this.style.background='white';" style="width:90px;padding:6px;${errStyle(r, 'sizeLimit')}border-radius:5px;"> KB</td>
             <td><input value="${escapeTestHtml(r.requirementDetail || '')}" placeholder="无其他需求" oninput="updateTestTextConfigRow(${idx}, 'requirementDetail', this.value)" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:5px;"></td>
-            <td><button class="btn" style="padding:6px 10px;color:#dc2626;border:1px solid #fecaca;background:white;" onclick="deleteTestTextConfigRow(${idx})">删除</button></td>
+            <td><button class="btn" style="padding:6px 10px;color:#dc2626;border:1px solid #fecaca;background:#1e293b;" onclick="deleteTestTextConfigRow(${idx})">删除</button></td>
         </tr>`).join('')}</table>` : '';
     }
 
@@ -883,8 +980,8 @@ ${TEST_TEXT_CONFIG_DEFAULT_TEMPLATE}
             const hasImage = arr.some((f) => getDropFileKind(f) === 'image');
             configDropHint.style.display = hasConfig ? 'flex' : 'none';
             if (hasImage) {
-                imageZone.style.borderColor = 'var(--orange)';
-                imageZone.style.background = '#fff3e0';
+                imageZone.style.borderColor = 'var(--accent-legacy)';
+                imageZone.style.background = '#083344';
             }
             if (hasConfig) {
                 configZone.style.borderColor = 'var(--klein-blue)';
@@ -1078,7 +1175,7 @@ ${TEST_TEXT_CONFIG_DEFAULT_TEMPLATE}
                 <div style="font-size: 24px; font-weight: bold;">${errorCount}</div>
                 <div>参数超标</div>
             </div>
-            <div class="summary-item" style="background: #fff3e0; color: var(--orange);">
+            <div class="summary-item" style="background: #083344; color: var(--accent-legacy);">
                 <div style="font-size: 24px; font-weight: bold;">${missingCount}</div>
                 <div>缺少规格</div>
             </div>
@@ -1268,7 +1365,7 @@ ${TEST_TEXT_CONFIG_DEFAULT_TEMPLATE}
                     <td>${escapeTestHtml(entry.image.name)}</td>
                     <td>${entry.config.width}x${entry.config.height} (${escapeTestHtml(entry.config.ext)})<br><small>${entry.config.sizeLimit}KB</small></td>
                     <td>${entry.image.size}KB</td>
-                    <td><small style="${ok ? 'color:var(--success)' : 'color:var(--orange)'}">${entry.sizeKb}KB</small></td>
+                    <td><small style="${ok ? 'color:var(--success)' : 'color:var(--accent-legacy)'}">${entry.sizeKb}KB</small></td>
                     <td><span class="status-badge ${ok ? 'status-match' : 'status-mismatch'}">${ok ? '符合限制' : '保清晰度超限'}</span></td>
                     <td><img src="${entry.url}" class="img-preview" onclick="showModal('${entry.url}')"></td>
                 </tr>`;

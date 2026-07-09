@@ -4,214 +4,265 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'none'; font-src 'self' data:; media-src 'self' blob: data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'">
-    <title>使用回顾与建议 - 一站式渠道素材辅助工具</title>
+    <title>使用回顾 - 一站式渠道素材辅助工具</title>
     <style>
         :root {
-            --blue: #002FA7;
-            --orange: #FF6B00;
-            --ink: #1a1a1a;
-            --muted: #5c6478;
-            --line: #e8ecf4;
-            --bg: #f8fafc;
-            --card: #ffffff;
+            --paper: #0f172a;
+            --paper-tint: #1e293b;
+            --ink: #e2e8f0;
+            --pencil: #94a3b8;
+            --rule: #334155;
+            --grid: rgba(148,163,184,0.10);
+            --accent: #38bdf8;
+            --accent-hover: #0ea5e9;
+            --highlight: #0c4a6e;
+            --serif: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            --hand: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            --mono: "SFMono-Regular", Consolas, ui-monospace, monospace;
         }
         * { box-sizing: border-box; }
-        .hidden { display: none !important; }
         body {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: var(--bg);
             color: var(--ink);
-            line-height: 1.55;
+            background:
+                radial-gradient(circle, rgba(148,163,184,0.07) 1px, transparent 1px) 0 0 / 22px 22px,
+                linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+            font-family: var(--hand), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             font-size: 18px;
+            line-height: 1.5;
         }
-        .page-shell { max-width: 880px; margin: 0 auto; padding: 20px 20px 48px; }
+        .page-shell {
+            width: min(1080px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 18px 0 48px;
+        }
+        .wf-canvas {
+            background:
+                repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 24px),
+                repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 24px),
+                var(--paper-tint);
+            border: 1px solid var(--rule);
+            border-radius: 14px;
+            box-shadow: 0 16px 38px rgba(0,0,0,0.35);
+        }
         .top-bar {
-            display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-            gap: 12px; padding-bottom: 16px; margin-bottom: 20px;
-            border-bottom: 3px solid var(--blue);
-        }
-        .top-bar h1 { margin: 0; font-size: 26px; color: var(--blue); font-weight: 700; }
-        .top-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-        .btn {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 8px 14px; border-radius: 8px; font-size: 16px; font-weight: 600;
-            cursor: pointer; border: 1px solid transparent; text-decoration: none;
-        }
-        .btn-primary { background: var(--orange); color: #fff; border-color: var(--orange); }
-        .btn-primary:hover { filter: brightness(0.95); }
-        .btn-outline { background: #fff; color: var(--blue); border-color: var(--blue); }
-        .btn-outline:hover { background: #edf3ff; }
-        .btn-ghost { background: transparent; color: var(--muted); border-color: #d1d5db; font-size: 15px; }
-        .nav-tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-        .nav-tools a {
-            font-size: 14px; padding: 5px 12px; border-radius: 999px;
-            border: 1px solid var(--blue); color: var(--blue); text-decoration: none;
-        }
-        .nav-tools a:hover { background: var(--blue); color: #fff; }
-        #exportRoot { background: #fff; }
-        .feedback-card {
-            background: linear-gradient(135deg, #fff7ed 0%, #fff 55%);
-            border: 1px solid #fed7aa;
-            border-left: 4px solid var(--orange);
-            border-radius: 12px;
-            padding: 20px 22px;
-            margin-bottom: 24px;
-        }
-        .feedback-card h2 { margin: 0 0 12px; font-size: 22px; color: var(--orange); }
-        .feedback-meta { font-size: 15px; color: var(--muted); margin-bottom: 10px; }
-        .feedback-body {
-            white-space: pre-wrap; font-size: 17px; color: var(--ink);
-            background: rgba(255,255,255,0.7); padding: 12px; border-radius: 8px;
-        }
-        .result-tip {
-            background: #edf3ff; border: 1px solid #bfdbfe; border-left: 4px solid var(--blue);
-            color: #17316f; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;
-            font-size: 16px; font-weight: 600;
-        }
-        .start-code {
-            margin-top: 24px; padding: 16px 18px; border-top: 2px solid var(--line);
-            color: var(--muted); font-size: 16px;
-        }
-        .start-code strong { display: block; color: var(--ink); margin-bottom: 4px; }
-        .section-title {
-            font-size: 24px; font-weight: 700; color: var(--blue);
-            margin: 28px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--line);
-        }
-        .section-title:first-child { margin-top: 0; }
-        .tool-block {
-            background: var(--card);
-            border: 1px solid var(--line);
-            border-radius: 12px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 18px;
             padding: 18px 20px;
-            margin-bottom: 16px;
-            box-shadow: 0 2px 8px rgba(0, 47, 167, 0.04);
+            margin-bottom: 18px;
+        }
+        h1 {
+            margin: 0;
+            font-family: var(--serif);
+            font-size: clamp(30px, 4vw, 46px);
+            line-height: 1;
+            color: var(--ink);
+        }
+        .subtitle {
+            margin: 6px 0 0;
+            font-family: var(--mono);
+            font-size: 12px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--pencil);
+        }
+        .nav-tools, .top-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .nav-tools { margin-top: 12px; }
+        .wf-tab, .wf-btn-primary, .wf-btn-ghost {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font: 700 15px/1 var(--hand), sans-serif;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .wf-tab {
+            border: 1px solid #334155;
+            color: #cbd5e1;
+            border-radius: 999px;
+            background: #1e293b;
+        }
+        .wf-tab:hover { border-color: #38bdf8; color: #e0f2fe; }
+        .wf-btn-primary {
+            background: var(--accent);
+            color: #0b1220;
+            border: 1px solid var(--accent);
+        }
+        .wf-btn-primary:hover { background: var(--accent-hover); }
+        .wf-btn-ghost {
+            background: #1e293b;
+            color: var(--ink);
+            border: 1px solid #334155;
+        }
+        .wf-btn-ghost:hover { background: #243449; }
+        button { appearance: none; }
+        #exportRoot {
+            background: var(--paper-tint);
+            border: 1px solid var(--rule);
+            border-radius: 12px;
+            padding: 22px;
+        }
+        .section-title {
+            margin: 0 0 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--rule);
+            font-family: var(--serif);
+            font-size: 30px;
+            line-height: 1.1;
+        }
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 14px;
+        }
+        .tool-block {
+            min-height: 150px;
+            border: 1px solid var(--rule);
+            border-radius: 10px;
+            background: #162136;
+            padding: 16px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.30);
         }
         .tool-block h3 {
-            margin: 0 0 10px; font-size: 20px; color: var(--ink);
-            display: flex; align-items: center; gap: 8px;
+            margin: 0 0 10px;
+            font-family: var(--serif);
+            font-size: 22px;
+            line-height: 1.15;
+            color: var(--ink);
         }
-        .tool-block h3::before {
-            content: ''; width: 4px; height: 18px; background: var(--orange); border-radius: 2px;
+        .narrative, .month-metrics {
+            margin: 0;
+            padding: 0;
+            list-style: none;
         }
-        .narrative { margin: 0; padding-left: 0; list-style: none; }
-        .narrative > li {
-            position: relative; padding-left: 14px; margin: 6px 0;
-            font-size: 17px; color: #333;
+        .narrative li, .month-metrics li {
+            position: relative;
+            padding-left: 16px;
+            margin: 7px 0;
+            color: #cbd5e1;
         }
-        .narrative > li::before {
-            content: '›'; position: absolute; left: 0; color: var(--blue); font-weight: 700;
+        .narrative li::before, .month-metrics li::before {
+            content: ">";
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: var(--accent);
+            font-family: var(--mono);
+            font-weight: 700;
         }
+        strong { color: var(--accent); font-family: var(--mono); }
         .month-heading {
-            font-size: 21px; font-weight: 700; color: var(--ink);
-            margin: 22px 0 12px; padding-left: 10px; border-left: 4px solid var(--orange);
+            margin: 26px 0 12px;
+            font-family: var(--mono);
+            font-size: 13px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--pencil);
         }
-        .month-metrics { margin: 0; padding: 0; list-style: none; font-size: 16px; color: #444; }
-        .month-metrics li { margin: 4px 0 4px 12px; }
         .empty-hint {
-            text-align: center; padding: 48px 20px; color: var(--muted); font-size: 17px;
-            background: var(--card); border-radius: 12px; border: 1px dashed var(--line);
+            min-height: 220px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border: 1px dashed var(--rule);
+            border-radius: 10px;
+            color: var(--pencil);
+            background: rgba(30,41,59,0.5);
+            padding: 24px;
         }
-        .form-card {
-            background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-            padding: 22px; max-width: 760px;
+        .start-code {
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--rule);
+            color: var(--pencil);
+            font-family: var(--mono);
+            font-size: 13px;
         }
-        .form-card label { display: block; font-size: 16px; font-weight: 600; color: var(--ink); margin: 14px 0 6px; }
-        .form-card label:first-of-type { margin-top: 0; }
-        .form-card select, .form-card textarea {
-            width: 100%; font-size: 16px; padding: 10px 12px;
-            border: 1px solid #d1d5db; border-radius: 8px;
+        .start-code strong {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--ink);
+            font-family: var(--mono);
         }
-        .form-card textarea { min-height: 140px; resize: vertical; }
-        .form-card select:focus, .form-card textarea:focus {
-            outline: none; border-color: var(--blue);
-        }
-        .form-actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
-        .feedback-form-list { display: flex; flex-direction: column; gap: 18px; }
-        .feedback-form-item {
-            border: 1px solid var(--line); border-radius: 12px; padding: 16px;
-            background: #fff;
-        }
-        .feedback-form-head {
-            display: flex; align-items: center; justify-content: space-between; gap: 10px;
-            color: var(--blue); font-weight: 700; font-size: 18px; margin-bottom: 6px;
-        }
-        .feedback-form-remove {
-            border: 1px solid #fecaca; color: #dc2626; background: #fff;
-            border-radius: 8px; padding: 4px 9px; cursor: pointer;
-        }
-        .add-feedback-btn {
-            width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--blue);
-            color: var(--blue); background: #fff; font-size: 26px; line-height: 1;
-            cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-        }
-        .add-feedback-btn:hover { background: #edf3ff; }
         .toast {
-            position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
-            background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7;
-            padding: 10px 18px; border-radius: 8px; font-size: 16px; font-weight: 600;
-            z-index: 100; display: none; pointer-events: none;
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translateX(-50%);
+            z-index: 100;
+            display: none;
+            border: 1px solid #0e7490;
+            border-radius: 8px;
+            background: #083344;
+            color: #67e8f9;
+            padding: 10px 18px;
+            font-weight: 700;
+            pointer-events: none;
         }
         .toast.show { display: block; }
+        @media (max-width: 760px) {
+            .top-bar { flex-direction: column; }
+            .top-actions { width: 100%; }
+            .wf-btn-primary, .wf-btn-ghost { flex: 1 1 auto; }
+            #exportRoot { padding: 16px; }
+        }
         @media print {
-            .top-bar .top-actions { display: none; }
-            .nav-tools { display: none; }
+            .top-actions, .nav-tools { display: none; }
+            body { background: #fff; }
+            #exportRoot { border: 0; }
         }
     </style>
 </head>
 <body>
     <div class="page-shell">
-        <header class="top-bar">
+        <header class="top-bar wf-canvas">
             <div>
-                <h1 id="pageHeading">使用回顾</h1>
+                <h1>使用回顾</h1>
+                <p class="subtitle">Local usage review · offline only</p>
                 <nav class="nav-tools">
-                    <a href="test.html">图片尺寸核对</a>
-                    <a href="photo1.html">批量修改图片尺寸</a>
-                    <a href="video1.html">批量修改视频规格</a>
+                    <a class="wf-tab" href="photo1.html">批量修改图片尺寸</a>
+                    <a class="wf-tab" href="video1.html">视频转 GIF</a>
                 </nav>
             </div>
-            <div class="top-actions" id="topActions"></div>
+            <div class="top-actions">
+                <button type="button" class="wf-btn-primary" id="btnExportImg">导出图片</button>
+                <button type="button" class="wf-btn-ghost" id="btnExportTxt">导出 TXT</button>
+            </div>
         </header>
 
-        <div id="formPanel" class="hidden">
-            <div class="form-card">
-                <p style="margin:0 0 16px;color:var(--muted);font-size:16px;">请先填写建议，点击提交</p>
-                <div id="feedbackFormList" class="feedback-form-list"></div>
-                <div class="form-actions">
-                    <button type="button" class="add-feedback-btn" id="fbAdd" title="增加一条建议">+</button>
-                    <button type="button" class="btn btn-primary" id="fbSubmit">确认提交</button>
-                    <a href="suggest.html?view=review" class="btn btn-ghost">先看使用回顾</a>
-                </div>
-            </div>
-        </div>
-
-        <div id="exportRoot">
-            <div id="feedbackBlock" class="hidden"></div>
+        <main id="exportRoot">
             <div id="reviewContent"></div>
-        </div>
+        </main>
     </div>
     <div id="toast" class="toast" role="status"></div>
 
     <script src="assets/usage-tracker.js"></script>
     <script src="assets/vendor/html2canvas.min.js"></script>
     <script>
-        const SECTION_LABELS = {
-            test: '图片尺寸核对',
-            photo: '批量修改图片尺寸',
-            video: '批量修改视频规格',
-            overall: '整体 / 其他'
-        };
-        const TYPE_LABELS = {
-            bug: '问题反馈',
-            ux: '体验优化',
-            feature: '功能建议',
-            other: '其他'
-        };
         const TOOL_NAMES = {
             test: '图片尺寸核对工具',
             photo: '批量修改图片尺寸工具',
-            video: '批量修改视频规格工具'
+            video: '视频转 GIF 工具'
         };
+
+        const VISIBLE_FIELDS = {
+            test: ['verifyRuns', 'mismatchRuns', 'perfectMatchRuns'],
+            photo: ['imagesImported', 'configsImported', 'specsCreated', 'configsSaved', 'quickCrop', 'logoEditor', 'logosImported', 'logoSave'],
+            video: ['videosImported', 'configsImported', 'quickCrop']
+        };
+
+        let currentStore = null;
 
         function escapeHtml(s) {
             return String(s)
@@ -221,281 +272,151 @@
                 .replace(/"/g, '&quot;');
         }
 
+        function valueOf(bucket, field) {
+            return Math.max(0, Number(bucket && bucket[field]) || 0);
+        }
+
+        function toolHasAny(tool, data) {
+            const b = data && data[tool];
+            return !!b && VISIBLE_FIELDS[tool].some((field) => valueOf(b, field) > 0);
+        }
+
         function formatMonthLabel(ym) {
             const m = /^(\d{4})-(\d{2})$/.exec(ym);
             if (!m) return ym;
             return `${m[1]}年${parseInt(m[2], 10)}月`;
         }
 
-        function toolHasAny(tool, data) {
-            const b = data[tool];
-            if (!b) return false;
-            return Object.values(b).some((v) => (Number(v) || 0) > 0);
-        }
-
         function habitLine(quick, logo) {
             if (quick <= 0 || logo <= 0) return '';
             if (quick === logo) return '快速剪裁与 Logo 编辑器使用次数相同';
-            return quick > logo
-                ? '看来 <strong>快速剪裁</strong> 是你更习惯使用的模式'
-                : '看来 <strong>Logo 编辑器</strong> 是你更习惯使用的模式';
+            return quick > logo ? '快速剪裁更常用' : 'Logo 编辑器更常用';
         }
 
-        function renderTestNarrative(t, narrative) {
-            const lines = [];
-            if (t.verifyRuns > 0) {
-                lines.push(`你核对过 <strong>${t.verifyRuns}</strong> 次图片是否符合配置`);
+        function renderTestNarrative(t, rows) {
+            if (valueOf(t, 'verifyRuns') > 0) rows.push(`核对图片 <strong>${valueOf(t, 'verifyRuns')}</strong> 次`);
+            if (valueOf(t, 'mismatchRuns') > 0) rows.push(`发现规格不一致 <strong>${valueOf(t, 'mismatchRuns')}</strong> 次`);
+            if (valueOf(t, 'perfectMatchRuns') > 0) rows.push(`完美匹配 <strong>${valueOf(t, 'perfectMatchRuns')}</strong> 次`);
+        }
+
+        function renderPhotoNarrative(p, rows) {
+            if (valueOf(p, 'imagesImported') > 0) rows.push(`导入图片 <strong>${valueOf(p, 'imagesImported')}</strong> 张`);
+            if (valueOf(p, 'configsImported') > 0) rows.push(`导入配置 <strong>${valueOf(p, 'configsImported')}</strong> 份`);
+            if (valueOf(p, 'specsCreated') > 0) rows.push(`新建规格 <strong>${valueOf(p, 'specsCreated')}</strong> 个`);
+            if (valueOf(p, 'configsSaved') > 0) rows.push(`保存修改配置 <strong>${valueOf(p, 'configsSaved')}</strong> 份`);
+            const quick = valueOf(p, 'quickCrop');
+            const logo = valueOf(p, 'logoEditor');
+            if (quick > 0 || logo > 0) {
+                const habit = habitLine(quick, logo);
+                rows.push(`快速剪裁 <strong>${quick}</strong> 次，Logo 编辑器 <strong>${logo}</strong> 次${habit ? `，${habit}` : ''}`);
             }
-            const tail = [];
-            if (t.copyAi > 0) tail.push(`复制了 <strong>${t.copyAi}</strong> 次 AI 指令`);
-            if (t.mismatchRuns > 0) tail.push(`发现了 <strong>${t.mismatchRuns}</strong> 次规格有出入的情况`);
-            if (t.perfectMatchRuns > 0) tail.push(`也验收过 <strong>${t.perfectMatchRuns}</strong> 次完美匹配的素材`);
-            if (tail.length) {
-                const head = lines.length ? '，' : '你';
-                lines.push(head + tail.join('，'));
-            }
-            lines.forEach((html) => narrative.push(`<li>${html}</li>`));
+            if (valueOf(p, 'logosImported') > 0) rows.push(`导入 Logo <strong>${valueOf(p, 'logosImported')}</strong> 个`);
+            if (valueOf(p, 'logoSave') > 0) rows.push(`保存带 Logo 素材 <strong>${valueOf(p, 'logoSave')}</strong> 次`);
         }
 
-        function renderPhotoNarrative(p, narrative) {
-            const line1 = [];
-            if (p.imagesImported > 0) line1.push(`导入了 <strong>${p.imagesImported}</strong> 张图片`);
-            if (p.configsImported > 0) line1.push(`<strong>${p.configsImported}</strong> 份配置`);
-            if (p.copyAi > 0) line1.push(`复制了 <strong>${p.copyAi}</strong> 次 AI 指令`);
-            if (line1.length) narrative.push(`<li>你${line1.join('，')}</li>`);
-
-            const line2 = [];
-            if (p.specsCreated > 0) line2.push(`单独创建了 <strong>${p.specsCreated}</strong> 个图片规格`);
-            if (p.configsSaved > 0) line2.push(`修改了 <strong>${p.configsSaved}</strong> 份配置`);
-            if (line2.length) narrative.push(`<li>你${line2.join('，')}</li>`);
-
-            const h = habitLine(p.quickCrop, p.logoEditor);
-            if (p.quickCrop > 0 || p.logoEditor > 0) {
-                let s = `你使用快速剪裁 <strong>${p.quickCrop}</strong> 次，Logo 编辑器 <strong>${p.logoEditor}</strong> 次`;
-                if (h) s += `，${h}`;
-                narrative.push(`<li>${s}</li>`);
-            }
-
-            const line4 = [];
-            if (p.logosImported > 0) line4.push(`导入了 <strong>${p.logosImported}</strong> 个 Logo`);
-            if (p.logoSave > 0) line4.push(`保存带 Logo 的素材 <strong>${p.logoSave}</strong> 次`);
-            if (line4.length) narrative.push(`<li>你${line4.join('，')}</li>`);
+        function renderVideoNarrative(v, rows) {
+            if (valueOf(v, 'videosImported') > 0) rows.push(`导入视频 <strong>${valueOf(v, 'videosImported')}</strong> 个`);
+            if (valueOf(v, 'configsImported') > 0) rows.push(`导入配置 <strong>${valueOf(v, 'configsImported')}</strong> 份`);
+            const quick = valueOf(v, 'quickCrop');
+            if (quick > 0) rows.push(`快速剪裁 <strong>${quick}</strong> 次`);
         }
 
-        function renderVideoNarrative(v, narrative) {
-            const line1 = [];
-            if (v.videosImported > 0) line1.push(`导入了 <strong>${v.videosImported}</strong> 个视频`);
-            if (v.configsImported > 0) line1.push(`<strong>${v.configsImported}</strong> 份视频配置`);
-            if (line1.length) narrative.push(`<li>你${line1.join('，')}</li>`);
-
-            const h = habitLine(v.quickCrop, v.logoEditor);
-            if (v.quickCrop > 0 || v.logoEditor > 0) {
-                let s = `你使用快速剪裁 <strong>${v.quickCrop}</strong> 次，Logo 编辑器 <strong>${v.logoEditor}</strong> 次`;
-                if (h) s += `，${h}`;
-                narrative.push(`<li>${s}</li>`);
-            }
-
-            const line3 = [];
-            if (v.logosImported > 0) line3.push(`导入了 <strong>${v.logosImported}</strong> 个 Logo`);
-            if (v.logoSave > 0) line3.push(`保存带 Logo 的视频 <strong>${v.logoSave}</strong> 次`);
-            if (line3.length) narrative.push(`<li>你${line3.join('，')}</li>`);
-        }
-
-        function renderToolBlock(toolKey, data, titleSuffix) {
-            if (!toolHasAny(toolKey, data)) return '';
-            const narrative = [];
-            if (toolKey === 'test') renderTestNarrative(data.test, narrative);
-            else if (toolKey === 'photo') renderPhotoNarrative(data.photo, narrative);
-            else renderVideoNarrative(data.video, narrative);
-            if (!narrative.length) return '';
-            return `
-                <div class="tool-block">
-                    <h3>【${TOOL_NAMES[toolKey]}】${titleSuffix || ''}</h3>
-                    <ul class="narrative">${narrative.join('')}</ul>
-                </div>`;
-        }
-
-        function renderMonthMetrics(toolKey, b) {
+        function collectRows(tool, data) {
             const rows = [];
-            if (toolKey === 'test') {
-                if (b.verifyRuns > 0) rows.push(`核查次数：${b.verifyRuns}`);
-                if (b.copyAi > 0) rows.push(`复制 AI 指令次数：${b.copyAi}`);
-                if (b.mismatchRuns > 0) rows.push(`规格不一致次数：${b.mismatchRuns}`);
-                if (b.perfectMatchRuns > 0) rows.push(`完美匹配次数：${b.perfectMatchRuns}`);
-            } else if (toolKey === 'photo') {
-                if (b.imagesImported > 0) rows.push(`导入图片：${b.imagesImported} 张`);
-                if (b.configsImported > 0) rows.push(`导入配置：${b.configsImported} 份`);
-                if (b.copyAi > 0) rows.push(`复制 AI 指令：${b.copyAi} 次`);
-                if (b.specsCreated > 0) rows.push(`新建规格：${b.specsCreated} 个`);
-                if (b.configsSaved > 0) rows.push(`保存修改配置：${b.configsSaved} 份`);
-                if (b.quickCrop > 0) rows.push(`快速剪裁：${b.quickCrop} 次`);
-                if (b.logoEditor > 0) rows.push(`Logo 编辑器：${b.logoEditor} 次`);
-                if (b.logosImported > 0) rows.push(`导入 Logo：${b.logosImported} 个`);
-                if (b.logoSave > 0) rows.push(`保存带 Logo 素材：${b.logoSave} 次`);
-            } else {
-                if (b.videosImported > 0) rows.push(`导入视频：${b.videosImported} 个`);
-                if (b.configsImported > 0) rows.push(`导入配置：${b.configsImported} 份`);
-                if (b.quickCrop > 0) rows.push(`快速剪裁：${b.quickCrop} 次`);
-                if (b.logoEditor > 0) rows.push(`Logo 编辑器：${b.logoEditor} 次`);
-                if (b.logosImported > 0) rows.push(`导入 Logo：${b.logosImported} 个`);
-                if (b.logoSave > 0) rows.push(`保存带 Logo 视频：${b.logoSave} 次`);
-            }
-            if (!rows.length) return '';
-            return `<ul class="month-metrics">${rows.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>`;
+            const bucket = data && data[tool] ? data[tool] : {};
+            if (tool === 'test') renderTestNarrative(bucket, rows);
+            if (tool === 'photo') renderPhotoNarrative(bucket, rows);
+            if (tool === 'video') renderVideoNarrative(bucket, rows);
+            return rows;
         }
 
-        function renderReviewHtml(store) {
-            const totals = store.totals;
-            let html = '<h2 class="section-title">总使用情况统计</h2>';
-            const totalBlocks = [
-                renderToolBlock('test', totals),
-                renderToolBlock('photo', totals),
-                renderToolBlock('video', totals)
-            ].filter(Boolean);
-            if (!totalBlocks.length) {
-                return '<div class="empty-hint">暂无使用记录。去任一工具页操作后，统计会自动保存在本机。</div>' + renderStartCodeHtml(store);
+        function renderToolBlock(tool, data) {
+            const rows = collectRows(tool, data);
+            if (!rows.length) return '';
+            return `
+                <section class="tool-block">
+                    <h3>${TOOL_NAMES[tool]}</h3>
+                    <ul class="narrative">${rows.map((row) => `<li>${row}</li>`).join('')}</ul>
+                </section>`;
+        }
+
+        function renderMonthMetrics(tool, data) {
+            const bucket = data && data[tool] ? data[tool] : {};
+            const rows = [];
+            if (tool === 'test') {
+                if (valueOf(bucket, 'verifyRuns') > 0) rows.push(`核查次数：${valueOf(bucket, 'verifyRuns')}`);
+                if (valueOf(bucket, 'mismatchRuns') > 0) rows.push(`规格不一致次数：${valueOf(bucket, 'mismatchRuns')}`);
+                if (valueOf(bucket, 'perfectMatchRuns') > 0) rows.push(`完美匹配次数：${valueOf(bucket, 'perfectMatchRuns')}`);
+            } else if (tool === 'photo') {
+                if (valueOf(bucket, 'imagesImported') > 0) rows.push(`导入图片：${valueOf(bucket, 'imagesImported')} 张`);
+                if (valueOf(bucket, 'configsImported') > 0) rows.push(`导入配置：${valueOf(bucket, 'configsImported')} 份`);
+                if (valueOf(bucket, 'specsCreated') > 0) rows.push(`新建规格：${valueOf(bucket, 'specsCreated')} 个`);
+                if (valueOf(bucket, 'configsSaved') > 0) rows.push(`保存修改配置：${valueOf(bucket, 'configsSaved')} 份`);
+                if (valueOf(bucket, 'quickCrop') > 0) rows.push(`快速剪裁：${valueOf(bucket, 'quickCrop')} 次`);
+                if (valueOf(bucket, 'logoEditor') > 0) rows.push(`Logo 编辑器：${valueOf(bucket, 'logoEditor')} 次`);
+                if (valueOf(bucket, 'logosImported') > 0) rows.push(`导入 Logo：${valueOf(bucket, 'logosImported')} 个`);
+                if (valueOf(bucket, 'logoSave') > 0) rows.push(`保存带 Logo 素材：${valueOf(bucket, 'logoSave')} 次`);
+            } else {
+                if (valueOf(bucket, 'videosImported') > 0) rows.push(`导入视频：${valueOf(bucket, 'videosImported')} 个`);
+                if (valueOf(bucket, 'configsImported') > 0) rows.push(`导入配置：${valueOf(bucket, 'configsImported')} 份`);
+                if (valueOf(bucket, 'quickCrop') > 0) rows.push(`快速剪裁：${valueOf(bucket, 'quickCrop')} 次`);
             }
-            html += totalBlocks.join('');
-
-            const months = Object.keys(store.months || {})
-                .filter((k) => toolHasAny('test', store.months[k]) || toolHasAny('photo', store.months[k]) || toolHasAny('video', store.months[k]))
-                .sort((a, b) => b.localeCompare(a));
-
-            months.forEach((ym) => {
-                const data = store.months[ym];
-                html += `<h2 class="month-heading">${formatMonthLabel(ym)}</h2>`;
-                ['test', 'photo', 'video'].forEach((tool) => {
-                    if (!toolHasAny(tool, data)) return;
-                    const metrics = renderMonthMetrics(tool, data[tool]);
-                    if (!metrics) return;
-                    html += `
-                        <div class="tool-block">
-                            <h3>【${TOOL_NAMES[tool]}】</h3>
-                            ${metrics}
-                        </div>`;
-                });
-            });
-            html += renderStartCodeHtml(store);
-            return html;
+            return rows.length ? `<ul class="month-metrics">${rows.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : '';
         }
 
         function renderStartCodeHtml(store) {
             const code = store && store.startedAt ? store.startedAt : '';
-            if (!code) return '';
-            return `<div class="start-code"><strong>【统计起始时间】</strong><div>${escapeHtml(code)}</div></div>`;
+            return code ? `<div class="start-code"><strong>统计起始时间</strong><div>${escapeHtml(code)}</div></div>` : '';
         }
 
-        function normalizeFeedbackDraft(draft) {
-            const source = Array.isArray(draft) ? draft : (draft && Array.isArray(draft.items) ? draft.items : (draft && draft.text ? [draft] : []));
-            return source.map((item) => ({
-                section: item && item.section ? item.section : 'test',
-                type: item && item.type ? item.type : 'bug',
-                text: String(item && item.text || '').trim(),
-                submittedAt: item && item.submittedAt ? item.submittedAt : Date.now()
-            })).filter((item) => item.text);
-        }
-
-        function renderFeedbackBlock(draft) {
-            const items = normalizeFeedbackDraft(draft);
-            if (!items.length) return '';
-            return `
-                <div class="result-tip">请将该页面导出为TXT，在飞书提供给@海星罐头 感谢您的反馈~</div>
-                <div class="feedback-card">
-                    <h2>我的建议</h2>
-                    ${items.map((item, idx) => {
-                        const sec = SECTION_LABELS[item.section] || item.section;
-                        const typ = TYPE_LABELS[item.type] || item.type;
-                        const time = item.submittedAt ? new Date(item.submittedAt).toLocaleString('zh-CN') : '';
-                        return `<div style="${idx ? 'margin-top:18px;padding-top:18px;border-top:1px solid #fed7aa;' : ''}">
-                            <h3 style="margin:0 0 8px;color:var(--blue);font-size:18px;">第${idx + 1}条建议</h3>
-                            <div class="feedback-meta">板块：${escapeHtml(sec)}　|　类型：${escapeHtml(typ)}${time ? `　|　${escapeHtml(time)}` : ''}</div>
-                            <div class="feedback-body">${escapeHtml(item.text)}</div>
-                        </div>`;
-                    }).join('')}
-                </div>`;
-        }
-
-        function pushPlainToolSummary(lines, toolKey, data) {
-            if (!toolHasAny(toolKey, data)) return;
-            const b = data[toolKey];
-            const rows = [];
-            if (toolKey === 'test') {
-                if (b.verifyRuns > 0) rows.push(`核对过 ${b.verifyRuns} 次图片是否符合配置`);
-                if (b.copyAi > 0) rows.push(`复制了 ${b.copyAi} 次 AI 指令`);
-                if (b.mismatchRuns > 0) rows.push(`发现了 ${b.mismatchRuns} 次规格有出入的情况`);
-                if (b.perfectMatchRuns > 0) rows.push(`验收过 ${b.perfectMatchRuns} 次完美匹配的素材`);
-            } else if (toolKey === 'photo') {
-                if (b.imagesImported > 0) rows.push(`导入了 ${b.imagesImported} 张图片`);
-                if (b.configsImported > 0) rows.push(`导入了 ${b.configsImported} 份配置`);
-                if (b.copyAi > 0) rows.push(`复制了 ${b.copyAi} 次 AI 指令`);
-                if (b.specsCreated > 0) rows.push(`单独创建了 ${b.specsCreated} 个图片规格`);
-                if (b.configsSaved > 0) rows.push(`修改了 ${b.configsSaved} 份配置`);
-                if (b.quickCrop > 0 || b.logoEditor > 0) {
-                    rows.push(`使用快速剪裁 ${b.quickCrop || 0} 次，Logo 编辑器 ${b.logoEditor || 0} 次`);
-                }
-                if (b.logosImported > 0) rows.push(`导入了 ${b.logosImported} 个 Logo`);
-                if (b.logoSave > 0) rows.push(`保存带 Logo 的素材 ${b.logoSave} 次`);
-            } else {
-                if (b.videosImported > 0) rows.push(`导入了 ${b.videosImported} 个视频`);
-                if (b.configsImported > 0) rows.push(`导入了 ${b.configsImported} 份视频配置`);
-                if (b.quickCrop > 0 || b.logoEditor > 0) {
-                    rows.push(`使用快速剪裁 ${b.quickCrop || 0} 次，Logo 编辑器 ${b.logoEditor || 0} 次`);
-                }
-                if (b.logosImported > 0) rows.push(`导入了 ${b.logosImported} 个 Logo`);
-                if (b.logoSave > 0) rows.push(`保存带 Logo 的视频 ${b.logoSave} 次`);
+        function renderReviewHtml(store) {
+            const totals = store && store.totals ? store.totals : {};
+            const totalBlocks = ['test', 'photo', 'video'].map((tool) => renderToolBlock(tool, totals)).filter(Boolean);
+            if (!totalBlocks.length) {
+                return `<div class="empty-hint">暂无使用记录。去任一工具页操作后，统计会自动保存在本机。</div>${renderStartCodeHtml(store)}`;
             }
-            if (!rows.length) return;
-            lines.push(`【${TOOL_NAMES[toolKey]}】`);
-            rows.forEach((row) => lines.push(`- ${row}`));
-            lines.push('');
-        }
-
-        function pushPlainMonthMetrics(lines, toolKey, data) {
-            if (!toolHasAny(toolKey, data)) return;
-            const tmp = document.createElement('div');
-            tmp.innerHTML = renderMonthMetrics(toolKey, data[toolKey]);
-            const text = (tmp.innerText || tmp.textContent || '').trim();
-            if (!text) return;
-            lines.push(`【${TOOL_NAMES[toolKey]}】`);
-            text.split(/\n+/).map((s) => s.trim()).filter(Boolean).forEach((row) => lines.push(`- ${row}`));
-            lines.push('');
-        }
-
-        function buildPlainTextExport(store, draft) {
-            const lines = [];
-            const feedbackItems = normalizeFeedbackDraft(draft);
-            if (feedbackItems.length) {
-                lines.push('【我的建议】');
-                lines.push('');
-                feedbackItems.forEach((item, idx) => {
-                    lines.push(`第${idx + 1}条建议`);
-                    lines.push(`板块：${SECTION_LABELS[item.section] || item.section}`);
-                    lines.push(`类型：${TYPE_LABELS[item.type] || item.type}`);
-                    if (item.submittedAt) lines.push(`时间：${new Date(item.submittedAt).toLocaleString('zh-CN')}`);
-                    lines.push('');
-                    lines.push(item.text);
-                    lines.push('');
-                });
-                lines.push('==============================');
-                lines.push('');
-            }
-            lines.push('总使用情况统计');
-            lines.push('==============================');
-            lines.push('');
-            const totals = store.totals || {};
-            ['test', 'photo', 'video'].forEach((tool) => pushPlainToolSummary(lines, tool, totals));
-            if (lines[lines.length - 1] !== '') lines.push('');
+            let html = `<h2 class="section-title">总使用情况统计</h2><div class="tool-grid">${totalBlocks.join('')}</div>`;
             const months = Object.keys(store.months || {})
-                .filter((k) => toolHasAny('test', store.months[k]) || toolHasAny('photo', store.months[k]) || toolHasAny('video', store.months[k]))
+                .filter((key) => ['test', 'photo', 'video'].some((tool) => toolHasAny(tool, store.months[key])))
+                .sort((a, b) => b.localeCompare(a));
+            months.forEach((ym) => {
+                const data = store.months[ym];
+                const blocks = ['test', 'photo', 'video'].map((tool) => {
+                    const metrics = renderMonthMetrics(tool, data);
+                    return metrics ? `<section class="tool-block"><h3>${TOOL_NAMES[tool]}</h3>${metrics}</section>` : '';
+                }).filter(Boolean);
+                if (blocks.length) html += `<h2 class="month-heading">${formatMonthLabel(ym)}</h2><div class="tool-grid">${blocks.join('')}</div>`;
+            });
+            return html + renderStartCodeHtml(store);
+        }
+
+        function buildPlainTextExport(store) {
+            const lines = ['总使用情况统计', '==============================', ''];
+            const totals = store && store.totals ? store.totals : {};
+            ['test', 'photo', 'video'].forEach((tool) => {
+                const rows = collectRows(tool, totals).map((row) => row.replace(/<[^>]+>/g, ''));
+                if (!rows.length) return;
+                lines.push(`【${TOOL_NAMES[tool]}】`);
+                rows.forEach((row) => lines.push(`- ${row}`));
+                lines.push('');
+            });
+            const months = Object.keys(store.months || {})
+                .filter((key) => ['test', 'photo', 'video'].some((tool) => toolHasAny(tool, store.months[key])))
                 .sort((a, b) => b.localeCompare(a));
             months.forEach((ym) => {
                 lines.push(formatMonthLabel(ym));
                 lines.push('------------------------------');
-                ['test', 'photo', 'video'].forEach((tool) => pushPlainMonthMetrics(lines, tool, store.months[ym]));
+                ['test', 'photo', 'video'].forEach((tool) => {
+                    const tmp = document.createElement('div');
+                    tmp.innerHTML = renderMonthMetrics(tool, store.months[ym]);
+                    const text = (tmp.innerText || tmp.textContent || '').trim();
+                    if (!text) return;
+                    lines.push(`【${TOOL_NAMES[tool]}】`);
+                    text.split(/\n+/).map((s) => s.trim()).filter(Boolean).forEach((row) => lines.push(`- ${row}`));
+                    lines.push('');
+                });
             });
-            if (!months.length && !toolHasAny('test', totals) && !toolHasAny('photo', totals) && !toolHasAny('video', totals)) {
-                lines.push('暂无使用记录。');
-            }
+            if (!lines.some((line) => /^【/.test(line))) lines.push('暂无使用记录。');
             if (store && store.startedAt) {
                 lines.push('');
                 lines.push('【统计起始时间】');
@@ -518,12 +439,13 @@
                 return;
             }
             const btn = document.getElementById('btnExportImg');
-            if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
+            btn.disabled = true;
+            btn.textContent = '生成中...';
             try {
                 const canvas = await html2canvas(root, {
                     scale: 2,
                     useCORS: true,
-                    backgroundColor: '#ffffff',
+                    backgroundColor: '#0f172a',
                     logging: false,
                     width: root.scrollWidth,
                     height: root.scrollHeight,
@@ -531,7 +453,10 @@
                     windowHeight: root.scrollHeight
                 });
                 canvas.toBlob((blob) => {
-                    if (!blob) { alert('导出失败'); return; }
+                    if (!blob) {
+                        alert('导出失败');
+                        return;
+                    }
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
                     a.download = `使用回顾_${new Date().toISOString().slice(0, 10)}.jpg`;
@@ -543,152 +468,27 @@
                 console.error(e);
                 alert('导出失败，请缩小页面内容后重试');
             } finally {
-                if (btn) { btn.disabled = false; btn.textContent = '导出为图片'; }
+                btn.disabled = false;
+                btn.textContent = '导出图片';
             }
         }
 
-        function exportTxt(store, draft) {
-            const text = buildPlainTextExport(store, draft);
+        function exportTxt() {
+            const text = buildPlainTextExport(currentStore);
             const blob = new Blob(['\ufeff' + text], { type: 'text/plain;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `${normalizeFeedbackDraft(draft).length ? '建议与使用回顾' : '使用回顾'}_${new Date().toISOString().slice(0, 10)}.txt`;
+            a.download = `使用回顾_${new Date().toISOString().slice(0, 10)}.txt`;
             a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 2000);
             showToast('TXT 已下载');
         }
 
-        function setupTopActions(mode, store, draft) {
-            const box = document.getElementById('topActions');
-            box.innerHTML = '';
-            if (mode === 'form') {
-                box.innerHTML = `<a href="suggest.html?view=review" class="btn btn-outline">使用回顾</a>`;
-                return;
-            }
-            if (mode === 'result') {
-                const editBtn = document.createElement('a');
-                editBtn.href = 'suggest.html?view=form';
-                editBtn.className = 'btn btn-outline';
-                editBtn.textContent = '修改建议';
-                box.appendChild(editBtn);
-            }
-            const exportBtn = document.createElement('button');
-            exportBtn.type = 'button';
-            exportBtn.className = 'btn btn-primary';
-            exportBtn.id = 'btnExportImg';
-            exportBtn.textContent = '导出为图片';
-            exportBtn.onclick = () => exportJpg();
-            box.appendChild(exportBtn);
-
-            const txtBtn = document.createElement('button');
-            txtBtn.type = 'button';
-            txtBtn.className = 'btn btn-outline';
-            txtBtn.textContent = '导出为 TXT';
-            txtBtn.onclick = () => exportTxt(store, draft);
-            box.appendChild(txtBtn);
-
-            if (mode !== 'result') {
-                const formLink = document.createElement('a');
-                formLink.href = 'suggest.html?view=form';
-                formLink.className = 'btn btn-ghost';
-                formLink.textContent = '我要提建议';
-                box.appendChild(formLink);
-            }
-        }
-
-        function renderFeedbackForm(items) {
-            const list = document.getElementById('feedbackFormList');
-            const rows = items && items.length ? items : [{ section: 'test', type: 'bug', text: '' }];
-            list.innerHTML = rows.map((item, idx) => `
-                <div class="feedback-form-item" data-feedback-index="${idx}">
-                    <div class="feedback-form-head">
-                        <span>第${idx + 1}条建议</span>
-                        ${rows.length > 1 ? `<button type="button" class="feedback-form-remove" onclick="removeFeedbackFormItem(${idx})">删除</button>` : ''}
-                    </div>
-                    <label>建议板块</label>
-                    <select data-field="section">
-                        <option value="test"${item.section === 'test' ? ' selected' : ''}>图片尺寸核对</option>
-                        <option value="photo"${item.section === 'photo' ? ' selected' : ''}>批量修改图片尺寸</option>
-                        <option value="video"${item.section === 'video' ? ' selected' : ''}>批量修改视频规格</option>
-                        <option value="overall"${item.section === 'overall' ? ' selected' : ''}>整体 / 其他</option>
-                    </select>
-                    <label>建议类型</label>
-                    <select data-field="type">
-                        <option value="bug"${item.type === 'bug' ? ' selected' : ''}>问题反馈</option>
-                        <option value="ux"${item.type === 'ux' ? ' selected' : ''}>体验优化</option>
-                        <option value="feature"${item.type === 'feature' ? ' selected' : ''}>功能建议</option>
-                        <option value="other"${item.type === 'other' ? ' selected' : ''}>其他</option>
-                    </select>
-                    <label>建议内容</label>
-                    <textarea data-field="text" placeholder="请描述您遇到的问题或改进想法…" maxlength="4000">${escapeHtml(item.text || '')}</textarea>
-                </div>`).join('');
-        }
-
-        function collectFeedbackForm() {
-            return Array.from(document.querySelectorAll('.feedback-form-item')).map((card) => ({
-                section: card.querySelector('[data-field="section"]').value,
-                type: card.querySelector('[data-field="type"]').value,
-                text: (card.querySelector('[data-field="text"]').value || '').trim(),
-                submittedAt: Date.now()
-            }));
-        }
-
-        function addFeedbackFormItem() {
-            const rows = collectFeedbackForm();
-            rows.push({ section: 'test', type: 'bug', text: '' });
-            renderFeedbackForm(rows);
-        }
-
-        function removeFeedbackFormItem(index) {
-            const rows = collectFeedbackForm();
-            rows.splice(index, 1);
-            renderFeedbackForm(rows.length ? rows : [{ section: 'test', type: 'bug', text: '' }]);
-        }
-
         function init() {
-            const params = new URLSearchParams(location.search);
-            const view = params.get('view') || 'review';
-            const store = UsageTracker.loadStore();
-            const heading = document.getElementById('pageHeading');
-            const formPanel = document.getElementById('formPanel');
-            const feedbackBlock = document.getElementById('feedbackBlock');
-            const reviewContent = document.getElementById('reviewContent');
-
-            if (view === 'form') {
-                heading.textContent = '我要提建议';
-                formPanel.classList.remove('hidden');
-                reviewContent.innerHTML = '';
-                feedbackBlock.classList.add('hidden');
-                setupTopActions('form', store, null);
-                renderFeedbackForm(normalizeFeedbackDraft(UsageTracker.loadFeedbackDraft()));
-                document.getElementById('fbAdd').onclick = addFeedbackFormItem;
-                document.getElementById('fbSubmit').onclick = () => {
-                    const rows = collectFeedbackForm();
-                    const blankIndex = rows.findIndex((row) => !row.text);
-                    if (blankIndex >= 0) {
-                        alert(`请填写第 ${blankIndex + 1} 条建议内容`);
-                        return;
-                    }
-                    UsageTracker.saveFeedbackDraft({ items: rows });
-                    location.href = 'suggest.html?view=result';
-                };
-                return;
-            }
-
-            let draft = null;
-            if (view === 'result') {
-                draft = UsageTracker.loadFeedbackDraft();
-                heading.textContent = '建议与使用回顾';
-                feedbackBlock.innerHTML = draft ? renderFeedbackBlock(draft) : '<div class="empty-hint">未找到建议内容，请重新填写。</div>';
-                feedbackBlock.classList.remove('hidden');
-                setupTopActions('result', store, draft);
-            } else {
-                heading.textContent = '使用回顾';
-                feedbackBlock.classList.add('hidden');
-                setupTopActions('review', store, null);
-            }
-
-            reviewContent.innerHTML = renderReviewHtml(store);
+            currentStore = UsageTracker.loadStore();
+            document.getElementById('reviewContent').innerHTML = renderReviewHtml(currentStore);
+            document.getElementById('btnExportImg').onclick = exportJpg;
+            document.getElementById('btnExportTxt').onclick = exportTxt;
         }
 
         init();

@@ -6,8 +6,6 @@
     'use strict';
 
     const STORAGE_KEY = 'channelMaterialUsageStats_v1';
-    const FEEDBACK_SESSION_KEY = 'channelMaterialFeedbackDraft_v1';
-
     function makeStartLabel() {
         const d = new Date();
         const ms = String(d.getMilliseconds()).padStart(3, '0');
@@ -17,13 +15,13 @@
 
     function emptyBucket() {
         return {
-            test: { verifyRuns: 0, copyAi: 0, mismatchRuns: 0, perfectMatchRuns: 0 },
+            test: { verifyRuns: 0, mismatchRuns: 0, perfectMatchRuns: 0 },
             photo: {
-                imagesImported: 0, configsImported: 0, copyAi: 0, specsCreated: 0, configsSaved: 0,
+                imagesImported: 0, configsImported: 0, specsCreated: 0, configsSaved: 0,
                 quickCrop: 0, logoEditor: 0, logosImported: 0, logoSave: 0
             },
             video: {
-                videosImported: 0, configsImported: 0, quickCrop: 0, logoEditor: 0, logosImported: 0, logoSave: 0
+                videosImported: 0, configsImported: 0, quickCrop: 0
             }
         };
     }
@@ -115,9 +113,6 @@
         trackTestVerify() {
             trackTestVerify.apply(null, arguments);
         },
-        trackCopyAi() { bump('test', 'copyAi', 1); bump('photo', 'copyAi', 1); },
-        trackTestCopyAi() { bump('test', 'copyAi', 1); },
-        trackPhotoCopyAi() { bump('photo', 'copyAi', 1); },
         trackPhotoImagesImported(n) { bump('photo', 'imagesImported', n); },
         trackPhotoConfigImported() { bump('photo', 'configsImported', 1); },
         trackPhotoSpecCreated() { bump('photo', 'specsCreated', 1); },
@@ -128,29 +123,7 @@
         trackPhotoLogoSave() { bump('photo', 'logoSave', 1); },
         trackVideoImported(n) { bump('video', 'videosImported', n); },
         trackVideoConfigImported() { bump('video', 'configsImported', 1); },
-        trackVideoQuickCrop() { bump('video', 'quickCrop', 1); },
-        trackVideoLogoEditor() { bump('video', 'logoEditor', 1); },
-        trackVideoLogosImported(n) { bump('video', 'logosImported', n); },
-        trackVideoLogoSave() { bump('video', 'logoSave', 1); },
-        saveFeedbackDraft(draft) {
-            try {
-                sessionStorage.setItem(FEEDBACK_SESSION_KEY, JSON.stringify(draft));
-            } catch (e) {
-                console.warn('feedback draft save failed', e);
-            }
-        },
-        loadFeedbackDraft() {
-            try {
-                const raw = sessionStorage.getItem(FEEDBACK_SESSION_KEY);
-                return raw ? JSON.parse(raw) : null;
-            } catch (e) {
-                return null;
-            }
-        },
-        clearFeedbackDraft() {
-            try { sessionStorage.removeItem(FEEDBACK_SESSION_KEY); } catch (e) {}
-        },
-        FEEDBACK_SESSION_KEY
+        trackVideoQuickCrop() { bump('video', 'quickCrop', 1); }
     };
 
     global.UsageTracker = UsageTracker;

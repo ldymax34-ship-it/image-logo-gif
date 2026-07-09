@@ -1,5 +1,62 @@
 # 更新日志
 
+## 0.7.4
+
+1. [新需求-大] `photo1.html` / `video1.html` / `test.html` / `suggest.html` 全站改为暗色模式：深色背景 token（`--paper:#0f172a` / `--ink:#e2e8f0`）、面板深灰蓝（`#1e293b`）、主色由橙红 `#df4a2f` 改为冷蓝/青 `#38bdf8`，主按钮文字深色高对比；并新增 scoped 覆盖将残留 `bg-white` / `text-gray-*` / `amber` / `orange` 等 Tailwind 工具类映射到深色，保证文字可读。
+2. [功能调整-中] `photo1.html` / `video1.html` / `suggest.html` 顶部导航移除「图片尺寸核对 / test.html」入口；`test.html` 保留可独立运行，但在首屏顶部新增「已合并/弃用」提示横幅，引导用户回到主工具的「尺寸脚本」。
+3. [问题修复-中] `photo1.html` 修复半删状态的 Logo 库：重新加载 `assets/builtin-logos/builtin-data.js` 脚本（写入 `window.__PHOTO1_BUILTIN_LOGO_B64__`），并在 `window.onload` 启动时从 IndexedDB 读取 `logoLibraryRecords`；若库为空则播种内置 Logo（战双/鸣潮、四条水印、版本标题示意）再刷新，主界面右侧「本次 Logo」与排版弹窗「从 Logo 库添加」恢复可用。视频页水印逻辑不暴露。
+4. [新需求-中] `photo1.html`「直接输入配置」改为「尺寸脚本」方向：默认模板改为尺寸示例；新增 `parseSizeScript` 解析器，优先识别每行一个尺寸的脚本（`1080x1920` / `1920*1080` / `900 383` / `1:1 1024` / `16:9 1920` / `9:16 1080`），自动生成配置行（名称 `尺寸_序号`、format 默认 jpg、maxSize 默认 1000、requirementDetail 留空）；识别失败仍回退标准 TXT 解析，不强制用户写名称。
+5. [体验-中] `photo1.html` Logo 排版弹窗增强：新增「推荐位置」三个主按钮（左上 / 右上 / 居中），应用时使用新版型规则计算宽度；原「自定义位置」折叠区文案弱化为「自定义（高级选项）」；预览区顶部新增实时位置显示条（当前版型 / 位置模式 / X% / Y% / 宽度% / ≈px）。
+6. [新需求-中] `photo1.html` 新增 Logo 大小规则函数 `computeLogoSizeRule`：按输出尺寸 aspect 分类 landscape/square/portrait（21:9 与 16:9 共用 landscape，竖版同理 portrait），用短边 shortSide 计算默认 logo 宽度并 clamp（landscape `*0.16` clamp 120-220 / square `*0.18` clamp 120-210 / portrait `*0.20` clamp 120-240），推荐位置应用时使用该规则，位置相对稳定。
+7. [新需求-中] `photo1.html` Logo 排版弹窗新增 CPR 图层设置区（第一版）：启用开关、颜色、投影开关、投影颜色/透明度/模糊/X-Y 偏移，以及左上/右上/居中位置按钮（复用 Logo 版型规则）；预览区以白色矩形占位渲染，状态对象 `cprLayerState` 完整，暂不写入导出图（不破坏现有导出）。
+8. [维护-小] 全站内联 JS 语法检查通过、`<div>` 开闭配平；无新增网络调用（仅 `video1.html` 原有 `file://` 本地 fetch bridge）。
+9. [维护-小] 收尾清理旧橙红视觉 token / `bg-orange-*` / `text-orange-*` / `btn-orange` 命名，统一为暗色青蓝体系；补充 `.gitignore` 排除 `.DS_Store` 与 `.bak*` 备份；四页桌面/移动浏览器加载验证通过，无 JS 页面错误、无横向溢出、无 `test.html` 导航入口。
+
+## 0.7.3
+
+1. [协作-中] 调用本机 `opencode run` 做只读副审计，由主控采纳其对 `test.html` 视觉割裂、`video1.html` Logo 死功能空跑的发现。
+2. [体验-中] `test.html` 首屏上传区翻新为工作台式双任务卡：统一白色面板、细边框、橙色主按钮、模板链接降级，移动端改为单列上传流程。
+3. [文案-小] `test.html` 顶部移除 AI/提示词话术，版本文案改为「V0.7 · 离线素材工作台」，导航统一为「视频转 GIF」。
+4. [问题修复-小] `test.html` 修复 H1 双 `style` 属性。
+5. [功能调整-中] `video1.html` 移除裁剪弹窗中的「水印 / Logo」入口和事件绑定；停止加载内置 Logo 数据脚本，停止页面启动时播种/刷新 Logo 库。
+6. [维护-小] `assets/usage-tracker.js` / `suggest.html` 移除视频工具的 Logo 统计字段，图片工具 Logo 统计保留。
+7. [验证-中] 四页桌面 / 手机 Chrome 加载验证通过：无 JS 错误、无横向溢出；四页内联 JS 语法和 div 配平检查通过。
+
+## 0.7.2
+
+1. [体验-大] 将 `photo1.html` / `video1.html` / `test.html` 的视觉方向从 Wireframe 手绘稿收敛为「离线素材工作台」：浅灰点阵背景、白色面板、细边框、系统字体、橙色主操作、低阴影层级，降低手绘感对高频工具的干扰。
+2. [UE-中] `photo1.html` / `video1.html` 增加移动端响应式规则：顶部 header 改为纵向堆叠，操作按钮可换行，主工作区改为纵向工作流，修复手机上标题和按钮被挤成竖排的问题。
+3. [问题修复-中] `video1.html` 清理移除视频水印后遗留的初始化调用和 Logo 拖拽区引用，修复页面加载时 `initResultsGridActionDelegation is not defined`、`logoZone is not defined` 的错误。
+4. [问题修复-小] 修复 `photo1.html` / `video1.html` 中 `text-red-600bg-red-50`、`rounded-mdtext-red-600bg-red-50` 等拼接错误 class。
+5. [验证-中] 使用本机 Google Chrome 对四页进行桌面 1440×1000 与手机 390×844 截图验证，确认无 JS 错误、无横向溢出。
+
+## 0.7.1
+
+1. [功能调整-中] `photo1.html` / `video1.html` / `test.html` 彻底移除「直接输入配置」弹窗中的复制 AI 指令按钮、复制函数、成功提示与事件绑定，仅保留 TXT 模板默认填充、识别、预览、手动新增和确认导入。
+2. [功能调整-中] `suggest.html` 从「使用回顾 + 提建议」改为纯本机使用回顾页：保留统计展示、导出图片、导出 TXT、三工具导航；删除反馈表单、建议结果页、建议草稿读写与相关文案。
+3. [维护-小] `assets/usage-tracker.js` 移除反馈草稿 API 与 AI 指令统计入口；旧本地统计里的历史字段不再展示。
+4. [验证-中] 复跑四页内联 JS 语法检查、div 开闭数量检查、坏 class 拼接扫描、反馈 / AI 指令残留扫描。
+
+## 0.7.0
+
+1. [体验-大] 全站四页（`photo1.html` / `video1.html` / `test.html` / `suggest.html`）统一注入 Wireframe 手绘风格 CSS 设计 token 系统（--paper / --ink / --accent / --highlight 等 14 个变量），body 统一为 `wf-skin` 皮肤。
+2. [功能调整-中] 全站移除「使用回顾」「我要提建议」入口及 `suggest.html` 链接、移除「一键复制 AI 指令」按钮及 `copySuccess` 提示条，精简为纯工具页面。
+3. [体验-中] `photo1.html` / `test.html` header 重构为 wireframe canvas 风格：圆角描边容器 + 橙色 badge + pill 导航 tab + wf-btn-primary / wf-btn-ghost 统一按钮样式。
+4. [功能调整-小] 全站导航 tab 文案统一：「批量修改视频规格」→「视频转 GIF」。
+
+## 0.6.9
+
+1. [体验-大] `video1.html` 全站视觉重构为 Wireframe 手绘风格：纸黄底色 (#fbf6ec) + 墨黑边框 + 手写体 (Patrick Hand / Caveat) + 衬线标题 (DM Serif Display) + 等宽标注 (IBM Plex Mono) + 网格背景 + 便利贴提示卡片。注入完整 CSS 设计 token 系统 (--paper / --ink / --accent / --highlight 等 12 个变量)。
+2. [体验-中] `video1.html` header 重构为 wireframe canvas 风格：圆角描边容器 + 橙色 badge + pill 导航 tab + 手写体按钮。操作区按钮统一为 wf-btn-primary (橙) / wf-btn-ghost (米) 两套样式，消除原先蓝橙混挤。
+3. [体验-中] `video1.html` 左侧栏 / 右侧 GIF 压缩面板 / 主工作区统一为 wf-panel 卡片风格（2px 墨灰描边 + 米色底 + 轻投影），预估大小改为便利贴黄色卡片，结果提示改为粉色便利贴。
+
+## 0.6.8
+
+1. [新需求-大] `video1.html` 移除视频打水印 / Logo 排版功能，替换为视频转 GIF 压缩工具：支持帧率选择（1-30 fps，含 5/10/15/24/30 预设）、输出宽度选择（80-1920 px，含 320/480/640/800/1080 预设）、实时大小预估（根据帧数 × 分辨率估算）、复用本地 ffmpeg.wasm 做 palettegen + paletteuse 优化转码、进度反馈与一键下载。
+2. [体验-中] `photo1.html` Logo 布局模态框左侧栏重构：将图片 Logo 的改色（`logoImgColorDock`）与阴影（`logoImgShadowDock`）两个分散 dock 合并为统一的「图片样式」面板（`logoImgStyleDock`），带小标题与内部分隔线；统一所有 dock 边框为 `border-t border-gray-200`，消除原先 `border-b-[3px]` / `border-t-2` / `border-t` 混用的不一致。
+3. [体验-中] `photo1.html` 顶部 header 右侧操作区重构：AI 指令按钮独立一行，下方拆为设置行（文件夹名 + 两个 checkbox）与操作行（模板下载 / 配置上传 / 导出），间距统一，消除原先嵌套 flex-wrap 的拥挤感。
+4. [维护-中] 新增 `README.md` / `AGENTS.md` / `TASKS.md`，规范项目入口文档、AI 角色规则与任务看板。
+
 ## 0.6.7
 
 1. [体验-小] `photo1.html` / `video1.html` 勾选「显示需求详述」后，结果卡不再显示单条查看需求详述的问号，减少重复入口。
@@ -14,7 +71,7 @@
 
 1. [新需求-中] `suggest.html`「我要提建议」支持多条建议：可通过「+」新增建议块，每条独立选择板块、类型和内容，提交后按顺序展示并导出。
 2. [体验-中] `suggest.html` 建议结果页新增提示语，移除「我要提建议」入口，改为「修改建议」并保留已填写内容返回编辑。
-3. [新需求-中] `suggest.html` / `assets/usage-tracker.js` 在长图与 TXT 文末增加固定的【统计起始时间】，首次生成后本地保存，用于区分不同统计来源。
+3. [新需求-中] `suggest.html` / `assets/usage-tracker.js` 在长图与 TXT 文末增加固定的【统计起始时间】。
 
 ## 0.6.4
 
