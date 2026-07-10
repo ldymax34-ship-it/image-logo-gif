@@ -7,3 +7,4 @@ coverage/
 .vite/
 npm-debug.log*
 *.tsbuildinfo
+.audit/

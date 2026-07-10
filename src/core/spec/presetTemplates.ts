@@ -29,3 +29,16 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
     ]
   }
 ];
+
+export function toPresetSpecs(specs: MaterialSpec[]): Omit<MaterialSpec, 'id'>[] {
+  return specs.map(({ id: _id, ...spec }) => ({ ...spec }));
+}
+
+export function serializePresetSpecs(specs: Array<Omit<MaterialSpec, 'id'>>): string {
+  return specs
+    .map((spec) => {
+      const sizeLimit = spec.maxSizeKb ? ` ${spec.maxSizeKb >= 1024 ? `${(spec.maxSizeKb / 1024).toFixed(spec.maxSizeKb % 1024 === 0 ? 0 : 1)}MB` : `${spec.maxSizeKb}KB`}` : '';
+      return `${spec.name} ${spec.width}x${spec.height} ${spec.format}${sizeLimit}`.trim();
+    })
+    .join('\n');
+}

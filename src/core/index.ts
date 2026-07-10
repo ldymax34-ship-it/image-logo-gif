@@ -3,3 +3,4 @@ export * from './spec';
 export * from './export';
 export * from './image';
 export * from './brand';
+export * from './storage';

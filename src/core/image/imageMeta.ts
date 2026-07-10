@@ -10,9 +10,11 @@ export type MaterialAsset = {
 
 export type WorkbenchState = {
   assets: MaterialAsset[];
+  specs: import('../spec').MaterialSpec[];
   selectedAssetId?: string;
   selectedSpecId?: string;
   previewStates: Record<string, import('./crop').BoardPreviewState>;
+  brandLayer: import('../brand').BrandLayerState;
 };
 
 export async function readImageElementSize(src: string): Promise<{ width: number; height: number }> {

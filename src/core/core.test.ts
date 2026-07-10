@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildOutputFileName,
+  buildBoardRenderPlan,
   classifyAspect,
   computeCprLayout,
   computeFitRect,
@@ -15,6 +16,8 @@ import {
   panCropState,
   renderBrandLayer,
   sanitizeFileNamePart,
+  serializePresetSpecs,
+  toPresetSpecs,
   zoomCropState
 } from './index';
 
@@ -23,6 +26,24 @@ describe('core 0.1.x foundation', () => {
     const result = parseSpecText('1080x1920\n16:9 1920\nbad line');
     expect(result.specs.map((spec) => `${spec.width}x${spec.height}`)).toEqual(['1080x1920', '1920x1080']);
     expect(result.unrecognizedLines).toHaveLength(1);
+  });
+
+  it('keeps stable spec ids when unrelated lines are inserted above', () => {
+    const base = parseSpecText('1080x1920\n1920x1080');
+    const shifted = parseSpecText('说明文字\n1080x1920\n1920x1080');
+    expect(shifted.specs.map((spec) => spec.id)).toEqual(base.specs.map((spec) => spec.id));
+  });
+
+  it('keeps stable spec ids when only labels change', () => {
+    const base = parseSpecText('微博竖图 1080x1920');
+    const renamed = parseSpecText('小红书竖图 1080x1920');
+    expect(renamed.specs[0]?.id).toBe(base.specs[0]?.id);
+  });
+
+  it('keeps duplicated specs uniquely addressable', () => {
+    const result = parseSpecText('1080x1920\n1080x1920');
+    expect(result.specs).toHaveLength(2);
+    expect(new Set(result.specs.map((spec) => spec.id)).size).toBe(2);
   });
 
   it('parses multiplication signs and comma-like mixed separators', () => {
@@ -39,6 +60,12 @@ describe('core 0.1.x foundation', () => {
   it('defaults format to jpg and supports kb limits', () => {
     const result = parseSpecText('feed 1080x1080 800KB');
     expect(result.specs[0]).toMatchObject({ format: 'jpg', maxSizeKb: 800 });
+  });
+
+  it('does not duplicate a preset row when its label repeats the same dimensions', () => {
+    const result = parseSpecText('竖版_1080x1920 1080x1920 jpg 1.2MB');
+    expect(result.specs).toHaveLength(1);
+    expect(result.specs[0]).toMatchObject({ name: '竖版', width: 1080, height: 1920, maxSizeKb: 1229 });
   });
 
   it('keeps invalid small dimensions out of parsed specs', () => {
@@ -136,11 +163,71 @@ describe('core 0.1.x foundation', () => {
   });
 
   it('ships default raster logo assets from local preset folders', () => {
-    expect(DEFAULT_BRAND_ASSETS.length).toBeGreaterThanOrEqual(6);
+    expect(DEFAULT_BRAND_ASSETS.length).toBeGreaterThanOrEqual(7);
     expect(DEFAULT_BRAND_ASSETS.every((asset) => asset.sourceKind === 'image')).toBe(true);
     expect(DEFAULT_BRAND_ASSETS.map((asset) => asset.sourceUrl)).toContain('/brand-logos/company/kuro-en-white.png');
     expect(DEFAULT_BRAND_ASSETS.map((asset) => asset.sourceUrl)).toContain('/brand-logos/wuthering-waves/ww-zh-cn.png');
+    expect(DEFAULT_BRAND_ASSETS.some((asset) => asset.language === 'ja-JP')).toBe(true);
     expect(DEFAULT_BRAND_ASSETS.every((asset) => asset.aspectRatio && asset.aspectRatio > 0)).toBe(true);
+  });
+
+  it('serializes preset specs back into editable text', () => {
+    const text = serializePresetSpecs([
+      { name: '微博横版', width: 1200, height: 675, format: 'jpg', maxSizeKb: 800 }
+    ]);
+    expect(text).toContain('微博横版 1200x675 jpg 800KB');
+  });
+
+  it('converts material specs into preset-safe specs', () => {
+    const presetSpecs = toPresetSpecs([{ id: 'spec_1', name: 'A', width: 1080, height: 1920, format: 'jpg' }]);
+    expect(presetSpecs).toEqual([{ name: 'A', width: 1080, height: 1920, format: 'jpg' }]);
+  });
+
+  it('builds one render plan for preview and export use', () => {
+    const plan = buildBoardRenderPlan({
+      asset: {
+        id: 'asset_1',
+        fileName: 'hero.png',
+        objectUrl: 'blob:hero',
+        width: 1000,
+        height: 500,
+        fileSize: 1,
+        mimeType: 'image/png'
+      },
+      spec: { id: 'spec_1', name: 'kv', width: 300, height: 300, format: 'png' },
+      previewState: {
+        assetId: 'asset_1',
+        specId: 'spec_1',
+        crop: { scale: 0.6, offsetX: -150, offsetY: 0 },
+        fitMode: 'cover'
+      },
+      brandLayer: {
+        logoEnabled: true,
+        cprEnabled: false,
+        logoLanguage: 'en-US',
+        cprLanguage: 'zh-CN',
+        selectedLogoId: 'logo',
+        selectedCprId: undefined,
+        logoAnchor: 'top-right',
+        cprAnchor: 'center',
+        logoSize: 'standard',
+        cprSize: 'standard',
+        logoEffect: DEFAULT_LOGO_EFFECT,
+        cprEffect: DEFAULT_LOGO_EFFECT
+      },
+      logoAsset: createRasterBrandAsset({
+        id: 'logo',
+        type: 'logo',
+        name: 'Logo',
+        language: 'en-US',
+        sourceUrl: '/logo.png',
+        width: 1200,
+        height: 300
+      })
+    });
+    expect(plan.canvas).toEqual({ width: 300, height: 300 });
+    expect(plan.image.rect.width).toBe(600);
+    expect(plan.layers).toHaveLength(1);
   });
 
   it('creates raster brand assets with reusable dimensions and effect defaults', () => {

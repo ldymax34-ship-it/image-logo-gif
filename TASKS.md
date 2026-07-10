@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.5 默认 Logo 资源与品牌层样式
+## 当前版本：0.1.9 直觉画板调整与交互确认
 
 ### 产品方向
 
@@ -56,6 +56,25 @@
 - [x] Logo 支持改色、简单描边、外发光、阴影
 - [x] CPR 样式控制复用同一套改色、描边、外发光、阴影状态结构
 - [x] PNG Logo 和上传 SVG 共用 `BrandAsset`、`BrandLayerState` 和 `renderBrandLayer`
+- [x] 规格 ID 改为稳定生成，插入 / 上移无关行时不再按行号串裁切
+- [x] 尺寸矩阵改为草稿编辑 + 手动应用，避免实时解析直接破坏已调好的画板
+- [x] 新项目默认不再注入示例尺寸，首屏从空状态开始
+- [x] Logo / CPR 语种下拉会真实切换当前预览资源，不再只影响下一次上传
+- [x] Logo / CPR 增加全局位置与大小控制：左上 / 右上 / 居中，小 / 标准 / 大
+- [x] 总览中单击画板只负责选择，双击才进入裁切调整，避免缩略图误拖
+- [x] 三栏桌面布局延后到更窄断点再折叠，减少笔记本桌面视图过早单栏化
+- [x] 接入内置尺寸套组，一键替换填入或追加到尺寸草稿
+- [x] 支持把当前规格保存为本地自定义常用套组，并可删除
+- [x] 画板聚焦调整改为双击进入独立弹窗，可通过右上角关闭、取消或保存并返回
+- [x] 聚焦弹窗使用本地草稿裁切状态，未保存时关闭会要求确认放弃
+- [x] 支持 Enter 进入画板调整、Esc 返回、弹窗焦点循环与返回后恢复原焦点
+- [x] 尺寸矩阵更新和自定义套组删除使用应用内确认弹窗
+- [x] 修复套组名称重复尺寸文本时一行生成多个画板的问题
+- [x] 聚焦弹窗在 900px 以下改为上下布局，画布和控件不再重叠
+- [x] 品牌高级样式折叠，主交互优先展示语种、启用、位置、大小
+- [x] 建立预览 / 导出共用 `buildBoardRenderPlan`
+- [x] 建立 `src/core/image/exportImage.ts`
+- [x] 支持单张当前画板导出 PNG / JPG
 
 ### 本轮验证记录
 
@@ -64,18 +83,25 @@
 - [x] 0.1.3 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.4 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.5 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
+- [x] 0.1.6 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
+- [x] 0.1.7 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
+- [x] 0.1.8 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
+- [x] 0.1.9 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过，25 tests
 
 ### 第一阶段剩余目标
 
-- [ ] 增加确认弹窗：解析预览确认后再生成尺寸矩阵和多个画板
+- [x] 增加确认流程：解析结果经用户点击“应用尺寸”后再更新画板
 - [ ] UI 默认只显示自动识别结果和推荐控制，高级参数折叠
-- [ ] 支持导出时勾选是否添加 Logo / CPR
-- [ ] 支持导出时选择 Logo 语种和 CPR 语种
-- [ ] 建立 Canvas 导出模块 `src/core/image/exportImage.ts`
+- [x] 支持导出时通过当前品牌状态决定是否添加 Logo / CPR
+- [x] 支持导出时沿用当前 Logo 语种和 CPR 语种
+- [x] 建立 Canvas 导出模块 `src/core/image/exportImage.ts`
 - [ ] 支持 JPG / PNG 批量导出
 - [ ] 建立 ZIP 导出模块 `src/core/export/zipExport.ts`
 - [ ] 建立复核清单模块 `src/core/export/reviewReport.ts`
 - [ ] 支持 TXT / CSV 复核清单
+- [ ] 支持单画板品牌层覆盖和恢复自动规则
+- [ ] 支持将当前裁切 / 品牌设置批量套用到同版型画板
+- [ ] 支持删除 / 替换素材并在单项删除时释放 Object URL
 
 ### 暂不处理
 
@@ -89,14 +115,15 @@
 ### 已知风险 / 降级
 
 - CPR 颜色当前通过 CSS mask 进行单色预览，适合单色 CPR；如果 CPR SVG 本身是多色图形，单色预览会丢失原多色细节。
-- Logo / CPR 已使用 `renderBrandLayer` 统一计算预览位置；Canvas 导出尚未实现，0.1.4 需要直接复用同一套布局结果。
+- Logo / CPR 已使用 `buildBoardRenderPlan` 统一计算预览与单画板导出位置；批量导出仍未验证。
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
-- SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在 0.1.4 导出前继续收紧。
+- SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
+- Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。
 
-### 下一步建议给 Codex：0.1.6
+### 下一步建议给 Codex：0.1.10
 
-1. 建立 Canvas 导出基础：把素材裁切、Logo、CPR 安全绘制到 Canvas。
-2. 导出设置区增加是否添加 Logo / CPR、选择语种、选择 JPG / PNG。
-3. 先支持单张当前画板导出，再扩展批量导出。
-4. 继续补充 SVG 到 Canvas 的离线渲染验证。
-5. 后续可增加“将当前裁切 / Logo 样式套用到同版型画板”。
+1. 做批量导出抽屉，支持全量 / 选中画板导出。
+2. 接入 ZIP 打包与 TXT / CSV 复核清单。
+3. 增加导出前检查：空素材、未识别行、大小限制、品牌资源缺失。
+4. 增加删除 / 替换素材与单项 Object URL 回收。
+5. 考虑同版型批量套用裁切和品牌设置。

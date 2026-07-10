@@ -39,8 +39,14 @@ export type BrandAsset = {
 export type BrandLayerState = {
   logoEnabled: boolean;
   cprEnabled: boolean;
+  logoLanguage: BrandLanguage;
+  cprLanguage: BrandLanguage;
   selectedLogoId?: string;
   selectedCprId?: string;
+  logoAnchor: 'top-left' | 'top-right' | 'center';
+  cprAnchor: 'top-left' | 'top-right' | 'center';
+  logoSize: 'small' | 'standard' | 'large';
+  cprSize: 'small' | 'standard' | 'large';
   logoEffect: BrandEffectState;
   cprEffect: BrandEffectState;
 };
@@ -234,6 +240,15 @@ export const DEFAULT_BRAND_ASSETS: BrandAsset[] = [
     type: 'logo',
     name: '鸣潮 Logo 繁中 / 日文',
     language: 'zh-TW',
+    sourceUrl: '/brand-logos/wuthering-waves/ww-zh-tw-ja.png',
+    width: 1332,
+    height: 872
+  }),
+  createRasterBrandAsset({
+    id: 'preset_ww_ja',
+    type: 'logo',
+    name: '鸣潮 Logo 日文',
+    language: 'ja-JP',
     sourceUrl: '/brand-logos/wuthering-waves/ww-zh-tw-ja.png',
     width: 1332,
     height: 872
