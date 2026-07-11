@@ -71,6 +71,8 @@
 - [x] 尺寸矩阵更新和自定义套组删除使用应用内确认弹窗
 - [x] 修复套组名称重复尺寸文本时一行生成多个画板的问题
 - [x] 聚焦弹窗在 900px 以下改为上下布局，画布和控件不再重叠
+- [x] 删除旧 HTML 备份、视频调试记录、过时 Cursor 规则与本地生成缓存
+- [x] 本地项目目录由历史名称改为 `brand-material-workbench`
 - [x] 品牌高级样式折叠，主交互优先展示语种、启用、位置、大小
 - [x] 建立预览 / 导出共用 `buildBoardRenderPlan`
 - [x] 建立 `src/core/image/exportImage.ts`
