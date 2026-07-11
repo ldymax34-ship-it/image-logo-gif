@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildOutputFileName,
   buildBoardRenderPlan,
+  createBatchExportItems,
   classifyAspect,
   computeCprLayout,
   computeFitRect,
@@ -10,6 +11,8 @@ import {
   DEFAULT_LOGO_EFFECT,
   createBrandAsset,
   createRasterBrandAsset,
+  estimateExportBytes,
+  formatMegabytes,
   createInitialCropState,
   getBoardPreviewKey,
   parseSpecText,
@@ -228,6 +231,31 @@ describe('core 0.1.x foundation', () => {
     expect(plan.canvas).toEqual({ width: 300, height: 300 });
     expect(plan.image.rect.width).toBe(600);
     expect(plan.layers).toHaveLength(1);
+  });
+
+  it('creates one batch export item for every asset and board combination', () => {
+    const items = createBatchExportItems(
+      [
+        { id: 'asset_a', fileName: 'a.jpg', objectUrl: 'blob:a', width: 1000, height: 1000, fileSize: 500000, mimeType: 'image/jpeg' },
+        { id: 'asset_b', fileName: 'b.png', objectUrl: 'blob:b', width: 1000, height: 1000, fileSize: 900000, mimeType: 'image/png' }
+      ],
+      [
+        { id: 'spec_a', name: 'square', width: 1080, height: 1080, format: 'png' },
+        { id: 'spec_b', name: 'wide', width: 1920, height: 1080, format: 'jpg' }
+      ]
+    );
+    expect(items).toHaveLength(4);
+    expect(new Set(items.map((item) => item.id)).size).toBe(4);
+  });
+
+  it('estimates export sizes in bytes and formats them as MB', () => {
+    const asset = { id: 'asset', fileName: 'kv.jpg', objectUrl: 'blob:kv', width: 2000, height: 1000, fileSize: 1200000, mimeType: 'image/jpeg' };
+    const spec = { id: 'spec', name: 'wide', width: 1920, height: 1080, format: 'jpg' as const };
+    const jpgBytes = estimateExportBytes(asset, spec, 'jpg', 0.8);
+    const pngBytes = estimateExportBytes(asset, spec, 'png', 0.8);
+    expect(jpgBytes).toBeGreaterThan(0);
+    expect(pngBytes).toBeGreaterThan(jpgBytes);
+    expect(formatMegabytes(1024 * 1024)).toBe('1.00 MB');
   });
 
   it('creates raster brand assets with reusable dimensions and effect defaults', () => {

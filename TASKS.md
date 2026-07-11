@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.9 直觉画板调整与交互确认
+## 当前版本：0.1.10 本地启停与 Photoshop 式批量导出
 
 ### 产品方向
 
@@ -77,6 +77,15 @@
 - [x] 建立预览 / 导出共用 `buildBoardRenderPlan`
 - [x] 建立 `src/core/image/exportImage.ts`
 - [x] 支持单张当前画板导出 PNG / JPG
+- [x] 支持 `npm start` 启动、`npm stop` 停止，并记录受控 PID
+- [x] 支持 macOS 双击“启动工作台 / 关闭工作台”脚本
+- [x] 提供 Windows 启动 / 停止 `.cmd` 脚本
+- [x] 新增 Photoshop 式三栏批量导出窗口
+- [x] 左侧逐文件显示名称、尺寸、预计 MB 与超限风险
+- [x] 中间展示当前选中画面及 Logo / CPR 效果
+- [x] 右侧统一设置 PNG / JPG、JPG 质量、Logo / CPR 开关和语种
+- [x] 支持勾选部分或全部画板批量导出
+- [x] 优先选择文件夹逐张写入，不打包
 
 ### 本轮验证记录
 
@@ -97,8 +106,7 @@
 - [x] 支持导出时通过当前品牌状态决定是否添加 Logo / CPR
 - [x] 支持导出时沿用当前 Logo 语种和 CPR 语种
 - [x] 建立 Canvas 导出模块 `src/core/image/exportImage.ts`
-- [ ] 支持 JPG / PNG 批量导出
-- [ ] 建立 ZIP 导出模块 `src/core/export/zipExport.ts`
+- [x] 支持 JPG / PNG 批量导出
 - [ ] 建立复核清单模块 `src/core/export/reviewReport.ts`
 - [ ] 支持 TXT / CSV 复核清单
 - [ ] 支持单画板品牌层覆盖和恢复自动规则
@@ -117,15 +125,13 @@
 ### 已知风险 / 降级
 
 - CPR 颜色当前通过 CSS mask 进行单色预览，适合单色 CPR；如果 CPR SVG 本身是多色图形，单色预览会丢失原多色细节。
-- Logo / CPR 已使用 `buildBoardRenderPlan` 统一计算预览与单画板导出位置；批量导出仍未验证。
+- Logo / CPR 已使用 `buildBoardRenderPlan` 统一计算预览、单画板和批量导出位置。
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
 - Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。
 
-### 下一步建议给 Codex：0.1.10
+### 下一步建议给 Codex：0.1.11
 
-1. 做批量导出抽屉，支持全量 / 选中画板导出。
-2. 接入 ZIP 打包与 TXT / CSV 复核清单。
-3. 增加导出前检查：空素材、未识别行、大小限制、品牌资源缺失。
-4. 增加删除 / 替换素材与单项 Object URL 回收。
-5. 考虑同版型批量套用裁切和品牌设置。
+1. 用真实物料校准 PNG / JPG 预估大小和超限提示。
+2. 增加删除 / 替换素材与单项 Object URL 回收。
+3. 考虑同版型批量套用裁切和品牌设置。

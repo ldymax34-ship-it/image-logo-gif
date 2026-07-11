@@ -3,6 +3,7 @@ import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
   buildBoardRenderPlan,
+  createBatchExportItems,
   DEFAULT_BRAND_ASSETS,
   DEFAULT_CPR_EFFECT,
   DEFAULT_LOGO_EFFECT,
@@ -14,7 +15,9 @@ import {
   createInitialCropState,
   createMaterialAsset,
   exportBoardImage,
+  estimateExportBytes,
   formatFileSize,
+  formatMegabytes,
   getBrandAssetUrl,
   getBoardPreviewKey,
   getBrandLanguageLabel,
@@ -34,13 +37,15 @@ import {
   type FitMode,
   type MaterialAsset,
   type MaterialSpec,
+  type MaterialFormat,
   type PresetTemplate,
   type WorkbenchState
 } from '../core';
+import { chooseOutputTarget, downloadBlobFile, saveBlobToDirectory } from '../platform/fileSystem';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
-  cprEnabled: true,
+  cprEnabled: false,
   logoLanguage: 'zh-CN',
   cprLanguage: 'zh-CN',
   logoAnchor: 'top-right',
@@ -117,15 +122,6 @@ function mergeSpecText(currentText: string, presetText: string): string {
   if (!normalizedCurrent) return normalizedPreset;
   if (!normalizedPreset) return normalizedCurrent;
   return `${normalizedCurrent}\n${normalizedPreset}`;
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = fileName;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 function buildDropShadowFilter(effect: BrandEffectState, scale = 1): string | undefined {
@@ -631,6 +627,314 @@ function ConfirmationDialog({
   );
 }
 
+function BatchExportDialog({
+  assets,
+  specs,
+  previewStates,
+  brandAssets,
+  brandLayer,
+  onClose,
+  onComplete
+}: {
+  assets: MaterialAsset[];
+  specs: MaterialSpec[];
+  previewStates: Record<string, BoardPreviewState>;
+  brandAssets: BrandAsset[];
+  brandLayer: BrandLayerState;
+  onClose: () => void;
+  onComplete: (message: string) => void;
+}) {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const items = useMemo(() => createBatchExportItems(assets, specs), [assets, specs]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(items.map((item) => item.id)));
+  const [activeItemId, setActiveItemId] = useState(items[0]?.id);
+  const [format, setFormat] = useState<MaterialFormat>('png');
+  const [quality, setQuality] = useState(0.9);
+  const [batchName, setBatchName] = useState('material');
+  const [logoEnabled, setLogoEnabled] = useState(brandLayer.logoEnabled);
+  const [cprEnabled, setCprEnabled] = useState(brandLayer.cprEnabled);
+  const [logoLanguage, setLogoLanguage] = useState(brandLayer.logoLanguage);
+  const [cprLanguage, setCprLanguage] = useState(brandLayer.cprLanguage);
+  const [exporting, setExporting] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const activeItem = items.find((item) => item.id === activeItemId) ?? items[0];
+  const activeAsset = assets.find((asset) => asset.id === activeItem?.assetId);
+  const activeSpec = specs.find((spec) => spec.id === activeItem?.specId);
+  const activePreviewState = activeAsset && activeSpec
+    ? previewStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]
+    : undefined;
+  const selectedLogoId = resolvePreferredBrandAssetId(brandAssets, 'logo', logoLanguage, brandLayer.selectedLogoId);
+  const selectedCprId = resolvePreferredBrandAssetId(brandAssets, 'cpr', cprLanguage, brandLayer.selectedCprId);
+  const exportLogo = brandAssets.find((asset) => asset.id === selectedLogoId);
+  const exportCpr = brandAssets.find((asset) => asset.id === selectedCprId);
+  const exportBrandLayer: BrandLayerState = {
+    ...brandLayer,
+    logoEnabled,
+    cprEnabled,
+    logoLanguage,
+    cprLanguage,
+    selectedLogoId,
+    selectedCprId
+  };
+  const missingBrandResource = (logoEnabled && !exportLogo) || (cprEnabled && !exportCpr);
+
+  const rows = items.map((item, index) => {
+    const asset = assets.find((candidate) => candidate.id === item.assetId);
+    const spec = specs.find((candidate) => candidate.id === item.specId);
+    if (!asset || !spec) return undefined;
+    const estimatedBytes = estimateExportBytes(asset, spec, format, quality);
+    const fileName = buildOutputFileName(
+      { ...spec, format },
+      {
+        batchName,
+        sourceName: asset.fileName.replace(/\.[^.]+$/g, ''),
+        language: logoEnabled ? logoLanguage : undefined,
+        index
+      }
+    );
+    return { item, asset, spec, estimatedBytes, fileName };
+  }).filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  const selectedRows = rows.filter((row) => selectedIds.has(row.item.id));
+  const selectedBytes = selectedRows.reduce((total, row) => total + row.estimatedBytes, 0);
+  const allSelected = rows.length > 0 && selectedRows.length === rows.length;
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape' && !exporting) onClose();
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [exporting, onClose]);
+
+  function toggleItem(itemId: string) {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(rows.map((row) => row.item.id)));
+  }
+
+  async function exportSelectedFiles() {
+    if (!selectedRows.length || exporting) return;
+    setErrorMessage('');
+    const outputTarget = await chooseOutputTarget();
+    if (outputTarget.kind === 'cancelled') return;
+
+    setExporting(true);
+    setProgress({ current: 0, total: selectedRows.length });
+    const failures: string[] = [];
+    let completed = 0;
+
+    for (const row of selectedRows) {
+      const previewState = previewStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
+      if (!previewState) {
+        failures.push(`${row.fileName}：缺少画板预览状态`);
+        continue;
+      }
+      try {
+        const blob = await exportBoardImage({
+          asset: row.asset,
+          spec: row.spec,
+          previewState,
+          brandLayer: exportBrandLayer,
+          logoAsset: exportLogo,
+          cprAsset: exportCpr,
+          format,
+          quality
+        });
+        if (outputTarget.kind === 'directory') {
+          await saveBlobToDirectory(outputTarget.handle, row.fileName, blob);
+        } else {
+          downloadBlobFile(blob, row.fileName);
+          await new Promise((resolve) => setTimeout(resolve, 180));
+        }
+        completed += 1;
+      } catch (error) {
+        failures.push(`${row.fileName}：${error instanceof Error ? error.message : '导出失败'}`);
+      }
+      setProgress({ current: completed + failures.length, total: selectedRows.length });
+    }
+
+    setExporting(false);
+    if (failures.length) {
+      setErrorMessage(`已导出 ${completed} 个文件，${failures.length} 个失败。${failures[0]}`);
+      return;
+    }
+    onComplete(`已导出 ${completed} 个文件`);
+    onClose();
+  }
+
+  const previewScale = activeSpec
+    ? Math.min(720 / activeSpec.width, 560 / activeSpec.height, 1)
+    : 1;
+
+  return (
+    <div className="dialog-backdrop export-backdrop" role="presentation">
+      <section ref={dialogRef} className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+        <div className="dialog-header export-dialog-header">
+          <div>
+            <span className="dialog-kicker">批量导出</span>
+            <h2 id="export-dialog-title">导出文件</h2>
+            <small>逐张检查并直接写入文件夹，不生成压缩包</small>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} disabled={exporting} aria-label="关闭批量导出" title="关闭">×</button>
+        </div>
+
+        <div className="export-dialog-body">
+          <aside className="export-file-panel">
+            <div className="export-column-heading">
+              <label className="toggle">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                全选
+              </label>
+              <span>{selectedRows.length} / {rows.length}</span>
+            </div>
+            <div className="export-file-list">
+              {rows.map((row) => {
+                const overLimit = Boolean(row.spec.maxSizeKb && row.estimatedBytes > row.spec.maxSizeKb * 1024);
+                return (
+                  <div key={row.item.id} className={`export-file-row ${row.item.id === activeItem?.id ? 'active' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(row.item.id)}
+                      onChange={() => toggleItem(row.item.id)}
+                      aria-label={`选择 ${row.fileName}`}
+                    />
+                    <button type="button" onClick={() => setActiveItemId(row.item.id)}>
+                      <strong>{row.fileName}</strong>
+                      <span>{row.spec.width} x {row.spec.height}</span>
+                      <small className={overLimit ? 'size-warning' : ''}>
+                        预计 {formatMegabytes(row.estimatedBytes)}{overLimit ? ' · 可能超限' : ''}
+                      </small>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+
+          <section className="export-preview-panel">
+            <div className="export-column-heading">
+              <span>预览</span>
+              {activeSpec ? <span>{activeSpec.width} x {activeSpec.height}</span> : null}
+            </div>
+            <div className="export-preview-stage">
+              {activeSpec ? (
+                <BoardCanvas
+                  asset={activeAsset}
+                  spec={activeSpec}
+                  previewState={activePreviewState}
+                  logoAsset={exportLogo}
+                  cprAsset={exportCpr}
+                  brandLayer={exportBrandLayer}
+                  scale={previewScale}
+                />
+              ) : (
+                <div className="empty-state">没有可导出的画板</div>
+              )}
+            </div>
+            {activeAsset && activeSpec ? (
+              <div className="export-preview-meta">
+                <span>{activeAsset.fileName}</span>
+                <span>{activeSpec.name}</span>
+              </div>
+            ) : null}
+          </section>
+
+          <aside className="export-settings-panel">
+            <div className="export-column-heading">
+              <span>导出设置</span>
+            </div>
+            <label className="export-field">
+              <span>批次名</span>
+              <input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="material" />
+            </label>
+            <div className="export-field">
+              <span>格式</span>
+              <div className="segmented-control export-format-control">
+                <button type="button" className={format === 'png' ? 'active' : ''} onClick={() => setFormat('png')}>PNG</button>
+                <button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => setFormat('jpg')}>JPG</button>
+              </div>
+            </div>
+            {format === 'jpg' ? (
+              <label className="export-field">
+                <span>JPG 质量 {Math.round(quality * 100)}%</span>
+                <input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} />
+              </label>
+            ) : null}
+            <div className="export-setting-group">
+              <label className="toggle">
+                <input type="checkbox" checked={logoEnabled} onChange={(event) => setLogoEnabled(event.target.checked)} />
+                添加 Logo
+              </label>
+              <select value={logoLanguage} onChange={(event) => setLogoLanguage(event.target.value as BrandLanguage)} disabled={!logoEnabled}>
+                {BRAND_LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div className="export-setting-group">
+              <label className="toggle">
+                <input type="checkbox" checked={cprEnabled} onChange={(event) => setCprEnabled(event.target.checked)} />
+                添加 CPR
+              </label>
+              <select value={cprLanguage} onChange={(event) => setCprLanguage(event.target.value as BrandLanguage)} disabled={!cprEnabled}>
+                {BRAND_LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div className="export-summary-box">
+              <span>已选 {selectedRows.length} 个文件</span>
+              <strong>预计 {formatMegabytes(selectedBytes)}</strong>
+              <small>实际大小会受画面内容和压缩率影响</small>
+              {logoEnabled && !exportLogo ? <small className="size-warning">当前 Logo 语种没有可用资源</small> : null}
+              {cprEnabled && !exportCpr ? <small className="size-warning">当前 CPR 语种没有可用资源</small> : null}
+            </div>
+            <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
+          </aside>
+        </div>
+
+        <div className="dialog-footer export-footer">
+          <div>
+            {exporting ? <span>正在导出 {progress.current} / {progress.total}</span> : <span>每张图独立输出</span>}
+            {errorMessage ? <strong className="export-error">{errorMessage}</strong> : null}
+          </div>
+          <div className="dialog-actions">
+            <button type="button" onClick={onClose} disabled={exporting}>取消</button>
+            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting || missingBrandResource}>
+              {exporting ? '正在导出...' : `导出 ${selectedRows.length} 个文件`}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
@@ -651,8 +955,7 @@ export function App() {
   const [focusSpecId, setFocusSpecId] = useState<string | undefined>();
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | undefined>();
   const [newPresetName, setNewPresetName] = useState('');
-  const [exporting, setExporting] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'jpg' | 'png'>('png');
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [message, setMessage] = useState<string>('');
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
@@ -660,8 +963,6 @@ export function App() {
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
   const focusSpec = specs.find((spec) => spec.id === focusSpecId);
-  const previewKey = selectedAsset && selectedSpec ? getBoardPreviewKey(selectedAsset.id, selectedSpec.id) : undefined;
-  const previewState = previewKey ? previewStates[previewKey] : undefined;
   const focusPreviewKey = selectedAsset && focusSpec ? getBoardPreviewKey(selectedAsset.id, focusSpec.id) : undefined;
   const focusPreviewState = focusPreviewKey ? previewStates[focusPreviewKey] : undefined;
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
@@ -689,12 +990,6 @@ export function App() {
       setSelectedAssetId(assets[0]?.id);
     }
   }, [assets, selectedAssetId]);
-
-  useEffect(() => {
-    if (selectedSpec?.format) {
-      setExportFormat(selectedSpec.format);
-    }
-  }, [selectedSpec?.id, selectedSpec?.format]);
 
   useEffect(() => {
     setPreviewStates((previous) => ensurePreviewStates(previous, assets, specs));
@@ -871,45 +1166,11 @@ export function App() {
     }
   }
 
-  async function exportCurrentBoard() {
-    if (!selectedAsset || !selectedSpec || !previewState) {
-      setMessage('先选择素材和画板，再导出');
-      return;
-    }
-    setExporting(true);
-    setMessage('正在导出当前画板...');
-    try {
-      const blob = await exportBoardImage({
-        asset: selectedAsset,
-        spec: selectedSpec,
-        previewState,
-        brandLayer,
-        logoAsset: selectedLogo,
-        cprAsset: selectedCpr,
-        format: exportFormat
-      });
-      const fileName = buildOutputFileName(
-        { ...selectedSpec, format: exportFormat },
-        {
-          batchName: 'material',
-          sourceName: selectedAsset.fileName.replace(/\.[^.]+$/g, ''),
-          language: brandLayer.logoLanguage
-        }
-      );
-      downloadBlob(blob, fileName);
-      setMessage(`已导出 ${fileName}`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '导出失败');
-    } finally {
-      setExporting(false);
-    }
-  }
-
   return (
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Brand Material Workbench · 0.1.9</p>
+          <p className="eyebrow">Brand Material Workbench · 0.1.10</p>
           <h1>品宣物料工作台</h1>
         </div>
         <div className="topbar-status">
@@ -1120,12 +1381,8 @@ export function App() {
               <small>单击选择画板，双击进入调整</small>
             </div>
             <div className="toolbar-line panel-actions">
-              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value as 'jpg' | 'png')}>
-                <option value="png">PNG</option>
-                <option value="jpg">JPG</option>
-              </select>
-              <button type="button" onClick={() => void exportCurrentBoard()} disabled={!selectedAsset || !selectedSpec || exporting}>
-                {exporting ? '导出中...' : '导出当前画板'}
+              <button type="button" className="primary-button" onClick={() => setExportDialogOpen(true)} disabled={!assets.length || !specs.length}>
+                批量导出
               </button>
             </div>
           </div>
@@ -1289,6 +1546,17 @@ export function App() {
           destructive={pendingConfirmation.type === 'delete-preset'}
           onCancel={() => setPendingConfirmation(undefined)}
           onConfirm={confirmPendingAction}
+        />
+      )}
+      {exportDialogOpen && (
+        <BatchExportDialog
+          assets={assets}
+          specs={specs}
+          previewStates={previewStates}
+          brandAssets={brandAssets}
+          brandLayer={brandLayer}
+          onClose={() => setExportDialogOpen(false)}
+          onComplete={setMessage}
         />
       )}
     </main>

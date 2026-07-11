@@ -45,7 +45,7 @@ Codex 是本仓库开发执行的总控。目标是把项目推进为稳定、�
 ↓
 批量导出 JPG / PNG
 ↓
-生成 ZIP 与复核清单
+直接写入输出文件夹
 ```
 
 跨平台桌面应用是中期目标：0.1.x 先完成 Vite + React + TypeScript Web 工作台闭环，0.2.x 再接 Tauri 做 macOS / Windows 双平台桌面化。
@@ -74,7 +74,7 @@ src/
       specParser.ts
       presetTemplates.ts
     export/
-      zipExport.ts
+      batchExport.ts
       reviewReport.ts
       fileNaming.ts
     storage/
@@ -95,7 +95,6 @@ src/
 - React
 - TypeScript
 - Ant Design / Arco Design / 原生 CSS 均可，但不要堆 Tailwind 内联类
-- JSZip 用于 ZIP 导出
 - 浏览器 Canvas 用于图片裁切和导出
 - 0.2.x 再接 Tauri 桌面化
 
@@ -229,8 +228,8 @@ Logo 和 CPR 第一阶段按 SVG 资源处理，优先保证跨尺寸、跨平�
 10. 支持预览时切换不同语种 Logo / CPR 效果。
 11. 支持导出时勾选是否添加 Logo / CPR，并选择对应语种版本。
 12. 支持批量导出 JPG / PNG。
-13. 支持 ZIP 打包。
-14. 支持 TXT / CSV 复核清单。
+13. 支持直接选择输出文件夹并逐张写入，不打包。
+14. 导出界面必须展示文件名、尺寸、预计 MB 和超限风险。
 
 ## 不做的事
 
@@ -279,4 +278,4 @@ Logo 和 CPR 第一阶段按 SVG 资源处理，优先保证跨尺寸、跨平�
 3. 无新增运行时网络请求。
 4. 预览和导出使用同一套 layout / renderBrandLayer 计算函数。
 5. 粘贴尺寸片段可以生成正确画板数量。
-6. ZIP 导出文件名、尺寸、格式、体积符合复核清单。
+6. 批量导出文件名、尺寸、格式与界面清单一致。

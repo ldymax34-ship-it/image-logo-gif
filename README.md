@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.9，使用 Vite + React + TypeScript 搭建模块化前端应用。
+当前项目已推进到 0.1.10，使用 Vite + React + TypeScript 搭建模块化前端应用。
 
 当前已建立：
 
@@ -28,14 +28,36 @@
 - 尺寸更新和删除套组使用应用内确认弹窗
 - 内置套组中重复尺寸文本不再重复生成画板
 - 当前画板单张导出 PNG / JPG
+- Photoshop 式批量导出总览：文件列表、大图预览、格式与品牌设置
+- 直接选择文件夹逐张导出，不生成压缩包
+- `npm start` / `npm stop` 以及 macOS / Windows 双击启停脚本
 - `platform/` 抽象层占位
 
 待继续接入：
 
-- 批量导出
-- ZIP 打包
-- TXT / CSV 复核清单
 - 单画板品牌层覆盖和批量套用
+- 更准确的文件体积校验和超限提示
+
+## 启动与停止
+
+macOS 用户可以直接双击：
+
+- `启动工作台.command`
+- `关闭工作台.command`
+
+Windows 用户可以直接双击：
+
+- `start-workbench.cmd`
+- `stop-workbench.cmd`
+
+开发者也可以使用：
+
+```bash
+npm start
+npm stop
+```
+
+首次启动如果缺少依赖，启动脚本会自动执行本地安装。服务固定运行在 `http://127.0.0.1:5173/`。
 
 ## 新工具目标
 
@@ -54,7 +76,7 @@
 ↓
 批量导出 JPG / PNG
 ↓
-生成 ZIP 与复核清单
+直接写入输出文件夹
 ```
 
 第一阶段只做图片，不做视频 / GIF。
@@ -167,10 +189,10 @@ Logo 和 CPR 第一阶段都按 SVG 资源处理，用于保证跨尺寸、跨�
 支持：
 
 - JPG / PNG
-- ZIP 打包
+- 直接选择输出文件夹
 - 文件大小检查
 - 命名规则
-- TXT / CSV 复核清单
+- 导出前清单总览
 - UTF-8
 - CSV 可选 BOM
 - 中文文件名
@@ -208,7 +230,7 @@ src/
       specParser.ts
       presetTemplates.ts
     export/
-      zipExport.ts
+      batchExport.ts
       reviewReport.ts
       fileNaming.ts
     storage/

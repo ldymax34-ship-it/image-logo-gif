@@ -201,13 +201,14 @@ async function drawBrandLayer(context: CanvasRenderingContext2D, layer: BoardRen
   }
 }
 
-export async function renderBoardToCanvas(input: BoardRenderInput): Promise<HTMLCanvasElement> {
+export async function renderBoardToCanvas(input: BoardRenderInput & { format?: MaterialFormat }): Promise<HTMLCanvasElement> {
   const plan = buildBoardRenderPlan(input);
   const canvas = createCanvas(plan.canvas.width, plan.canvas.height);
   const context = canvas.getContext('2d');
   if (!context) throw new Error('无法创建导出画布');
 
-  if (input.spec.format === 'jpg') {
+  const outputFormat = input.format ?? input.spec.format;
+  if (outputFormat === 'jpg') {
     context.fillStyle = '#000000';
     context.fillRect(0, 0, canvas.width, canvas.height);
   } else {
