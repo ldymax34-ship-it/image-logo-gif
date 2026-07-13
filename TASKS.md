@@ -109,7 +109,7 @@
 - [x] 接入 Tauri 2 桌面壳，保留浏览器开发模式
 - [x] Tauri 模式使用系统原生目录选择器，并在用户选择的目录内逐张写入导出文件
 - [x] Tauri 导出遇到同名文件时自动追加 `_2`、`_3`，不静默覆盖
-- [x] 新增 Windows x64、macOS Apple Silicon、macOS Intel 的 GitHub Actions Preview 构建矩阵
+- [x] 新增 Windows x64、macOS Apple Silicon 的 GitHub Actions Preview 构建矩阵
 - [x] Windows NSIS Preview 使用离线 WebView2；macOS Preview 使用 ad-hoc 签名
 
 ### 本轮验证记录
@@ -158,7 +158,7 @@
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
 - Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。
-- macOS Apple Silicon 本机构建与实测、Windows x64 实机导出、macOS Intel 实机验证需在 Preview Release 前分别记录；CI 构建成功不等同于实机回归。
+- macOS Apple Silicon 本机构建与实测、Windows x64 实机导出需在 Preview Release 前分别记录；CI 构建成功不等同于实机回归。
 
 ### 下一步建议给 Codex
 

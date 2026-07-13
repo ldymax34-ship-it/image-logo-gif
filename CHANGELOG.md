@@ -9,7 +9,7 @@
 1. [新需求-大] 接入 Tauri 2 桌面壳，使用系统标题栏、1440×900 默认窗口和 1100×720 最小窗口；保留 Vite 浏览器开发模式。
 2. [功能调整-中] `src/platform/` 统一识别浏览器与 Tauri 环境：Tauri 使用原生目录选择器与最小范围文件写入，浏览器继续使用 File System Access API 或下载回退。
 3. [问题修复-中] 桌面导出遇到同名文件自动追加 `_2`、`_3`，避免静默覆盖已存在文件。
-4. [维护-大] 新增 Windows x64（NSIS / 离线 WebView2）、macOS Apple Silicon、macOS Intel 的 GitHub Actions Preview 构建矩阵、产物重命名、校验文件和预发布流程。
+4. [维护-大] 新增 Windows x64（NSIS / 离线 WebView2）和 macOS Apple Silicon 的 GitHub Actions Preview 构建矩阵、产物重命名、校验文件和预发布流程。
 5. [维护-小] 使用无品牌争议的临时应用图标；Preview 阶段 macOS 使用 ad-hoc 签名，Windows 不配置正式代码签名。
 
 验证方式：
@@ -21,7 +21,7 @@
 
 验证边界：
 
-- Windows x64 与 macOS Intel 由 GitHub Actions 原生 Runner 构建；Windows x64 和 macOS Apple Silicon 的真实导出回归需在 Release 前记录，macOS Intel 无实机时必须标记为未实机验证。
+- Windows x64 由 GitHub Actions 原生 Runner 构建；Windows x64 和 macOS Apple Silicon 的真实导出回归需在 Release 前记录。
 
 ## 0.1.16
 

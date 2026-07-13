@@ -110,13 +110,12 @@ npm run package:preview
 
 ### 平台产物
 
-GitHub Actions 在 Preview tag（例如 `v0.1.16-preview.1`）上构建：
+GitHub Actions 在 Preview tag（例如 `v0.1.16-preview.2`）上构建：
 
 - Windows 10/11 x64：NSIS Setup EXE，内置离线 WebView2。
 - macOS Apple Silicon：arm64 DMG 与 App ZIP。
-- macOS Intel：x64 DMG 与 App ZIP。
 
-Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macOS 首次启动可能要求在“系统设置 → 隐私与安全性”中手动允许。不要关闭系统安全机制或运行绕过脚本。
+Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macOS Apple Silicon 首次启动可能要求在“系统设置 → 隐私与安全性”中手动允许。不要关闭系统安全机制或运行绕过脚本。
 
 ## UI 方向
 
