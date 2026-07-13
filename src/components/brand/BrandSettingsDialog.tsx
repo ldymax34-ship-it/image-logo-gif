@@ -7,7 +7,8 @@ import {
   type BrandPlacement,
   type BrandSettingsV1,
   type BrandColorMode,
-  type BrandSize
+  type BrandSize,
+  type CprPlacement
 } from '../../core';
 
 const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original'>; label: string }> = [
@@ -255,7 +256,22 @@ export function BrandSettingsDialog({
 
           <div className="settings-group cpr-info">
             <h3>固定 CPR 默认</h3>
-            <p className="dialog-help">使用内置正式 SVG 资产，尺寸和底部位置由品牌网格固定计算。</p>
+            <label className="settings-field">
+              <span>默认位置</span>
+              <select value={draft.defaultCprPlacement} onChange={(event) => patch({ defaultCprPlacement: event.target.value as CprPlacement })}>
+                <option value="bottom-left">左下</option>
+                <option value="bottom-center">底部居中</option>
+                <option value="bottom-right">右下</option>
+              </select>
+            </label>
+            <label className="settings-field">
+              <span>默认颜色</span>
+              <select value={draft.defaultCprColorMode} onChange={(event) => patch({ defaultCprColorMode: event.target.value as BrandColorMode })}>
+                <option value="white">白色</option>
+                <option value="black">黑色</option>
+                <option value="original">原始色</option>
+              </select>
+            </label>
             <small className="cpr-sample">不提供文案、字体、字号、字重或独立坐标编辑。</small>
           </div>
         </div>

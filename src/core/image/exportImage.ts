@@ -1,4 +1,4 @@
-import { buildBrandRenderPlan, DEFAULT_CPR_EFFECT, getBrandAssetUrl, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
+import { buildBrandRenderPlan, DEFAULT_CPR_EFFECT, getBrandAssetUrl, resolveCprState, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
 import { renderBrandLayer } from '../layout';
 import { computeCropTransform, type BoardPreviewState } from './crop';
 import type { MaterialAsset } from './imageMeta';
@@ -70,7 +70,10 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
       {
         companyLogo: input.companyLogoAsset,
         gameLogo: input.gameLogoAsset ?? input.logoAsset,
-        cprEnabled: input.brandLayer.cprEnabled && Boolean(input.cprAsset),
+        cpr: {
+          ...resolveCprState(input.brandLayer),
+          enabled: input.brandLayer.cprEnabled && Boolean(input.cprAsset)
+        },
         effect: groupEffect
       }
     );
@@ -93,11 +96,7 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
             asset: input.cprAsset,
             rect: grouped.cpr.rect,
             zIndex: 30,
-            effect: {
-              ...DEFAULT_CPR_EFFECT,
-              colorEnabled: brandGroup.colorMode !== 'original',
-              color: groupColor
-            }
+            effect: grouped.cpr.effect
           }
         : undefined
     ].filter((layer): layer is BoardRenderLayer => Boolean(layer));

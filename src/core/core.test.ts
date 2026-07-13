@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, snapLogoGroupPosition
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_CPR_STATE, snapLogoGroupPosition
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -102,14 +102,14 @@ describe('core 0.1.x foundation', () => {
     const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
       companyLogo: createRasterBrandAsset({ id: 'company', type: 'logo', name: 'Company', language: 'custom', sourceUrl: '/company.png', width: 4, height: 1 }),
       gameLogo: createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 }),
-      cprEnabled: true
+      cpr: { ...DEFAULT_CPR_STATE, enabled: true, placement: 'bottom-left' }
     });
     expect(plan.logoItems).toHaveLength(2);
     expect((plan.cpr?.rect.y ?? 0) + (plan.cpr?.rect.height ?? 0)).toBe(1020);
     expect(plan.cpr?.rect.x).toBe(60);
   });
 
-  it('keeps CPR on the last explicit alignment when the logo group is custom', () => {
+  it('keeps CPR independent from a custom logo position', () => {
     const group = {
       ...createDefaultLogoGroup('zh-CN'),
       placement: 'custom' as const,
@@ -118,10 +118,23 @@ describe('core 0.1.x foundation', () => {
     };
     const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
       gameLogo: createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 }),
-      cprEnabled: true
+      cpr: { ...DEFAULT_CPR_STATE, enabled: true, placement: 'bottom-right' }
     });
     expect(plan.logoGroupRect?.x).toBe(640);
-    expect(plan.cpr?.rect.x).toBe(60);
+    expect((plan.cpr?.rect.x ?? 0) + (plan.cpr?.rect.width ?? 0)).toBe(1860);
+  });
+
+  it('supports all fixed CPR positions and independent effects', () => {
+    const group = createDefaultLogoGroup('zh-CN');
+    const gameLogo = createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 });
+    const plans = (['bottom-left', 'bottom-center', 'bottom-right'] as const).map((placement) => buildBrandRenderPlan(
+      { width: 1920, height: 1080 },
+      group,
+      { gameLogo, cpr: { ...DEFAULT_CPR_STATE, enabled: true, placement, colorMode: 'black', effect: { ...DEFAULT_CPR_STATE.effect, shadowEnabled: true } } }
+    ));
+    expect(plans.map((plan) => plan.cpr?.rect.x)).toEqual([60, 795, 1530]);
+    expect(plans[0].cpr?.effect).toMatchObject({ colorEnabled: true, color: '#000000', shadowEnabled: true });
+    expect(DEFAULT_CPR_STATE.effect).toMatchObject({ strokeEnabled: false, glowEnabled: false, shadowEnabled: false });
   });
 
   it('snaps a dragged logo group to brand anchors in canvas coordinates', () => {

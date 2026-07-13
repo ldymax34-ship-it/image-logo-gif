@@ -6,6 +6,19 @@ export type BrandPlacement = 'corner-left' | 'center' | 'corner-right' | 'custom
 export type BrandColorMode = 'white' | 'black' | 'original';
 export type BrandSize = 'small' | 'standard' | 'large';
 
+export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+/**
+ * CPR 独立状态：开关、位置、配色、效果。
+ * 预览 / 单导出 / 批导出共用同一份状态，不继承 Logo custom 坐标。
+ */
+export type CprState = {
+  enabled: boolean;
+  placement: CprPlacement;
+  colorMode: BrandColorMode;
+  effect: BrandEffectState;
+};
+
 export type BrandGrid = {
   columns: 32;
   unit: number;
@@ -35,6 +48,8 @@ export type BrandSettingsV1 = {
   defaultColorMode: Exclude<BrandColorMode, 'original'>;
   defaultSize: BrandSize;
   defaultPlacementByAspect: Record<AspectFamily, Exclude<BrandPlacement, 'custom'>>;
+  defaultCprPlacement: CprPlacement;
+  defaultCprColorMode: BrandColorMode;
   cprEnabled: boolean;
   gridVisible: boolean;
   safeAreaVisible: boolean;

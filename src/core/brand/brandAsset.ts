@@ -52,6 +52,8 @@ export type BrandLayerState = {
   /** Brand System fields. Legacy anchors stay readable for saved local state. */
   logoGroup?: import('./brandTypes').LogoGroupState;
   cprFollowsLogoGroup?: boolean;
+  /** Independent CPR state. Legacy fields remain readable for migration. */
+  cprState?: import('./brandTypes').CprState;
 };
 
 export const BRAND_LANGUAGE_OPTIONS: Array<{ value: BrandLanguage; label: string }> = [

@@ -1,6 +1,7 @@
 import { type PointerEvent } from 'react';
 import {
   buildBoardRenderPlan,
+  resolveCprState,
   type BrandAsset,
   type BrandLayerState,
   type BrandSettingsV1,
@@ -106,7 +107,8 @@ export function BoardCanvas({
               settings={brandSettings}
               group={logoGroup}
               companyLogo={overlayCompanyLogo}
-              gameLogo={overlayGameLogo}
+          gameLogo={overlayGameLogo}
+          cprState={resolveCprState(brandLayer)}
               scale={scale}
             />
           ) : null}

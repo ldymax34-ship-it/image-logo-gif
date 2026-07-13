@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.15 多素材总览与 Brand System 交互闭环
+## 当前版本：0.1.16 CPR 独立样式与品牌面板整理
 
 ### 产品方向
 
@@ -102,6 +102,10 @@
 - [x] Logo Group 支持画板内拖动、参考线吸附与自定义位置；CPR 仍固定在底部
 - [x] 支持把 Logo Group 状态应用到所有同版型画板，不覆盖图片裁切
 - [x] 品牌默认设置会应用到新画板，并通过版本化 localStorage 保存
+- [x] CPR 支持独立底部左 / 中 / 右位置，不继承 Logo Group 自定义坐标
+- [x] CPR 支持独立黑 / 白 / 原始色以及描边、阴影、外发光，默认全部效果关闭
+- [x] Logo 高级样式加入独立单项实时预览
+- [x] 品牌面板整理为 Logo、CPR、辅助工具三个扁平分组
 
 ### 本轮验证记录
 
@@ -117,6 +121,7 @@
 - [x] 0.1.11 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、桌面 / 900px 视口与无大面积 blur 检查；27 tests，桌面与 900px 均无横向溢出，运行时 backdrop-filter 为 0
 - [x] 0.1.12 品牌核心与固定 CPR SVG 验证：`npm run verify:core`、`npm test`、`npm run build` 通过；32 tests
 - [x] 0.1.15 多素材总览、深灰工作台、吸附、同版型应用与默认设置验证：`npm run verify:core`、`npm test`、`npm run build` 通过；35 tests；桌面与 900px 视口无横向溢出
+- [x] 0.1.16 CPR 独立样式、位置与品牌面板整理验证：`npm run verify:core`、`npm test`、`npm run build` 通过；36 tests
 
 ### 第一阶段剩余目标
 

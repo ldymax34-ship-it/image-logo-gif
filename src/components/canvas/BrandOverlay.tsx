@@ -1,4 +1,4 @@
-import { buildBrandRenderPlan, type BrandAsset, type BrandSettingsV1, type LogoGroupState } from '../../core';
+import { buildBrandRenderPlan, DEFAULT_CPR_STATE, type BrandAsset, type BrandSettingsV1, type CprState, type LogoGroupState } from '../../core';
 
 export type BrandOverlayOptions = {
   canvas: { width: number; height: number };
@@ -6,6 +6,7 @@ export type BrandOverlayOptions = {
   group: LogoGroupState;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
+  cprState?: CprState;
   scale: number;
 };
 
@@ -15,7 +16,7 @@ function positionToAnchor(placement: LogoGroupState['placement']): 'top-left' | 
   return 'center';
 }
 
-export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, scale }: BrandOverlayOptions) {
+export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, cprState, scale }: BrandOverlayOptions) {
   if (!settings.gridVisible && !settings.safeAreaVisible && !settings.guidesVisible) {
     return null;
   }
@@ -23,7 +24,7 @@ export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, s
   const plan = buildBrandRenderPlan(canvas, group, {
     companyLogo,
     gameLogo,
-    cprEnabled: settings.cprEnabled
+    cpr: cprState ?? { ...DEFAULT_CPR_STATE, enabled: settings.cprEnabled, placement: settings.defaultCprPlacement, colorMode: settings.defaultCprColorMode }
   });
 
   return (

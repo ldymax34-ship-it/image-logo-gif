@@ -14,6 +14,7 @@ import {
   clampCropState,
   computeFitScale,
   createBrandAssetFromFile,
+  createDefaultCprState,
   createDefaultLogoGroup,
   createInitialCropState,
   createMaterialAsset,
@@ -27,6 +28,7 @@ import {
   loadCustomPresetTemplates,
   panCropState,
   parseSpecText,
+  resolveCprState,
   saveBrandSettings,
   saveCustomPresetTemplates,
   serializePresetSpecs,
@@ -52,6 +54,7 @@ import {
   AssetSidebar,
   BoardOverview,
   BrandAssetList,
+  CprControls,
   BrandEffectControls,
   BrandGuideControls,
   BrandPanel,
@@ -59,6 +62,7 @@ import {
   ExportDialog,
   FocusEditor,
   LogoGroupControls,
+  LogoStylePreview,
   MultiAssetBoardOverview,
   SpecPanel,
   WorkbenchHeader
@@ -75,7 +79,8 @@ const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoSize: 'standard',
   cprSize: 'standard',
   logoEffect: DEFAULT_LOGO_EFFECT,
-  cprEffect: DEFAULT_CPR_EFFECT
+  cprEffect: DEFAULT_CPR_EFFECT,
+  cprState: createDefaultCprState()
 };
 
 type PresetApplyMode = 'replace' | 'append';
@@ -858,6 +863,7 @@ export function App() {
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
   const selectedLogo = logoAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
   const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
+  const cprState = resolveCprState(brandLayer);
   const companyLogoAsset = useMemo(
     () => logoAssets.find((asset) => asset.language === 'custom'),
     [logoAssets]
@@ -970,10 +976,21 @@ export function App() {
       setBrandLayer((previous) => ({
         ...previous,
         cprEnabled: brandSettings.cprEnabled,
+        cprState: {
+          ...resolveCprState(previous),
+          enabled: brandSettings.cprEnabled,
+          placement: brandSettings.defaultCprPlacement,
+          colorMode: brandSettings.defaultCprColorMode,
+          effect: {
+            ...resolveCprState(previous).effect,
+            colorEnabled: brandSettings.defaultCprColorMode !== 'original',
+            color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff'
+          }
+        },
         logoLanguage: brandSettings.defaultLanguage,
         logoGroup: defaults,
         logoEffect: { ...previous.logoEffect, colorEnabled: true, color },
-        cprEffect: { ...previous.cprEffect, colorEnabled: true, color }
+        cprEffect: { ...previous.cprEffect, colorEnabled: brandSettings.defaultCprColorMode !== 'original', color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff' }
       }));
     }
     setSpecs(nextSpecs);
@@ -1160,6 +1177,8 @@ export function App() {
           </div>
 
           <BrandPanel>
+          <section className="brand-control-group" aria-labelledby="logo-controls-title">
+          <div className="brand-control-heading"><div><h3 id="logo-controls-title">Logo</h3><small>组合与单项资源</small></div></div>
           <LogoGroupControls
             group={selectedLogoGroup}
             onChange={(next) => {
@@ -1173,17 +1192,11 @@ export function App() {
                 ...previous,
                 logoGroup: next,
                 logoAnchor: next.placement === 'custom' ? previous.logoAnchor : anchor,
-                // A custom Logo Group must not move CPR. Keep the most recent explicit
-                // left/center/right alignment for its bottom-fixed placement.
-                cprAnchor: next.placement === 'custom' ? previous.cprAnchor : anchor,
                 logoSize: next.sizePreset,
-                cprFollowsLogoGroup: true,
-                logoEffect: { ...previous.logoEffect, colorEnabled: next.colorMode !== 'original', color, strokeEnabled: false, glowEnabled: false, shadowEnabled: false },
-                cprEffect: { ...previous.cprEffect, colorEnabled: next.colorMode !== 'original', color, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
+                logoEffect: { ...previous.logoEffect, colorEnabled: next.colorMode !== 'original', color }
               }));
             }}
           />
-          <BrandGuideControls settings={brandSettings} onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }} />
           <div className="brand-section">
             <div className="panel-heading">
               <h2>Logo 资源</h2>
@@ -1232,19 +1245,27 @@ export function App() {
             />
           </div>
 
-          <div className="brand-section">
-            <div className="panel-heading"><h2>CPR</h2><small>固定品牌组件</small></div>
-            <label className="toggle">
-              <input type="checkbox" checked={brandLayer.cprEnabled} onChange={(event) => setBrandLayer((previous) => ({ ...previous, cprEnabled: event.target.checked }))} />
-              显示固定版权信息
-            </label>
-            <p className="inline-note">正式 SVG 固定于底部；仅继承 Logo 的左 / 中 / 右对齐和黑白模式。</p>
-          </div>
           <BrandEffectControls
-            title="Logo 样式"
+            title="Logo"
             effect={brandLayer.logoEffect}
             onChange={(logoEffect) => setBrandLayer((previous) => ({ ...previous, logoEffect }))}
+            preview={<LogoStylePreview asset={gameLogoAsset} effect={brandLayer.logoEffect} />}
           />
+          </section>
+          <CprControls
+            state={cprState}
+            onChange={(next) => setBrandLayer((previous) => ({
+              ...previous,
+              cprEnabled: next.enabled,
+              cprState: next,
+              cprEffect: next.effect,
+              cprAnchor: next.placement === 'bottom-left' ? 'top-left' : next.placement === 'bottom-right' ? 'top-right' : 'center'
+            }))}
+          />
+          <section className="brand-control-group" aria-labelledby="guide-controls-title">
+            <div className="brand-control-heading"><div><h3 id="guide-controls-title">辅助工具</h3><small>画布显示与吸附</small></div></div>
+            <BrandGuideControls settings={brandSettings} onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }} />
+          </section>
           </BrandPanel>
         </AssetSidebar>
 

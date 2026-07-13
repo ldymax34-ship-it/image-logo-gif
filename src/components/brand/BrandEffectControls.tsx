@@ -1,13 +1,16 @@
+import type { ReactNode } from 'react';
 import type { BrandEffectState } from '../../core';
 
 export function BrandEffectControls({
   title,
   effect,
-  onChange
+  onChange,
+  preview
 }: {
   title: string;
   effect: BrandEffectState;
   onChange: (effect: BrandEffectState) => void;
+  preview?: ReactNode;
 }) {
   function patch(next: Partial<BrandEffectState>) {
     onChange({ ...effect, ...next });
@@ -17,6 +20,7 @@ export function BrandEffectControls({
     <div className="brand-section effect-section">
       <details className="effect-details">
         <summary>{title} 高级样式</summary>
+        {preview ? <div className="effect-preview">{preview}</div> : null}
         <div className="effect-grid">
           <label className="toggle">
             <input

@@ -107,7 +107,7 @@ export function LogoGroupControls({
           onChange={(event) => patch({ gapUnits: Number(event.target.value) })}
         />
       </label>
-      <p className="inline-note">Logo 与 CPR 在预览和导出中复用同一套对齐与尺寸规则。</p>
+      <p className="inline-note">位置与大小按当前画板保存；CPR 在底部独立设置。</p>
     </div>
   );
 }
