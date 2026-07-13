@@ -24,6 +24,7 @@ export type LogoGroupState = {
   sizePreset: BrandSize;
   gapUnits: number;
   placement: BrandPlacement;
+  lastExplicitPlacement?: Exclude<BrandPlacement, 'custom'>;
   manualOffset?: { x: number; y: number };
 };
 

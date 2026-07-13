@@ -35,7 +35,8 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
   }
   const cprWidth = grid.unit * 5.5;
   const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
-  const cprX = group.placement === 'corner-left' ? grid.unit : group.placement === 'corner-right' ? canvas.width - grid.unit - cprWidth : (canvas.width - cprWidth) / 2;
+  const cprAlignment = group.placement === 'custom' ? group.lastExplicitPlacement ?? 'center' : group.placement;
+  const cprX = cprAlignment === 'corner-left' ? grid.unit : cprAlignment === 'corner-right' ? canvas.width - grid.unit - cprWidth : (canvas.width - cprWidth) / 2;
   const cpr = options.cprEnabled ? { id: 'cpr:fixed', kind: 'cpr' as const, rect: { x: cprX, y: canvas.height - grid.unit - cprHeight, width: cprWidth, height: cprHeight }, color, effect: DEFAULT_BRAND_EFFECT } : undefined;
   return { grid, logoGroupRect: rect, logoItems: items, cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
 }

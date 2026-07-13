@@ -7,4 +7,5 @@ export * from './SpecPanel';
 export * from './WorkbenchHeader';
 export * from './brand';
 export * from './canvas';
+export * from './overview';
 export * from './ui';

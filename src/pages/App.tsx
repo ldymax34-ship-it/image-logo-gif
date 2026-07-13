@@ -2,6 +2,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect,
 import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
+  buildBrandRenderPlan,
   buildBoardRenderPlan,
   createBatchExportItems,
   DEFAULT_BRAND_ASSETS,
@@ -29,6 +30,7 @@ import {
   saveBrandSettings,
   saveCustomPresetTemplates,
   serializePresetSpecs,
+  snapLogoGroupPosition,
   toPresetSpecs,
   zoomCropState,
   type BoardPreviewState,
@@ -57,6 +59,7 @@ import {
   ExportDialog,
   FocusEditor,
   LogoGroupControls,
+  MultiAssetBoardOverview,
   SpecPanel,
   WorkbenchHeader
 } from '../components';
@@ -143,104 +146,34 @@ function mergeSpecText(currentText: string, presetText: string): string {
   return `${normalizedCurrent}\n${normalizedPreset}`;
 }
 
-function PreviewStage({
-  asset,
-  specs,
-  selectedSpecId,
-  previewStates,
-  logoAsset,
-  cprAsset,
-  brandLayer,
-  brandSettings,
-  logoGroup,
-  overlayCompanyLogo,
-  overlayGameLogo,
-  onSelectSpec,
-  onEditSpec
-}: {
-  asset: MaterialAsset | undefined;
-  specs: MaterialSpec[];
-  selectedSpecId: string | undefined;
-  previewStates: Record<string, BoardPreviewState>;
-  logoAsset: BrandAsset | undefined;
-  cprAsset: BrandAsset | undefined;
-  brandLayer: BrandLayerState;
-  brandSettings: BrandSettingsV1;
-  logoGroup: LogoGroupState;
-  overlayCompanyLogo?: BrandAsset;
-  overlayGameLogo?: BrandAsset;
-  onSelectSpec: (specId: string) => void;
-  onEditSpec: (specId: string) => void;
-}) {
-  const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
+function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialSpec): LogoGroupState {
+  const family = spec ? classifyAspect({ width: spec.width, height: spec.height }) : 'landscape';
+  const placement = settings.defaultPlacementByAspect[family];
+  return {
+    mode: settings.defaultLogoGroupMode,
+    gameLogoLanguage: settings.defaultLanguage,
+    colorMode: settings.defaultColorMode,
+    sizePreset: settings.defaultSize,
+    gapUnits: 0.5,
+    placement,
+    lastExplicitPlacement: placement
+  };
+}
 
-  if (!specs.length) {
-    return <div className="empty-state">粘贴尺寸后会生成画板；上传图片后可在这里逐尺寸预览。</div>;
+function ensureLogoGroups(
+  previous: Record<string, LogoGroupState>,
+  assets: MaterialAsset[],
+  specs: MaterialSpec[],
+  settings: BrandSettingsV1
+): Record<string, LogoGroupState> {
+  const next: Record<string, LogoGroupState> = {};
+  for (const asset of assets) {
+    for (const spec of specs) {
+      const key = getBoardPreviewKey(asset.id, spec.id);
+      next[key] = previous[key] ?? createLogoGroupFromSettings(settings, spec);
+    }
   }
-
-  return (
-    <div className="preview-shell">
-      <div className="preview-meta">
-          <span>总览 {specs.length} 个画板 · 单击选择，双击调整</span>
-        {selectedSpec && (
-          <span>
-            当前 {selectedSpec.width} x {selectedSpec.height} · {getAspectLabel(selectedSpec)}
-          </span>
-        )}
-      </div>
-
-      <div className="board-overview">
-        {specs.map((spec) => {
-          const key = asset ? getBoardPreviewKey(asset.id, spec.id) : undefined;
-          const previewState = key ? previewStates[key] : undefined;
-          const isSelected = spec.id === selectedSpec?.id;
-          const scale = Math.min(220 / spec.width, 160 / spec.height, 1);
-
-          return (
-            <article key={spec.id} className={`board-card ${isSelected ? 'active' : ''}`}>
-              <button
-                type="button"
-                className="board-card-button"
-                onClick={() => onSelectSpec(spec.id)}
-                onDoubleClick={() => onEditSpec(spec.id)}
-                onKeyDown={(event: ReactKeyboardEvent<HTMLButtonElement>) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    onEditSpec(spec.id);
-                  }
-                }}
-                aria-pressed={isSelected}
-                aria-label={`${spec.name} ${spec.width} x ${spec.height}，双击调整`}
-              >
-                <div className="board-card-title">
-                  <strong>{spec.name}</strong>
-                  <small>{spec.width} x {spec.height}</small>
-                </div>
-                <BoardCanvas
-                  asset={asset}
-                  spec={spec}
-                  previewState={previewState}
-                  logoAsset={logoAsset}
-                  cprAsset={cprAsset}
-                  brandLayer={brandLayer}
-                  scale={scale}
-                  brandSettings={brandSettings}
-                  logoGroup={logoGroup}
-                  overlayCompanyLogo={overlayCompanyLogo}
-                  overlayGameLogo={overlayGameLogo}
-                />
-                <div className="board-card-footer">
-                  <span>{getAspectLabel(spec)}</span>
-                  <span>{previewState?.fitMode === 'contain' ? '适应 · 双击调整' : '填满 · 双击调整'}</span>
-                </div>
-              </button>
-            </article>
-          );
-        })}
-      </div>
-
-    </div>
-  );
+  return next;
 }
 
 function FocusEditorModal({
@@ -255,7 +188,8 @@ function FocusEditorModal({
   overlayCompanyLogo,
   overlayGameLogo,
   onCancel,
-  onSave
+  onSave,
+  onApplyToSameAspect
 }: {
   asset: MaterialAsset | undefined;
   spec: MaterialSpec;
@@ -268,13 +202,20 @@ function FocusEditorModal({
   overlayCompanyLogo?: BrandAsset;
   overlayGameLogo?: BrandAsset;
   onCancel: () => void;
-  onSave: (previewState: BoardPreviewState) => void;
+  onSave: (previewState: BoardPreviewState, logoGroup: LogoGroupState) => void;
+  onApplyToSameAspect: (logoGroup: LogoGroupState) => void;
 }) {
-  const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const dragRef = useRef<
+    | { kind: 'crop'; pointerId: number; x: number; y: number }
+    | { kind: 'brand'; pointerId: number; x: number; y: number; originX: number; originY: number; width: number; height: number }
+    | null
+  >(null);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const initialState = previewState ?? (asset ? createPreviewState(asset, spec, 'cover') : undefined);
   const [draftState, setDraftState] = useState<BoardPreviewState | undefined>(initialState);
+  const [draftLogoGroup, setDraftLogoGroup] = useState<LogoGroupState>(logoGroup);
+  const [editMode, setEditMode] = useState<'crop' | 'brand'>('crop');
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const crop = draftState?.crop;
   const coverScale = asset ? computeFitScale(asset, spec, 'cover') : 1;
@@ -289,7 +230,8 @@ function FocusEditorModal({
     initialState.fitMode !== draftState.fitMode ||
     initialState.crop.scale !== draftState.crop.scale ||
     initialState.crop.offsetX !== draftState.crop.offsetX ||
-    initialState.crop.offsetY !== draftState.crop.offsetY
+    initialState.crop.offsetY !== draftState.crop.offsetY ||
+    JSON.stringify(logoGroup) !== JSON.stringify(draftLogoGroup)
   ));
 
   function updateCrop(nextCrop: CropState) {
@@ -316,14 +258,53 @@ function FocusEditorModal({
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (!asset || !draftState) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    if (editMode === 'brand') {
+      const plan = buildBrandRenderPlan({ width: spec.width, height: spec.height }, draftLogoGroup, {
+        companyLogo: overlayCompanyLogo,
+        gameLogo: overlayGameLogo,
+        cprEnabled: brandLayer.cprEnabled
+      });
+      if (!plan.logoGroupRect) return;
+      dragRef.current = {
+        kind: 'brand',
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        originX: plan.logoGroupRect.x,
+        originY: plan.logoGroupRect.y,
+        width: plan.logoGroupRect.width,
+        height: plan.logoGroupRect.height
+      };
+      return;
+    }
+    dragRef.current = { kind: 'crop', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!asset || !draftState || !dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    if (dragRef.current.kind === 'brand') {
+      const raw = {
+        x: dragRef.current.originX + (event.clientX - dragRef.current.x) / stageScale,
+        y: dragRef.current.originY + (event.clientY - dragRef.current.y) / stageScale
+      };
+      const next = brandSettings.snapEnabled
+        ? snapLogoGroupPosition(
+            { width: spec.width, height: spec.height },
+            { width: dragRef.current.width, height: dragRef.current.height },
+            raw,
+            brandSettings.snapThreshold / stageScale
+          )
+        : raw;
+      setDraftLogoGroup((previous) => ({
+        ...previous,
+        placement: 'custom',
+        manualOffset: { x: next.x, y: next.y }
+      }));
+      return;
+    }
     const deltaX = (event.clientX - dragRef.current.x) / stageScale;
     const deltaY = (event.clientY - dragRef.current.y) / stageScale;
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    dragRef.current = { kind: 'crop', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     setDraftState({
       ...draftState,
       crop: panCropState(asset, spec, draftState.crop, deltaX, deltaY, draftState.fitMode)
@@ -390,11 +371,11 @@ function FocusEditorModal({
               previewState={draftState}
               logoAsset={logoAsset}
               cprAsset={cprAsset}
-              brandLayer={brandLayer}
+              brandLayer={{ ...brandLayer, logoGroup: draftLogoGroup }}
               scale={stageScale}
               draggable={Boolean(asset)}
               brandSettings={brandSettings}
-              logoGroup={logoGroup}
+              logoGroup={draftLogoGroup}
               overlayCompanyLogo={overlayCompanyLogo}
               overlayGameLogo={overlayGameLogo}
               onPointerDown={handlePointerDown}
@@ -404,6 +385,13 @@ function FocusEditorModal({
           </div>
 
           <div className="focus-side-controls">
+            <div>
+              <span className="control-label">调整对象</span>
+              <div className="segmented-control">
+                <button type="button" className={editMode === 'crop' ? 'active' : ''} onClick={() => setEditMode('crop')}>图片裁切</button>
+                <button type="button" className={editMode === 'brand' ? 'active' : ''} onClick={() => setEditMode('brand')}>品牌位置</button>
+              </div>
+            </div>
             <div>
               <span className="control-label">填充方式</span>
               <div className="segmented-control">
@@ -442,7 +430,8 @@ function FocusEditorModal({
             <button type="button" onClick={() => setFitMode(draftState?.fitMode ?? 'cover')} disabled={!asset}>
               重置当前裁切
             </button>
-            <p id="focus-dialog-help" className="dialog-help">拖动画面调整位置。这里的修改会在保存后写回当前画板。</p>
+            <button type="button" onClick={() => onApplyToSameAspect(draftLogoGroup)} disabled={!asset}>应用品牌位置到同版型</button>
+            <p id="focus-dialog-help" className="dialog-help">切换调整对象后拖动画布。品牌位置会按网格和参考点吸附，CPR 始终固定在底部。</p>
           </div>
         </div>
 
@@ -457,7 +446,7 @@ function FocusEditorModal({
             <span>{dirty ? '有未保存的调整' : '当前画板未修改'}</span>
             <div className="dialog-actions">
               <button type="button" onClick={requestClose}>取消</button>
-              <button type="button" className="primary-button" onClick={() => draftState && onSave(draftState)} disabled={!draftState || !asset}>
+              <button type="button" className="primary-button" onClick={() => draftState && onSave(draftState, draftLogoGroup)} disabled={!draftState || !asset}>
                 保存并返回
               </button>
             </div>
@@ -517,6 +506,7 @@ function BatchExportDialog({
   previewStates,
   brandAssets,
   brandLayer,
+  logoGroupsByBoard,
   onClose,
   onComplete
 }: {
@@ -525,6 +515,7 @@ function BatchExportDialog({
   previewStates: Record<string, BoardPreviewState>;
   brandAssets: BrandAsset[];
   brandLayer: BrandLayerState;
+  logoGroupsByBoard: Record<string, LogoGroupState>;
   onClose: () => void;
   onComplete: (message: string) => void;
 }) {
@@ -580,7 +571,6 @@ function BatchExportDialog({
   }).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.item.id));
-  const selectedBytes = selectedRows.reduce((total, row) => total + row.estimatedBytes, 0);
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
 
   useEffect(() => {
@@ -641,15 +631,19 @@ function BatchExportDialog({
         continue;
       }
       try {
+        const boardLogoGroup = logoGroupsByBoard[getBoardPreviewKey(row.asset.id, row.spec.id)] ?? exportBrandLayer.logoGroup;
+        const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
+          ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
+        const boardGameLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.gameLogoId) ?? exportLogo;
         const blob = await exportBoardImage({
           asset: row.asset,
           spec: row.spec,
           previewState,
-          brandLayer: exportBrandLayer,
+          brandLayer: { ...exportBrandLayer, logoGroup: boardLogoGroup },
           logoAsset: exportLogo,
           cprAsset: exportCpr,
-          companyLogoAsset: brandAssets.find((asset) => asset.id === exportBrandLayer.logoGroup?.companyLogoId) ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom'),
-          gameLogoAsset: exportLogo,
+          companyLogoAsset: boardCompanyLogo,
+          gameLogoAsset: boardGameLogo,
           format,
           quality
         });
@@ -737,7 +731,12 @@ function BatchExportDialog({
                   previewState={activePreviewState}
                   logoAsset={exportLogo}
                   cprAsset={exportCpr}
-                  brandLayer={exportBrandLayer}
+                  brandLayer={{
+                    ...exportBrandLayer,
+                    logoGroup: activeAsset
+                      ? logoGroupsByBoard[getBoardPreviewKey(activeAsset.id, activeSpec.id)] ?? exportBrandLayer.logoGroup
+                      : exportBrandLayer.logoGroup
+                  }}
                   overlayCompanyLogo={brandAssets.find((asset) => asset.id === exportBrandLayer.logoGroup?.companyLogoId) ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom')}
                   overlayGameLogo={exportLogo}
                   scale={previewScale}
@@ -792,8 +791,6 @@ function BatchExportDialog({
             </div>
             <div className="export-summary-box">
               <span>已选 {selectedRows.length} 个文件</span>
-              <strong>预计 {formatMegabytes(selectedBytes)}</strong>
-              <small>实际大小会受画面内容和压缩率影响</small>
               {logoEnabled && !exportLogo ? <small className="size-warning">当前 Logo 语种没有可用资源</small> : null}
               {cprEnabled && !exportCpr ? <small className="size-warning">固定 CPR SVG 不可用</small> : null}
             </div>
@@ -836,9 +833,11 @@ export function App() {
   const [logoGroup, setLogoGroup] = useState<LogoGroupState>(() =>
     createDefaultLogoGroup(loadBrandSettings().defaultLanguage)
   );
+  const [logoGroupsByBoard, setLogoGroupsByBoard] = useState<Record<string, LogoGroupState>>({});
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
   const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
+  const [focusAssetId, setFocusAssetId] = useState<string | undefined>();
   const [focusSpecId, setFocusSpecId] = useState<string | undefined>();
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | undefined>();
   const [newPresetName, setNewPresetName] = useState('');
@@ -849,8 +848,11 @@ export function App() {
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
+  const selectedBoardKey = selectedAsset && selectedSpec ? getBoardPreviewKey(selectedAsset.id, selectedSpec.id) : undefined;
+  const selectedLogoGroup = selectedBoardKey ? logoGroupsByBoard[selectedBoardKey] ?? logoGroup : logoGroup;
+  const focusAsset = assets.find((asset) => asset.id === focusAssetId);
   const focusSpec = specs.find((spec) => spec.id === focusSpecId);
-  const focusPreviewKey = selectedAsset && focusSpec ? getBoardPreviewKey(selectedAsset.id, focusSpec.id) : undefined;
+  const focusPreviewKey = focusAsset && focusSpec ? getBoardPreviewKey(focusAsset.id, focusSpec.id) : undefined;
   const focusPreviewState = focusPreviewKey ? previewStates[focusPreviewKey] : undefined;
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
@@ -886,6 +888,10 @@ export function App() {
   useEffect(() => {
     setPreviewStates((previous) => ensurePreviewStates(previous, assets, specs));
   }, [assets, specs]);
+
+  useEffect(() => {
+    setLogoGroupsByBoard((previous) => ensureLogoGroups(previous, assets, specs, brandSettings));
+  }, [assets, specs, brandSettings]);
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -957,6 +963,19 @@ export function App() {
   function commitParsedSpecs() {
     const nextSpecs = result.specs;
     const nextAppliedText = draftText.trim();
+    if (!specs.length && nextSpecs.length) {
+      const defaults = createLogoGroupFromSettings(brandSettings, nextSpecs[0]);
+      const color = defaults.colorMode === 'black' ? '#000000' : '#ffffff';
+      setLogoGroup(defaults);
+      setBrandLayer((previous) => ({
+        ...previous,
+        cprEnabled: brandSettings.cprEnabled,
+        logoLanguage: brandSettings.defaultLanguage,
+        logoGroup: defaults,
+        logoEffect: { ...previous.logoEffect, colorEnabled: true, color },
+        cprEffect: { ...previous.cprEffect, colorEnabled: true, color }
+      }));
+    }
     setSpecs(nextSpecs);
     setAppliedText(nextAppliedText);
     setMessage(nextSpecs.length ? `已应用 ${nextSpecs.length} 个画板` : '已清空画板');
@@ -1007,23 +1026,57 @@ export function App() {
     setPendingConfirmation(undefined);
   }
 
-  function openFocusEditor(specId: string) {
-    focusReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  function selectBoard(assetId: string, specId: string) {
+    setSelectedAssetId(assetId);
     setSelectedSpecId(specId);
+  }
+
+  function selectAssetAndScroll(assetId: string) {
+    setSelectedAssetId(assetId);
+    requestAnimationFrame(() => {
+      document.getElementById(`asset-board-group-${assetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function openFocusEditor(assetId: string, specId: string) {
+    focusReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSelectedAssetId(assetId);
+    setSelectedSpecId(specId);
+    setFocusAssetId(assetId);
     setFocusSpecId(specId);
   }
 
   function closeFocusEditor() {
+    setFocusAssetId(undefined);
     setFocusSpecId(undefined);
     requestAnimationFrame(() => focusReturnRef.current?.focus());
   }
 
-  function saveFocusPreview(nextPreviewState: BoardPreviewState) {
+  function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState) {
     const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
     setPreviewStates((previous) => ({ ...previous, [key]: nextPreviewState }));
+    setLogoGroupsByBoard((previous) => ({ ...previous, [key]: nextLogoGroup }));
+    setLogoGroup(nextLogoGroup);
+    setSelectedAssetId(nextPreviewState.assetId);
     setSelectedSpecId(nextPreviewState.specId);
     closeFocusEditor();
     setMessage('已保存当前画板调整');
+  }
+
+  function applyLogoGroupToSameAspect(nextLogoGroup: LogoGroupState) {
+    if (!focusSpec) return;
+    const family = classifyAspect({ width: focusSpec.width, height: focusSpec.height });
+    const matchingKeys = assets.flatMap((asset) =>
+      specs
+        .filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family)
+        .map((spec) => getBoardPreviewKey(asset.id, spec.id))
+    );
+    setLogoGroupsByBoard((previous) => {
+      const next = { ...previous };
+      for (const key of matchingKeys) next[key] = { ...nextLogoGroup };
+      return next;
+    });
+    setMessage(`已将品牌位置应用到 ${matchingKeys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
   }
 
   function changeBrandLanguage(language: BrandLanguage) {
@@ -1092,7 +1145,7 @@ export function App() {
                   key={asset.id}
                   type="button"
                   className={`asset-row ${asset.id === selectedAsset?.id ? 'active' : ''}`}
-                  onClick={() => setSelectedAssetId(asset.id)}
+                  onClick={() => selectAssetAndScroll(asset.id)}
                 >
                   <img src={asset.objectUrl} alt={asset.fileName} />
                   <span>
@@ -1108,9 +1161,12 @@ export function App() {
 
           <BrandPanel>
           <LogoGroupControls
-            group={logoGroup}
+            group={selectedLogoGroup}
             onChange={(next) => {
               setLogoGroup(next);
+              if (selectedBoardKey) {
+                setLogoGroupsByBoard((previous) => ({ ...previous, [selectedBoardKey]: next }));
+              }
               const anchor = next.placement === 'corner-left' ? 'top-left' : next.placement === 'corner-right' ? 'top-right' : 'center';
               const color = next.colorMode === 'black' ? '#000000' : '#ffffff';
               setBrandLayer((previous) => ({
@@ -1193,20 +1249,22 @@ export function App() {
         </AssetSidebar>
 
         <BoardOverview disabled={!assets.length || !specs.length} onExport={() => setExportDialogOpen(true)} message={message}>
-          <PreviewStage
-            asset={selectedAsset}
+          <MultiAssetBoardOverview
+            assets={assets}
             specs={specs}
-            selectedSpecId={selectedSpec?.id}
             previewStates={previewStates}
+            selectedAssetId={selectedAsset?.id}
+            selectedSpecId={selectedSpec?.id}
             logoAsset={selectedLogo}
             cprAsset={selectedCpr}
             brandLayer={brandLayer}
             brandSettings={brandSettings}
             logoGroup={logoGroup}
-            overlayCompanyLogo={companyLogoAsset}
-            overlayGameLogo={gameLogoAsset}
-            onSelectSpec={setSelectedSpecId}
-            onEditSpec={openFocusEditor}
+            logoGroupsByBoard={logoGroupsByBoard}
+            companyLogo={companyLogoAsset}
+            gameLogo={gameLogoAsset}
+            onSelect={selectBoard}
+            onEdit={openFocusEditor}
           />
         </BoardOverview>
 
@@ -1299,12 +1357,12 @@ export function App() {
                 key={spec.id}
                 type="button"
                 className={`spec-row ${spec.id === selectedSpec?.id ? 'active' : ''}`}
-                onClick={() => setSelectedSpecId(spec.id)}
-                onDoubleClick={() => openFocusEditor(spec.id)}
+                onClick={() => selectedAsset && selectBoard(selectedAsset.id, spec.id)}
+                onDoubleClick={() => selectedAsset && openFocusEditor(selectedAsset.id, spec.id)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    openFocusEditor(spec.id);
+                    if (selectedAsset) openFocusEditor(selectedAsset.id, spec.id);
                   }
                 }}
                 title="双击进入画板调整"
@@ -1327,21 +1385,22 @@ export function App() {
           )}
         </SpecPanel>
       </section>
-      {focusSpec && (
+      {focusAsset && focusSpec && (
         <FocusEditorModal
-          key={`${selectedAsset?.id ?? 'empty'}:${focusSpec.id}`}
-          asset={selectedAsset}
+          key={`${focusAsset.id}:${focusSpec.id}`}
+          asset={focusAsset}
           spec={focusSpec}
           previewState={focusPreviewState}
           logoAsset={selectedLogo}
           cprAsset={selectedCpr}
           brandLayer={brandLayer}
           brandSettings={brandSettings}
-          logoGroup={logoGroup}
+          logoGroup={focusPreviewKey ? logoGroupsByBoard[focusPreviewKey] ?? logoGroup : logoGroup}
           overlayCompanyLogo={companyLogoAsset}
           overlayGameLogo={gameLogoAsset}
           onCancel={closeFocusEditor}
           onSave={saveFocusPreview}
+          onApplyToSameAspect={applyLogoGroupToSameAspect}
         />
       )}
       {pendingConfirmation && (
@@ -1365,6 +1424,7 @@ export function App() {
           previewStates={previewStates}
           brandAssets={brandAssets}
           brandLayer={brandLayer}
+          logoGroupsByBoard={logoGroupsByBoard}
           onClose={() => setExportDialogOpen(false)}
           onComplete={setMessage}
         />

@@ -14,9 +14,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(25, 32, 44, 0.78) 0%, rgba(8, 11, 16, 0.96) 48%, #080b10 100%),
-    #080b10;
+  background: #1b1b1c;
 }
 
 button,
@@ -400,9 +398,7 @@ code {
   padding: 18px;
   border: 1px solid #202a37;
   border-radius: 10px;
-  background:
-    linear-gradient(180deg, rgba(18, 24, 33, 0.9), rgba(9, 13, 18, 0.96)),
-    #0a1017;
+  background: #171718;
 }
 
 .preview-meta {
@@ -475,11 +471,7 @@ code {
   max-width: 100%;
   border: 1px solid #344153;
   border-radius: 6px;
-  background:
-    linear-gradient(45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
-    #151b25;
-  background-size: 22px 22px;
+  background: #151b25;
   touch-action: none;
 }
 
@@ -1093,11 +1085,6 @@ code {
   border: 1px solid #2b3a4b;
   border-radius: 8px;
   background: #121b26;
-}
-
-.export-summary-box strong {
-  color: #dbeaf8;
-  font-size: 18px;
 }
 
 .export-settings-panel .dialog-help {

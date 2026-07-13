@@ -1,6 +1,6 @@
 {
   "name": "brand-material-workbench",
-  "version": "0.1.12",
+  "version": "0.1.15",
   "private": true,
   "type": "module",
   "scripts": {

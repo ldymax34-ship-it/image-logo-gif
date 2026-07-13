@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, snapLogoGroupPosition
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -107,6 +107,34 @@ describe('core 0.1.x foundation', () => {
     expect(plan.logoItems).toHaveLength(2);
     expect((plan.cpr?.rect.y ?? 0) + (plan.cpr?.rect.height ?? 0)).toBe(1020);
     expect(plan.cpr?.rect.x).toBe(60);
+  });
+
+  it('keeps CPR on the last explicit alignment when the logo group is custom', () => {
+    const group = {
+      ...createDefaultLogoGroup('zh-CN'),
+      placement: 'custom' as const,
+      lastExplicitPlacement: 'corner-left' as const,
+      manualOffset: { x: 640, y: 240 }
+    };
+    const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
+      gameLogo: createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 }),
+      cprEnabled: true
+    });
+    expect(plan.logoGroupRect?.x).toBe(640);
+    expect(plan.cpr?.rect.x).toBe(60);
+  });
+
+  it('snaps a dragged logo group to brand anchors in canvas coordinates', () => {
+    const snapped = snapLogoGroupPosition(
+      { width: 1920, height: 1080 },
+      { width: 240, height: 80 },
+      { x: 1665, y: 64 },
+      10
+    );
+    expect(snapped.x).toBe(1620);
+    expect(snapped.y).toBe(60);
+    expect(snapped.snappedX).toBe('right');
+    expect(snapped.snappedY).toBe('top');
   });
 
   it('uses one brand layer calculation for logo and cpr', () => {

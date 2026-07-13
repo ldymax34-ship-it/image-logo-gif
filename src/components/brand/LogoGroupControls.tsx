@@ -70,8 +70,11 @@ export function LogoGroupControls({
       <div className="toolbar-line compact">
         <label className="control-label small">位置</label>
         <select
-          value={group.placement === 'custom' ? 'corner-right' : group.placement}
-          onChange={(event) => patch({ placement: event.target.value as Exclude<BrandPlacement, 'custom'>, manualOffset: undefined })}
+          value={group.placement === 'custom' ? group.lastExplicitPlacement ?? 'corner-right' : group.placement}
+          onChange={(event) => {
+            const placement = event.target.value as Exclude<BrandPlacement, 'custom'>;
+            patch({ placement, lastExplicitPlacement: placement, manualOffset: undefined });
+          }}
         >
           {PLACEMENT_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>

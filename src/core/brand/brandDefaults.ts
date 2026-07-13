@@ -10,5 +10,5 @@ export const DEFAULT_BRAND_SETTINGS: BrandSettingsV1 = {
 export const DEFAULT_BRAND_EFFECT: BrandEffectState = { ...DEFAULT_LOGO_EFFECT, colorEnabled: true, color: '#ffffff', strokeEnabled: false, glowEnabled: false, shadowEnabled: false };
 
 export function createDefaultLogoGroup(language: BrandLanguage = 'zh-CN'): LogoGroupState {
-  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', gapUnits: 0.5, placement: 'corner-right' };
+  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right' };
 }

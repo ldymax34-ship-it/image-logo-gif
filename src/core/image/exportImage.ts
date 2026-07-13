@@ -58,6 +58,12 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
   const transform = computeCropTransform(input.asset, input.spec, input.previewState.crop);
   const brandGroup = input.brandLayer.logoGroup;
   if (brandGroup) {
+    const groupColor = brandGroup.colorMode === 'black' ? '#000000' : '#ffffff';
+    const groupEffect: BrandEffectState = {
+      ...input.brandLayer.logoEffect,
+      colorEnabled: brandGroup.colorMode !== 'original',
+      color: groupColor
+    };
     const grouped = buildBrandRenderPlan(
       { width: input.spec.width, height: input.spec.height },
       brandGroup,
@@ -65,7 +71,7 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
         companyLogo: input.companyLogoAsset,
         gameLogo: input.gameLogoAsset ?? input.logoAsset,
         cprEnabled: input.brandLayer.cprEnabled && Boolean(input.cprAsset),
-        effect: input.brandLayer.logoEffect
+        effect: groupEffect
       }
     );
     const assetsByLayerId = new Map<string, BrandAsset>();
@@ -78,7 +84,7 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
     const layers: BoardRenderLayer[] = [
       ...(!input.brandLayer.logoEnabled ? [] : grouped.logoItems).map((item, index) => {
         const asset = assetsByLayerId.get(item.id);
-        return asset ? { id: item.id, type: 'logo' as const, asset, rect: item.rect, zIndex: 20 + index, effect: input.brandLayer.logoEffect } : undefined;
+        return asset ? { id: item.id, type: 'logo' as const, asset, rect: item.rect, zIndex: 20 + index, effect: groupEffect } : undefined;
       }),
       grouped.cpr && input.cprAsset
         ? {
@@ -89,8 +95,8 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
             zIndex: 30,
             effect: {
               ...DEFAULT_CPR_EFFECT,
-              colorEnabled: input.brandLayer.logoEffect.colorEnabled,
-              color: input.brandLayer.logoEffect.color
+              colorEnabled: brandGroup.colorMode !== 'original',
+              color: groupColor
             }
           }
         : undefined
