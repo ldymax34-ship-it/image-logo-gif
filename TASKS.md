@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.11 UI 基础收束
+## 当前版本：0.1.12 Brand System 核心
 
 ### 产品方向
 
@@ -91,6 +91,10 @@
 - [x] 建立统一 Button、Tabs、Modal、Select、Toggle、Panel、Toolbar、ConfirmDialog 基础组件
 - [x] 将 App Shell 拆为 WorkbenchHeader、AssetSidebar、BoardOverview、SpecPanel、BrandPanel、FocusEditor、ExportDialog 组件边界
 - [x] 浅色面板、14px 基础排版、轻量弹窗动效完成；运行时不使用 backdrop blur
+- [x] 新增 32 列品牌网格纯函数、半格、网格安全区与辅助线数据
+- [x] 新增固定 CPR 预设：固定文案、思源黑体 Regular 字体栈、1920x1080 基准 12px 缩放规则
+- [x] 新增 Logo Group、位置、颜色和 Brand Render Plan 数据结构
+- [x] 新增版本化 BrandSettings 本地读取、写入及恢复默认值 API
 
 ### 本轮验证记录
 
@@ -104,6 +108,7 @@
 - [x] 0.1.8 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.9 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过，25 tests
 - [x] 0.1.11 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、桌面 / 900px 视口与无大面积 blur 检查；27 tests，桌面与 900px 均无横向溢出，运行时 backdrop-filter 为 0
+- [x] 0.1.12 核心层验证：`npm run verify:core`、`npm test`、`npm run build` 通过；30 tests
 
 ### 第一阶段剩余目标
 
@@ -136,7 +141,7 @@
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
 - Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。
 
-### 下一步建议给 Codex：0.1.12
+### 下一步建议给 Codex：0.1.13
 
 1. 用真实物料校准 PNG / JPG 预估大小和超限提示。
 2. 增加删除 / 替换素材与单项 Object URL 回收。

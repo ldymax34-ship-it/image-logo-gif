@@ -49,6 +49,9 @@ export type BrandLayerState = {
   cprSize: 'small' | 'standard' | 'large';
   logoEffect: BrandEffectState;
   cprEffect: BrandEffectState;
+  /** Brand System fields. Legacy anchors stay readable for saved local state. */
+  logoGroup?: import('./brandTypes').LogoGroupState;
+  cprFollowsLogoGroup?: boolean;
 };
 
 export const BRAND_LANGUAGE_OPTIONS: Array<{ value: BrandLanguage; label: string }> = [
@@ -200,11 +203,7 @@ export const DEFAULT_LOGO_EFFECT: BrandEffectState = {
 export const DEFAULT_CPR_EFFECT: BrandEffectState = {
   ...DEFAULT_LOGO_EFFECT,
   colorEnabled: true,
-  color: '#ffffff',
-  shadowEnabled: true,
-  shadowOpacity: 0.45,
-  shadowBlur: 12,
-  shadowOffsetY: 4
+  color: '#ffffff'
 };
 
 export const DEFAULT_BRAND_ASSETS: BrandAsset[] = [

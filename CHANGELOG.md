@@ -1,5 +1,29 @@
 # 更新日志
 
+## 0.1.12
+
+本轮目标：建立 Brand System 的纯函数地基，避免将品牌网格、固定 CPR 和组合规则继续写入页面组件。
+
+主要改动：
+
+1. [品牌-高] 新增 `src/core/brand/brandGrid.ts`：以画板宽度 / 32 计算正方形网格、半格、安全区域与辅助线数据；1920x1080 对应 60px 单元格。
+2. [品牌-高] 新增固定 CPR 预设：`©KURO GAMES ALL RIGHTS RESERVED`、Source Han Sans Regular 字体栈、1920x1080 基准 12px，并按网格比例计算字号。当前不引入字体二进制文件，浏览器会走本地系统 fallback。
+3. [品牌-高] 新增 `LogoGroupState`、品牌颜色、推荐位置、渲染计划和双 Logo 横向组合的纯数据模型。
+4. [设置-中] 新增版本化 `BrandSettingsV1` 本地存储 API，默认规则不会静默覆盖现有画板。
+5. [兼容-中] 旧 `BrandLayerState` 保持可用，并增加可选 Brand System 字段；现有裁切、预览和导出路径未删除或替换。
+
+验证方式：
+
+- `npm run verify:core`
+- `npm test`：30 tests passed
+- `npm run build`
+
+未完成：
+
+- 0.1.13 的 Logo Group 视觉渲染与控制面板。
+- 0.1.14 的网格覆盖、拖动吸附、同版型应用。
+- 0.1.15 的设置对话框与默认规则 UI。
+
 ## 0.1.11
 
 本轮目标：暂停新增业务能力，收束为一套稳定、克制、可维护的桌面应用 UI 基础层。

@@ -1,6 +1,8 @@
 import type { PresetTemplate } from '../spec/presetTemplates';
+import { DEFAULT_BRAND_SETTINGS, type BrandSettingsV1 } from '../brand';
 
 const CUSTOM_PRESET_STORAGE_KEY = 'brand-material-workbench.custom-presets.v1';
+const BRAND_SETTINGS_STORAGE_KEY = 'brand-material-workbench.brand-settings.v1';
 
 function isPresetTemplate(value: unknown): value is PresetTemplate {
   if (!value || typeof value !== 'object') return false;
@@ -29,4 +31,21 @@ export function loadCustomPresetTemplates(): PresetTemplate[] {
 export function saveCustomPresetTemplates(templates: PresetTemplate[]): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(CUSTOM_PRESET_STORAGE_KEY, JSON.stringify(templates));
+}
+
+export function loadBrandSettings(): BrandSettingsV1 {
+  if (typeof window === 'undefined') return DEFAULT_BRAND_SETTINGS;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(BRAND_SETTINGS_STORAGE_KEY) ?? 'null') as Partial<BrandSettingsV1> | null;
+    if (!parsed || parsed.version !== 1) return DEFAULT_BRAND_SETTINGS;
+    return { ...DEFAULT_BRAND_SETTINGS, ...parsed, defaultPlacementByAspect: { ...DEFAULT_BRAND_SETTINGS.defaultPlacementByAspect, ...parsed.defaultPlacementByAspect } };
+  } catch { return DEFAULT_BRAND_SETTINGS; }
+}
+
+export function saveBrandSettings(settings: BrandSettingsV1): void {
+  if (typeof window !== 'undefined') window.localStorage.setItem(BRAND_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+}
+
+export function resetBrandSettings(): void {
+  if (typeof window !== 'undefined') window.localStorage.removeItem(BRAND_SETTINGS_STORAGE_KEY);
 }

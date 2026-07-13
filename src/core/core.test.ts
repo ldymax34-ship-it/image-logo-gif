@@ -22,6 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
+  , buildBrandRenderPlan, createBrandGrid, getCprFontSize, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -81,6 +82,32 @@ describe('core 0.1.x foundation', () => {
     expect(classifyAspect({ width: 1920, height: 1080 })).toBe('landscape');
     expect(classifyAspect({ width: 1080, height: 1080 })).toBe('square');
     expect(classifyAspect({ width: 1080, height: 1920 })).toBe('portrait');
+  });
+
+  it('builds the 32-column brand grid from the canvas width', () => {
+    const grid = createBrandGrid({ width: 1920, height: 1080 });
+    expect(grid).toMatchObject({ columns: 32, unit: 60, halfUnit: 30, rows: 18 });
+  });
+
+  it('keeps fixed CPR typography and defaults all effects off', () => {
+    expect(CPR_PRESET.text).toBe('©KURO GAMES ALL RIGHTS RESERVED');
+    expect(CPR_PRESET.baseFontSize).toBe(12);
+    expect(getCprFontSize(60)).toBe(12);
+    expect(DEFAULT_BRAND_EFFECT.strokeEnabled).toBe(false);
+    expect(DEFAULT_BRAND_EFFECT.glowEnabled).toBe(false);
+    expect(DEFAULT_BRAND_EFFECT.shadowEnabled).toBe(false);
+  });
+
+  it('builds a grouped logo render plan with CPR under the group', () => {
+    const group = { ...createDefaultLogoGroup('zh-CN'), mode: 'company-and-game' as const, placement: 'corner-left' as const };
+    const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
+      companyLogo: createRasterBrandAsset({ id: 'company', type: 'logo', name: 'Company', language: 'custom', sourceUrl: '/company.png', width: 4, height: 1 }),
+      gameLogo: createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 }),
+      cprEnabled: true
+    });
+    expect(plan.logoItems).toHaveLength(2);
+    expect(plan.cpr?.rect.y).toBeGreaterThan((plan.logoGroupRect?.y ?? 0) + (plan.logoGroupRect?.height ?? 0));
+    expect(plan.cpr?.rect.x).toBe(plan.logoGroupRect?.x);
   });
 
   it('uses one brand layer calculation for logo and cpr', () => {
