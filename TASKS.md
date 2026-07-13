@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.10 本地启停与 Photoshop 式批量导出
+## 当前版本：0.1.11 UI 基础收束
 
 ### 产品方向
 
@@ -86,6 +86,11 @@
 - [x] 右侧统一设置 PNG / JPG、JPG 质量、Logo / CPR 开关和语种
 - [x] 支持勾选部分或全部画板批量导出
 - [x] 优先选择文件夹逐张写入，不打包
+- [x] 新增 `docs/UI_GUIDE.md`，明确桌面工具排版、间距、控件、动效与模糊边界
+- [x] 新增 CSS Design Tokens：`src/styles/tokens.css`、`theme.css`、`components.css`
+- [x] 建立统一 Button、Tabs、Modal、Select、Toggle、Panel、Toolbar、ConfirmDialog 基础组件
+- [x] 将 App Shell 拆为 WorkbenchHeader、AssetSidebar、BoardOverview、SpecPanel、BrandPanel、FocusEditor、ExportDialog 组件边界
+- [x] 浅色面板、14px 基础排版、轻量弹窗动效完成；运行时不使用 backdrop blur
 
 ### 本轮验证记录
 
@@ -98,6 +103,7 @@
 - [x] 0.1.7 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.8 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.9 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过，25 tests
+- [x] 0.1.11 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、桌面 / 900px 视口与无大面积 blur 检查；27 tests，桌面与 900px 均无横向溢出，运行时 backdrop-filter 为 0
 
 ### 第一阶段剩余目标
 
@@ -130,7 +136,7 @@
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
 - Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。
 
-### 下一步建议给 Codex：0.1.11
+### 下一步建议给 Codex：0.1.12
 
 1. 用真实物料校准 PNG / JPG 预估大小和超限提示。
 2. 增加删除 / 替换素材与单项 Object URL 回收。

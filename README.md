@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.10，使用 Vite + React + TypeScript 搭建模块化前端应用。
+当前项目已推进到 0.1.11，使用 Vite + React + TypeScript 搭建模块化前端应用。
 
 当前已建立：
 
@@ -13,7 +13,8 @@
 - 版型适配规则
 - Logo / CPR 品牌层 layout
 - 文件命名清理
-- 暗色三栏工作台
+- 浅色三栏工作台与统一桌面 UI 基础层
+- [UI 规范](docs/UI_GUIDE.md)、CSS Design Tokens 与基础 UI 组件
 - 图片上传与素材列表
 - 全画板总览预览
 - 每个素材 x 每个画板独立裁切状态

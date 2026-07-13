@@ -1,5 +1,29 @@
 # 更新日志
 
+## 0.1.11
+
+本轮目标：暂停新增业务能力，收束为一套稳定、克制、可维护的桌面应用 UI 基础层。
+
+主要改动：
+
+1. [规范-高] 新增 `docs/UI_GUIDE.md`，确定字体栈、14px 基础字号、行高、间距、圆角、边框、阴影、动效和响应式规则。
+2. [样式-高] 新增 `src/styles/tokens.css`、`theme.css`、`components.css`，将基础色彩、间距、圆角、阴影和动效抽为 CSS Variables；工作区收束为浅灰背景、白色面板、极淡边框和克制冷蓝强调。
+3. [架构-高] 新增 Button、Tabs、Modal、Select、Toggle、Panel、Toolbar、ConfirmDialog 基础组件，并抽出 WorkbenchHeader、AssetSidebar、BoardOverview、SpecPanel、BrandPanel、FocusEditor、ExportDialog 页面边界。
+4. [交互-中] 弹窗统一为轻微位移与缩放进入动画，支持系统减少动效偏好；应用背景、三栏面板和画布不使用 `backdrop-filter`。
+5. [范围-高] 未更改素材、规格、裁切、Logo / CPR、预览或批量导出的核心状态和数据结构，也未引入 Tauri、CDN 或远程依赖。
+
+验证方式：
+
+- `npm run verify:core`
+- `npm test`
+- `npm run build`
+- 浏览器桌面宽视口与 `900px` 窄视口检查
+- 样式静态检查与运行时检查均确认没有大面积 `backdrop-filter`
+
+已知范围：
+
+- 本轮先建立组件边界与基础样式层；后续业务迭代应继续将内部 UI 细节逐步从 `App.tsx` 迁入对应组件，避免为拆分而改动已验证的业务状态。
+
 ## 0.1.10
 
 本轮目标：让工具可以被非开发同事直接启停，并完成接近 Photoshop“导出为”的批量出图闭环。

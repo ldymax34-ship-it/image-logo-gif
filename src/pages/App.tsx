@@ -42,6 +42,15 @@ import {
   type WorkbenchState
 } from '../core';
 import { chooseOutputTarget, downloadBlobFile, saveBlobToDirectory } from '../platform/fileSystem';
+import {
+  AssetSidebar,
+  BoardOverview,
+  BrandPanel,
+  ExportDialog,
+  FocusEditor,
+  SpecPanel,
+  WorkbenchHeader
+} from '../components';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -489,8 +498,8 @@ function FocusEditorModal({
   }, [dirty]);
 
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && requestClose()}>
-      <section ref={dialogRef} className="focus-dialog" role="dialog" aria-modal="true" aria-labelledby="focus-dialog-title" aria-describedby="focus-dialog-help">
+    <FocusEditor onBackdropClose={requestClose} labelledBy="focus-dialog-title" describedBy="focus-dialog-help">
+      <section ref={dialogRef}>
         <div className="dialog-header">
           <div>
             <span className="dialog-kicker">画板调整</span>
@@ -580,7 +589,7 @@ function FocusEditorModal({
           </div>
         )}
       </section>
-    </div>
+    </FocusEditor>
   );
 }
 
@@ -796,8 +805,8 @@ function BatchExportDialog({
     : 1;
 
   return (
-    <div className="dialog-backdrop export-backdrop" role="presentation">
-      <section ref={dialogRef} className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+    <ExportDialog onClose={onClose} locked={exporting}>
+      <section ref={dialogRef}>
         <div className="dialog-header export-dialog-header">
           <div>
             <span className="dialog-kicker">批量导出</span>
@@ -931,7 +940,7 @@ function BatchExportDialog({
           </div>
         </div>
       </section>
-    </div>
+    </ExportDialog>
   );
 }
 
@@ -1168,21 +1177,15 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Brand Material Workbench · 0.1.10</p>
-          <h1>品宣物料工作台</h1>
-        </div>
-        <div className="topbar-status">
-          <span>{assets.length} 张素材</span>
-          <span>{specs.length} 个画板</span>
-          <span>{Object.keys(workbenchState.previewStates).length} 个预览状态</span>
-          {hasPendingSpecChanges ? <span>尺寸待应用</span> : null}
-        </div>
-      </header>
+      <WorkbenchHeader
+        assetCount={assets.length}
+        boardCount={specs.length}
+        previewCount={Object.keys(workbenchState.previewStates).length}
+        hasPendingSpecChanges={hasPendingSpecChanges}
+      />
 
       <section className="workspace">
-        <aside className="panel asset-panel">
+        <AssetSidebar>
           <div className="panel-heading">
             <h2>素材</h2>
             <button type="button" onClick={() => imageInputRef.current?.click()}>
@@ -1223,6 +1226,7 @@ export function App() {
             )}
           </div>
 
+          <BrandPanel>
           <div className="brand-section">
             <div className="panel-heading">
               <h2>Logo 资源</h2>
@@ -1372,20 +1376,10 @@ export function App() {
             effect={brandLayer.cprEffect}
             onChange={(cprEffect) => setBrandLayer((previous) => ({ ...previous, cprEffect }))}
           />
-        </aside>
+          </BrandPanel>
+        </AssetSidebar>
 
-        <section className="panel preview-panel">
-          <div className="panel-heading">
-            <div>
-              <h2>画板总览</h2>
-              <small>单击选择画板，双击进入调整</small>
-            </div>
-            <div className="toolbar-line panel-actions">
-              <button type="button" className="primary-button" onClick={() => setExportDialogOpen(true)} disabled={!assets.length || !specs.length}>
-                批量导出
-              </button>
-            </div>
-          </div>
+        <BoardOverview disabled={!assets.length || !specs.length} onExport={() => setExportDialogOpen(true)} message={message}>
           <PreviewStage
             asset={selectedAsset}
             specs={specs}
@@ -1397,14 +1391,9 @@ export function App() {
             onSelectSpec={setSelectedSpecId}
             onEditSpec={openFocusEditor}
           />
-          {message && <p className="status-line">{message}</p>}
-        </section>
+        </BoardOverview>
 
-        <aside className="panel spec-panel">
-          <div className="panel-heading">
-            <h2>尺寸矩阵</h2>
-            <span>{specs.length} 个画板</span>
-          </div>
+        <SpecPanel boardCount={specs.length}>
           <div className="preset-section">
             <div className="toolbar-line panel-actions">
               <div className="segmented-control">
@@ -1519,7 +1508,7 @@ export function App() {
               ))}
             </div>
           )}
-        </aside>
+        </SpecPanel>
       </section>
       {focusSpec && (
         <FocusEditorModal
