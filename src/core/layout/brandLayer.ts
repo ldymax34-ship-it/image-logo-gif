@@ -26,7 +26,6 @@ export type BrandLayerOptions = {
   logoAnchor?: BrandAnchor;
   cprAnchor?: BrandAnchor;
   logoSize?: BrandSizeLevel;
-  cprSize?: BrandSizeLevel;
   cprColor?: string;
 };
 
@@ -85,7 +84,6 @@ export function renderBrandLayer(options: BrandLayerOptions): BrandLayerRenderRe
       layout: computeCprLayout({
         canvas: options.canvas,
         anchor: options.cprAnchor ?? 'center',
-        sizeLevel: options.cprSize ?? 'standard',
         svgAspectRatio: getAssetAspectRatio(options.cprAsset),
         color: options.cprColor
       })

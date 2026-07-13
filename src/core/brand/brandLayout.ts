@@ -1,7 +1,7 @@
 import type { BrandAsset } from './brandAsset';
 import { DEFAULT_BRAND_EFFECT } from './brandDefaults';
 import { createBrandGrid, getBrandGuideLines, getGridSafeArea } from './brandGrid';
-import { CPR_PRESET, getBrandColor, getCprFontSize } from './cprPreset';
+import { CPR_PRESET, getBrandColor } from './cprPreset';
 import type { BrandRenderPlan, BrandPlacement, LogoGroupState } from './brandTypes';
 import type { CanvasSize, LayoutRect } from '../layout/layoutProfile';
 
@@ -33,8 +33,10 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
     const asset = hasCompany ? options.companyLogo! : options.gameLogo!;
     items.push({ id: `logo:${asset.id}`, kind: 'logo', rect, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
   }
-  const cprHeight = getCprFontSize(grid.unit) * 1.3; const cprY = Math.min(canvas.height - grid.unit - cprHeight, rect.y + rect.height + grid.unit);
-  const cpr = options.cprEnabled ? { id: 'cpr:fixed', kind: 'cpr' as const, rect: { x: rect.x, y: cprY, width: rect.width, height: cprHeight }, color, effect: DEFAULT_BRAND_EFFECT } : undefined;
+  const cprWidth = grid.unit * 5.5;
+  const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
+  const cprX = group.placement === 'corner-left' ? grid.unit : group.placement === 'corner-right' ? canvas.width - grid.unit - cprWidth : (canvas.width - cprWidth) / 2;
+  const cpr = options.cprEnabled ? { id: 'cpr:fixed', kind: 'cpr' as const, rect: { x: cprX, y: canvas.height - grid.unit - cprHeight, width: cprWidth, height: cprHeight }, color, effect: DEFAULT_BRAND_EFFECT } : undefined;
   return { grid, logoGroupRect: rect, logoItems: items, cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
 }
 

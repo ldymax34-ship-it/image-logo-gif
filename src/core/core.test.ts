@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, getCprFontSize, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -89,16 +89,15 @@ describe('core 0.1.x foundation', () => {
     expect(grid).toMatchObject({ columns: 32, unit: 60, halfUnit: 30, rows: 18 });
   });
 
-  it('keeps fixed CPR typography and defaults all effects off', () => {
-    expect(CPR_PRESET.text).toBe('©KURO GAMES ALL RIGHTS RESERVED');
-    expect(CPR_PRESET.baseFontSize).toBe(12);
-    expect(getCprFontSize(60)).toBe(12);
+  it('ships CPR as a fixed SVG preset and defaults all effects off', () => {
+    expect(CPR_PRESET.sourceUrl).toBe('/brand-cpr/kuro-rights.svg');
+    expect(CPR_PRESET.viewBox).toEqual({ width: 16.69, height: 1.09 });
     expect(DEFAULT_BRAND_EFFECT.strokeEnabled).toBe(false);
     expect(DEFAULT_BRAND_EFFECT.glowEnabled).toBe(false);
     expect(DEFAULT_BRAND_EFFECT.shadowEnabled).toBe(false);
   });
 
-  it('builds a grouped logo render plan with CPR under the group', () => {
+  it('builds a grouped logo render plan with CPR fixed to the bottom', () => {
     const group = { ...createDefaultLogoGroup('zh-CN'), mode: 'company-and-game' as const, placement: 'corner-left' as const };
     const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
       companyLogo: createRasterBrandAsset({ id: 'company', type: 'logo', name: 'Company', language: 'custom', sourceUrl: '/company.png', width: 4, height: 1 }),
@@ -106,8 +105,8 @@ describe('core 0.1.x foundation', () => {
       cprEnabled: true
     });
     expect(plan.logoItems).toHaveLength(2);
-    expect(plan.cpr?.rect.y).toBeGreaterThan((plan.logoGroupRect?.y ?? 0) + (plan.logoGroupRect?.height ?? 0));
-    expect(plan.cpr?.rect.x).toBe(plan.logoGroupRect?.x);
+    expect((plan.cpr?.rect.y ?? 0) + (plan.cpr?.rect.height ?? 0)).toBe(1020);
+    expect(plan.cpr?.rect.x).toBe(60);
   });
 
   it('uses one brand layer calculation for logo and cpr', () => {
@@ -133,6 +132,17 @@ describe('core 0.1.x foundation', () => {
       expect(rect.x + rect.width).toBeLessThanOrEqual(canvas.width);
       expect(rect.y + rect.height).toBeLessThanOrEqual(canvas.height);
     }
+  });
+
+  it('uses CPR anchor as a bottom alignment semantic only', () => {
+    const canvas = { width: 1920, height: 1080 };
+    const left = computeCprLayout({ canvas, anchor: 'top-left', svgAspectRatio: 16.69 / 1.09 });
+    const center = computeCprLayout({ canvas, anchor: 'center', svgAspectRatio: 16.69 / 1.09 });
+    const right = computeCprLayout({ canvas, anchor: 'top-right', svgAspectRatio: 16.69 / 1.09 });
+    expect(left.rect.x).toBe(left.marginPx);
+    expect(right.rect.x + right.rect.width).toBe(canvas.width - right.marginPx);
+    expect(center.rect.x + center.rect.width / 2).toBeCloseTo(canvas.width / 2);
+    for (const result of [left, center, right]) expect(result.rect.y + result.rect.height).toBe(canvas.height - result.marginPx);
   });
 
   it('scales landscape logo consistently by short side clamp', () => {
@@ -258,6 +268,25 @@ describe('core 0.1.x foundation', () => {
     expect(plan.canvas).toEqual({ width: 300, height: 300 });
     expect(plan.image.rect.width).toBe(600);
     expect(plan.layers).toHaveLength(1);
+  });
+
+  it('renders the fixed CPR SVG at the bottom when a logo group is active', () => {
+    const asset = createRasterBrandAsset({ id: 'asset', type: 'logo', name: 'asset', language: 'zh-CN', sourceUrl: '/asset.png', width: 3, height: 1 });
+    const cpr = DEFAULT_BRAND_ASSETS.find((candidate) => candidate.id === CPR_PRESET.assetId)!;
+    const plan = buildBoardRenderPlan({
+      asset: { id: 'image', fileName: 'hero.png', objectUrl: 'blob:hero', width: 1920, height: 1080, fileSize: 1, mimeType: 'image/png' },
+      spec: { id: 'board', name: 'board', width: 1920, height: 1080, format: 'png' },
+      previewState: { assetId: 'image', specId: 'board', fitMode: 'cover', crop: createInitialCropState({ width: 1920, height: 1080 }, { width: 1920, height: 1080 }, 'cover') },
+      brandLayer: { logoEnabled: true, cprEnabled: true, logoLanguage: 'zh-CN', cprLanguage: 'custom', logoAnchor: 'top-right', cprAnchor: 'top-right', logoSize: 'standard', cprSize: 'large', logoEffect: DEFAULT_LOGO_EFFECT, cprEffect: { ...DEFAULT_LOGO_EFFECT, colorEnabled: true, color: '#ffffff' }, logoGroup: { ...createDefaultLogoGroup('zh-CN'), placement: 'corner-right' } },
+      logoAsset: asset,
+      gameLogoAsset: asset,
+      cprAsset: cpr
+    });
+    const cprLayer = plan.layers.find((layer) => layer.type === 'cpr');
+    expect(cprLayer?.asset.id).toBe(CPR_PRESET.assetId);
+    expect((cprLayer?.rect.y ?? 0) + (cprLayer?.rect.height ?? 0)).toBe(1020);
+    expect((cprLayer?.rect.x ?? 0) + (cprLayer?.rect.width ?? 0)).toBe(1860);
+    expect(cprLayer?.effect.shadowEnabled).toBe(false);
   });
 
   it('creates one batch export item for every asset and board combination', () => {

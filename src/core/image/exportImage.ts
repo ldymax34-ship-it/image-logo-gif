@@ -1,4 +1,4 @@
-import { getBrandAssetUrl, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
+import { buildBrandRenderPlan, DEFAULT_CPR_EFFECT, getBrandAssetUrl, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
 import { renderBrandLayer } from '../layout';
 import { computeCropTransform, type BoardPreviewState } from './crop';
 import type { MaterialAsset } from './imageMeta';
@@ -45,6 +45,8 @@ export type BoardRenderInput = {
   brandLayer: BrandLayerState;
   logoAsset?: BrandAsset;
   cprAsset?: BrandAsset;
+  companyLogoAsset?: BrandAsset;
+  gameLogoAsset?: BrandAsset;
 };
 
 export type ExportBoardImageOptions = BoardRenderInput & {
@@ -54,6 +56,56 @@ export type ExportBoardImageOptions = BoardRenderInput & {
 
 export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
   const transform = computeCropTransform(input.asset, input.spec, input.previewState.crop);
+  const brandGroup = input.brandLayer.logoGroup;
+  if (brandGroup) {
+    const grouped = buildBrandRenderPlan(
+      { width: input.spec.width, height: input.spec.height },
+      brandGroup,
+      {
+        companyLogo: input.companyLogoAsset,
+        gameLogo: input.gameLogoAsset ?? input.logoAsset,
+        cprEnabled: input.brandLayer.cprEnabled && Boolean(input.cprAsset),
+        effect: input.brandLayer.logoEffect
+      }
+    );
+    const assetsByLayerId = new Map<string, BrandAsset>();
+    if (input.companyLogoAsset) assetsByLayerId.set(`logo:${input.companyLogoAsset.id}`, input.companyLogoAsset);
+    if (input.gameLogoAsset ?? input.logoAsset) {
+      const gameAsset = input.gameLogoAsset ?? input.logoAsset;
+      if (gameAsset) assetsByLayerId.set(`logo:${gameAsset.id}`, gameAsset);
+    }
+    if (input.cprAsset) assetsByLayerId.set('cpr:fixed', input.cprAsset);
+    const layers: BoardRenderLayer[] = [
+      ...(!input.brandLayer.logoEnabled ? [] : grouped.logoItems).map((item, index) => {
+        const asset = assetsByLayerId.get(item.id);
+        return asset ? { id: item.id, type: 'logo' as const, asset, rect: item.rect, zIndex: 20 + index, effect: input.brandLayer.logoEffect } : undefined;
+      }),
+      grouped.cpr && input.cprAsset
+        ? {
+            id: grouped.cpr.id,
+            type: 'cpr' as const,
+            asset: input.cprAsset,
+            rect: grouped.cpr.rect,
+            zIndex: 30,
+            effect: {
+              ...DEFAULT_CPR_EFFECT,
+              colorEnabled: input.brandLayer.logoEffect.colorEnabled,
+              color: input.brandLayer.logoEffect.color
+            }
+          }
+        : undefined
+    ].filter((layer): layer is BoardRenderLayer => Boolean(layer));
+
+    return {
+      canvas: { width: input.spec.width, height: input.spec.height },
+      image: {
+        src: input.asset.objectUrl,
+        alt: input.asset.fileName,
+        rect: { x: transform.offsetX, y: transform.offsetY, width: transform.width, height: transform.height }
+      },
+      layers
+    };
+  }
   const brandPreview = renderBrandLayer({
     canvas: { width: input.spec.width, height: input.spec.height },
     includeLogo: input.brandLayer.logoEnabled && Boolean(input.logoAsset),
@@ -63,7 +115,6 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
     logoAnchor: input.brandLayer.logoAnchor,
     cprAnchor: input.brandLayer.cprAnchor,
     logoSize: input.brandLayer.logoSize,
-    cprSize: input.brandLayer.cprSize,
     cprColor: input.brandLayer.cprEffect.color
   });
 
@@ -92,7 +143,7 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
           asset,
           rect: layer.layout.rect,
           zIndex: layer.zIndex,
-          effect: layer.type === 'logo' ? input.brandLayer.logoEffect : input.brandLayer.cprEffect
+          effect: layer.type === 'logo' ? input.brandLayer.logoEffect : DEFAULT_CPR_EFFECT
         } satisfies BoardRenderLayer;
       })
       .filter((layer): layer is BoardRenderLayer => Boolean(layer))

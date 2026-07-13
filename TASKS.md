@@ -38,7 +38,6 @@
 - [x] 每个素材 x 每个画板保存独立裁切状态
 - [x] 抽离 `src/core/image/fit.ts`、`crop.ts`、`imageMeta.ts`
 - [x] 支持上传 / 管理多个 Logo SVG
-- [x] 支持上传 / 管理多个 CPR SVG
 - [x] 支持 SVG 语种标签：简中、繁中、日文、韩文、英文、自定义
 - [x] 支持启用 / 关闭 Logo
 - [x] 支持启用 / 关闭 CPR
@@ -54,13 +53,12 @@
 - [x] 接入鸣潮 Logo 静态 PNG：简中、繁中 / 日文、英文、韩文
 - [x] 默认 Logo 资源来自用户提供文件夹中的静态优先资源，不接入动态素材
 - [x] Logo 支持改色、简单描边、外发光、阴影
-- [x] CPR 样式控制复用同一套改色、描边、外发光、阴影状态结构
 - [x] PNG Logo 和上传 SVG 共用 `BrandAsset`、`BrandLayerState` 和 `renderBrandLayer`
 - [x] 规格 ID 改为稳定生成，插入 / 上移无关行时不再按行号串裁切
 - [x] 尺寸矩阵改为草稿编辑 + 手动应用，避免实时解析直接破坏已调好的画板
 - [x] 新项目默认不再注入示例尺寸，首屏从空状态开始
-- [x] Logo / CPR 语种下拉会真实切换当前预览资源，不再只影响下一次上传
-- [x] Logo / CPR 增加全局位置与大小控制：左上 / 右上 / 居中，小 / 标准 / 大
+- [x] Logo 语种下拉会真实切换当前预览资源，不再只影响下一次上传
+- [x] Logo Group 支持组合、位置与大小控制；CPR 固定为底部 SVG 组件
 - [x] 总览中单击画板只负责选择，双击才进入裁切调整，避免缩略图误拖
 - [x] 三栏桌面布局延后到更窄断点再折叠，减少笔记本桌面视图过早单栏化
 - [x] 接入内置尺寸套组，一键替换填入或追加到尺寸草稿
@@ -92,9 +90,11 @@
 - [x] 将 App Shell 拆为 WorkbenchHeader、AssetSidebar、BoardOverview、SpecPanel、BrandPanel、FocusEditor、ExportDialog 组件边界
 - [x] 浅色面板、14px 基础排版、轻量弹窗动效完成；运行时不使用 backdrop blur
 - [x] 新增 32 列品牌网格纯函数、半格、网格安全区与辅助线数据
-- [x] 新增固定 CPR 预设：固定文案、思源黑体 Regular 字体栈、1920x1080 基准 12px 缩放规则
+- [x] 新增固定 CPR SVG 预设：保留 viewBox 与原始比例，尺寸与底部位置由品牌网格计算
 - [x] 新增 Logo Group、位置、颜色和 Brand Render Plan 数据结构
 - [x] 新增版本化 BrandSettings 本地读取、写入及恢复默认值 API
+- [x] 接入固定 CPR SVG；CPR 固定于画板底部并仅复用 Logo Group 的水平对齐语义
+- [x] 移除 CPR 上传、替换、独立坐标、尺寸和效果入口；不使用 Canvas fillText 或字体文件
 
 ### 本轮验证记录
 
@@ -108,7 +108,7 @@
 - [x] 0.1.8 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过
 - [x] 0.1.9 完成后验证：`npm run verify:core`、`npm test`、`npm run build` 通过，25 tests
 - [x] 0.1.11 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、桌面 / 900px 视口与无大面积 blur 检查；27 tests，桌面与 900px 均无横向溢出，运行时 backdrop-filter 为 0
-- [x] 0.1.12 核心层验证：`npm run verify:core`、`npm test`、`npm run build` 通过；30 tests
+- [x] 0.1.12 品牌核心与固定 CPR SVG 验证：`npm run verify:core`、`npm test`、`npm run build` 通过；32 tests
 
 ### 第一阶段剩余目标
 
@@ -135,8 +135,8 @@
 
 ### 已知风险 / 降级
 
-- CPR 颜色当前通过 CSS mask 进行单色预览，适合单色 CPR；如果 CPR SVG 本身是多色图形，单色预览会丢失原多色细节。
-- Logo / CPR 已使用 `buildBoardRenderPlan` 统一计算预览、单画板和批量导出位置。
+- 固定 CPR SVG 当前为单色路径，黑 / 白模式通过同一图层渲染；若未来正式资产改为多色资源，应保持资源原始颜色而不是强制改色。
+- Logo Group 与固定 CPR 已使用 `buildBoardRenderPlan` 统一计算预览、单画板和批量导出位置。
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
 - Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。

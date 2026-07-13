@@ -208,6 +208,15 @@ export const DEFAULT_CPR_EFFECT: BrandEffectState = {
 
 export const DEFAULT_BRAND_ASSETS: BrandAsset[] = [
   createRasterBrandAsset({
+    id: 'preset_kuro_cpr_rights',
+    type: 'cpr',
+    name: 'KURO Rights CPR',
+    language: 'custom',
+    sourceUrl: '/brand-cpr/kuro-rights.svg',
+    width: 1669,
+    height: 109
+  }),
+  createRasterBrandAsset({
     id: 'preset_kuro_en_black',
     type: 'logo',
     name: 'KURO 英文标识 黑色',

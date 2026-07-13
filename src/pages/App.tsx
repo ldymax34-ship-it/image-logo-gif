@@ -5,6 +5,7 @@ import {
   buildBoardRenderPlan,
   createBatchExportItems,
   DEFAULT_BRAND_ASSETS,
+  DEFAULT_BRAND_SETTINGS,
   DEFAULT_CPR_EFFECT,
   DEFAULT_LOGO_EFFECT,
   buildOutputFileName,
@@ -12,29 +13,32 @@ import {
   clampCropState,
   computeFitScale,
   createBrandAssetFromFile,
+  createDefaultLogoGroup,
   createInitialCropState,
   createMaterialAsset,
   exportBoardImage,
   estimateExportBytes,
   formatFileSize,
   formatMegabytes,
-  getBrandAssetUrl,
   getBoardPreviewKey,
   getBrandLanguageLabel,
+  loadBrandSettings,
   loadCustomPresetTemplates,
   panCropState,
   parseSpecText,
+  saveBrandSettings,
   saveCustomPresetTemplates,
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState,
   type BoardPreviewState,
   type BrandAsset,
-  type BrandEffectState,
   type BrandLanguage,
   type BrandLayerState,
+  type BrandSettingsV1,
   type CropState,
   type FitMode,
+  type LogoGroupState,
   type MaterialAsset,
   type MaterialSpec,
   type MaterialFormat,
@@ -45,12 +49,18 @@ import { chooseOutputTarget, downloadBlobFile, saveBlobToDirectory } from '../pl
 import {
   AssetSidebar,
   BoardOverview,
+  BrandAssetList,
+  BrandEffectControls,
+  BrandGuideControls,
   BrandPanel,
+  BrandSettingsDialog,
   ExportDialog,
   FocusEditor,
+  LogoGroupControls,
   SpecPanel,
   WorkbenchHeader
 } from '../components';
+import { BoardCanvas } from '../components/canvas';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -133,165 +143,6 @@ function mergeSpecText(currentText: string, presetText: string): string {
   return `${normalizedCurrent}\n${normalizedPreset}`;
 }
 
-function buildDropShadowFilter(effect: BrandEffectState, scale = 1): string | undefined {
-  const filters: string[] = [];
-  if (effect.strokeEnabled && effect.strokeWidth > 0) {
-    const width = Math.max(1, effect.strokeWidth * scale);
-    const directions = [
-      [width, 0],
-      [-width, 0],
-      [0, width],
-      [0, -width],
-      [width, width],
-      [-width, width],
-      [width, -width],
-      [-width, -width]
-    ];
-    for (const [x, y] of directions) {
-      filters.push(`drop-shadow(${x}px ${y}px 0 ${effect.strokeColor})`);
-    }
-  }
-  if (effect.glowEnabled && effect.glowBlur > 0) {
-    filters.push(`drop-shadow(0 0 ${effect.glowBlur * scale}px ${effect.glowColor})`);
-  }
-  if (effect.shadowEnabled && effect.shadowBlur > 0) {
-    filters.push(
-      `drop-shadow(${effect.shadowOffsetX * scale}px ${effect.shadowOffsetY * scale}px ${effect.shadowBlur * scale}px ${hexToRgba(
-        effect.shadowColor,
-        effect.shadowOpacity
-      )})`
-    );
-  }
-  return filters.length ? filters.join(' ') : undefined;
-}
-
-function hexToRgba(hex: string, opacity: number): string {
-  const normalized = hex.replace('#', '').trim();
-  if (!/^[0-9a-f]{6}$/i.test(normalized)) return `rgba(0,0,0,${opacity})`;
-  const value = Number.parseInt(normalized, 16);
-  const red = (value >> 16) & 255;
-  const green = (value >> 8) & 255;
-  const blue = value & 255;
-  return `rgba(${red},${green},${blue},${Math.min(1, Math.max(0, opacity))})`;
-}
-
-function SvgImageLayer({
-  asset,
-  className,
-  effect
-}: {
-  asset: BrandAsset;
-  className: string;
-  effect: BrandEffectState;
-}) {
-  const media = useMemo(() => getBrandAssetUrl(asset), [asset]);
-
-  useEffect(() => {
-    return () => {
-      if (media.revoke) URL.revokeObjectURL(media.url);
-    };
-  }, [media]);
-
-  if (effect.colorEnabled) {
-    return (
-      <span
-        className={`${className} brand-mask`}
-        style={{
-          backgroundColor: effect.color,
-          WebkitMaskImage: `url("${media.url}")`,
-          maskImage: `url("${media.url}")`
-        }}
-      />
-    );
-  }
-
-  return <img className={className} src={media.url} alt={asset.name} draggable={false} />;
-}
-
-function BoardCanvas({
-  asset,
-  spec,
-  previewState,
-  logoAsset,
-  cprAsset,
-  brandLayer,
-  scale,
-  draggable,
-  onPointerDown,
-  onPointerMove,
-  onPointerUp
-}: {
-  asset: MaterialAsset | undefined;
-  spec: MaterialSpec;
-  previewState: BoardPreviewState | undefined;
-  logoAsset: BrandAsset | undefined;
-  cprAsset: BrandAsset | undefined;
-  brandLayer: BrandLayerState;
-  scale: number;
-  draggable?: boolean;
-  onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void;
-  onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
-}) {
-  const plan = asset && previewState
-    ? buildBoardRenderPlan({
-        asset,
-        spec,
-        previewState,
-        brandLayer,
-        logoAsset,
-        cprAsset
-      })
-    : undefined;
-
-  return (
-    <div
-      className={`preview-canvas board-canvas ${draggable ? 'is-draggable' : ''}`}
-      style={{ width: spec.width * scale, height: spec.height * scale }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      {plan ? (
-        <>
-          <img
-            className="preview-image"
-            src={plan.image.src}
-            alt={plan.image.alt}
-            draggable={false}
-            style={{
-              left: plan.image.rect.x * scale,
-              top: plan.image.rect.y * scale,
-              width: plan.image.rect.width * scale,
-              height: plan.image.rect.height * scale
-            }}
-          />
-          <div className="safe-area" />
-          {plan.layers.map((layer) => (
-            <div
-              key={layer.id}
-              className={`brand-layer ${layer.type}`}
-              style={{
-                left: layer.rect.x * scale,
-                top: layer.rect.y * scale,
-                width: layer.rect.width * scale,
-                height: layer.rect.height * scale,
-                zIndex: layer.zIndex,
-                filter: buildDropShadowFilter(layer.effect, scale)
-              }}
-            >
-              <SvgImageLayer asset={layer.asset} className={`brand-svg ${layer.type}`} effect={layer.effect} />
-            </div>
-          ))}
-        </>
-      ) : (
-        <div className="canvas-placeholder">上传图片</div>
-      )}
-    </div>
-  );
-}
-
 function PreviewStage({
   asset,
   specs,
@@ -300,6 +151,10 @@ function PreviewStage({
   logoAsset,
   cprAsset,
   brandLayer,
+  brandSettings,
+  logoGroup,
+  overlayCompanyLogo,
+  overlayGameLogo,
   onSelectSpec,
   onEditSpec
 }: {
@@ -310,6 +165,10 @@ function PreviewStage({
   logoAsset: BrandAsset | undefined;
   cprAsset: BrandAsset | undefined;
   brandLayer: BrandLayerState;
+  brandSettings: BrandSettingsV1;
+  logoGroup: LogoGroupState;
+  overlayCompanyLogo?: BrandAsset;
+  overlayGameLogo?: BrandAsset;
   onSelectSpec: (specId: string) => void;
   onEditSpec: (specId: string) => void;
 }) {
@@ -365,6 +224,10 @@ function PreviewStage({
                   cprAsset={cprAsset}
                   brandLayer={brandLayer}
                   scale={scale}
+                  brandSettings={brandSettings}
+                  logoGroup={logoGroup}
+                  overlayCompanyLogo={overlayCompanyLogo}
+                  overlayGameLogo={overlayGameLogo}
                 />
                 <div className="board-card-footer">
                   <span>{getAspectLabel(spec)}</span>
@@ -387,6 +250,10 @@ function FocusEditorModal({
   logoAsset,
   cprAsset,
   brandLayer,
+  brandSettings,
+  logoGroup,
+  overlayCompanyLogo,
+  overlayGameLogo,
   onCancel,
   onSave
 }: {
@@ -396,6 +263,10 @@ function FocusEditorModal({
   logoAsset: BrandAsset | undefined;
   cprAsset: BrandAsset | undefined;
   brandLayer: BrandLayerState;
+  brandSettings: BrandSettingsV1;
+  logoGroup: LogoGroupState;
+  overlayCompanyLogo?: BrandAsset;
+  overlayGameLogo?: BrandAsset;
   onCancel: () => void;
   onSave: (previewState: BoardPreviewState) => void;
 }) {
@@ -522,6 +393,10 @@ function FocusEditorModal({
               brandLayer={brandLayer}
               scale={stageScale}
               draggable={Boolean(asset)}
+              brandSettings={brandSettings}
+              logoGroup={logoGroup}
+              overlayCompanyLogo={overlayCompanyLogo}
+              overlayGameLogo={overlayGameLogo}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -663,7 +538,6 @@ function BatchExportDialog({
   const [logoEnabled, setLogoEnabled] = useState(brandLayer.logoEnabled);
   const [cprEnabled, setCprEnabled] = useState(brandLayer.cprEnabled);
   const [logoLanguage, setLogoLanguage] = useState(brandLayer.logoLanguage);
-  const [cprLanguage, setCprLanguage] = useState(brandLayer.cprLanguage);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [errorMessage, setErrorMessage] = useState('');
@@ -675,7 +549,7 @@ function BatchExportDialog({
     ? previewStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]
     : undefined;
   const selectedLogoId = resolvePreferredBrandAssetId(brandAssets, 'logo', logoLanguage, brandLayer.selectedLogoId);
-  const selectedCprId = resolvePreferredBrandAssetId(brandAssets, 'cpr', cprLanguage, brandLayer.selectedCprId);
+  const selectedCprId = resolvePreferredBrandAssetId(brandAssets, 'cpr', 'custom', brandLayer.selectedCprId);
   const exportLogo = brandAssets.find((asset) => asset.id === selectedLogoId);
   const exportCpr = brandAssets.find((asset) => asset.id === selectedCprId);
   const exportBrandLayer: BrandLayerState = {
@@ -683,7 +557,6 @@ function BatchExportDialog({
     logoEnabled,
     cprEnabled,
     logoLanguage,
-    cprLanguage,
     selectedLogoId,
     selectedCprId
   };
@@ -775,6 +648,8 @@ function BatchExportDialog({
           brandLayer: exportBrandLayer,
           logoAsset: exportLogo,
           cprAsset: exportCpr,
+          companyLogoAsset: brandAssets.find((asset) => asset.id === exportBrandLayer.logoGroup?.companyLogoId) ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom'),
+          gameLogoAsset: exportLogo,
           format,
           quality
         });
@@ -863,6 +738,8 @@ function BatchExportDialog({
                   logoAsset={exportLogo}
                   cprAsset={exportCpr}
                   brandLayer={exportBrandLayer}
+                  overlayCompanyLogo={brandAssets.find((asset) => asset.id === exportBrandLayer.logoGroup?.companyLogoId) ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom')}
+                  overlayGameLogo={exportLogo}
                   scale={previewScale}
                 />
               ) : (
@@ -912,16 +789,13 @@ function BatchExportDialog({
                 <input type="checkbox" checked={cprEnabled} onChange={(event) => setCprEnabled(event.target.checked)} />
                 添加 CPR
               </label>
-              <select value={cprLanguage} onChange={(event) => setCprLanguage(event.target.value as BrandLanguage)} disabled={!cprEnabled}>
-                {BRAND_LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
             </div>
             <div className="export-summary-box">
               <span>已选 {selectedRows.length} 个文件</span>
               <strong>预计 {formatMegabytes(selectedBytes)}</strong>
               <small>实际大小会受画面内容和压缩率影响</small>
               {logoEnabled && !exportLogo ? <small className="size-warning">当前 Logo 语种没有可用资源</small> : null}
-              {cprEnabled && !exportCpr ? <small className="size-warning">当前 CPR 语种没有可用资源</small> : null}
+              {cprEnabled && !exportCpr ? <small className="size-warning">固定 CPR SVG 不可用</small> : null}
             </div>
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>
@@ -947,7 +821,6 @@ function BatchExportDialog({
 export function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
-  const cprInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
   const [draftText, setDraftText] = useState('');
@@ -959,6 +832,11 @@ export function App() {
   const [previewStates, setPreviewStates] = useState<Record<string, BoardPreviewState>>({});
   const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
   const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
+  const [brandSettings, setBrandSettings] = useState<BrandSettingsV1>(() => loadBrandSettings());
+  const [logoGroup, setLogoGroup] = useState<LogoGroupState>(() =>
+    createDefaultLogoGroup(loadBrandSettings().defaultLanguage)
+  );
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
   const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
   const [focusSpecId, setFocusSpecId] = useState<string | undefined>();
@@ -978,6 +856,11 @@ export function App() {
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
   const selectedLogo = logoAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
   const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
+  const companyLogoAsset = useMemo(
+    () => logoAssets.find((asset) => asset.language === 'custom'),
+    [logoAssets]
+  );
+  const gameLogoAsset = selectedLogo?.language !== 'custom' ? selectedLogo : logoAssets.find((asset) => asset.language !== 'custom');
 
   const workbenchState: WorkbenchState = {
     assets,
@@ -1005,19 +888,24 @@ export function App() {
   }, [assets, specs]);
 
   useEffect(() => {
+    saveBrandSettings(brandSettings);
+  }, [brandSettings]);
+
+  useEffect(() => {
     setBrandLayer((previous) => {
       const nextLogoId = resolvePreferredBrandAssetId(brandAssets, 'logo', previous.logoLanguage, previous.selectedLogoId);
       const nextCprId = resolvePreferredBrandAssetId(brandAssets, 'cpr', previous.cprLanguage, previous.selectedCprId);
-      if (nextLogoId === previous.selectedLogoId && nextCprId === previous.selectedCprId) {
+      if (nextLogoId === previous.selectedLogoId && nextCprId === previous.selectedCprId && previous.logoGroup) {
         return previous;
       }
       return {
         ...previous,
         selectedLogoId: nextLogoId,
-        selectedCprId: nextCprId
+        selectedCprId: nextCprId,
+        logoGroup: previous.logoGroup ?? logoGroup
       };
     });
-  }, [brandAssets]);
+  }, [brandAssets, logoGroup]);
 
   useEffect(() => {
     assetsRef.current = assets;
@@ -1138,40 +1026,31 @@ export function App() {
     setMessage('已保存当前画板调整');
   }
 
-  function changeBrandLanguage(type: BrandAsset['type'], language: BrandLanguage) {
+  function changeBrandLanguage(language: BrandLanguage) {
     setBrandLayer((previous) => ({
       ...previous,
-      ...(type === 'logo'
-        ? {
-            logoLanguage: language,
-            selectedLogoId: resolvePreferredBrandAssetId(brandAssets, 'logo', language, previous.selectedLogoId)
-          }
-        : {
-            cprLanguage: language,
-            selectedCprId: resolvePreferredBrandAssetId(brandAssets, 'cpr', language, previous.selectedCprId)
-          })
+      logoLanguage: language,
+      selectedLogoId: resolvePreferredBrandAssetId(brandAssets, 'logo', language, previous.selectedLogoId)
     }));
   }
 
-  async function handleBrandFiles(fileList: FileList | null, type: BrandAsset['type']) {
+  async function handleLogoFiles(fileList: FileList | null) {
     const files = Array.from(fileList ?? []);
     if (!files.length) return;
     setMessage('正在读取 SVG 资源...');
-    const language = type === 'logo' ? brandLayer.logoLanguage : brandLayer.cprLanguage;
+    const language = brandLayer.logoLanguage;
     try {
-      const nextAssets = await Promise.all(files.map((file) => createBrandAssetFromFile(file, type, language)));
+      const nextAssets = await Promise.all(files.map((file) => createBrandAssetFromFile(file, 'logo', language)));
       setBrandAssets((previous) => [...previous, ...nextAssets]);
       setBrandLayer((previous) => ({
         ...previous,
-        selectedLogoId: type === 'logo' ? nextAssets[0]?.id ?? previous.selectedLogoId : previous.selectedLogoId,
-        selectedCprId: type === 'cpr' ? nextAssets[0]?.id ?? previous.selectedCprId : previous.selectedCprId
+        selectedLogoId: nextAssets[0]?.id ?? previous.selectedLogoId
       }));
-      setMessage(`已导入 ${nextAssets.length} 个 ${type === 'logo' ? 'Logo' : 'CPR'} SVG`);
+      setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'SVG 导入失败');
     } finally {
-      if (type === 'logo' && logoInputRef.current) logoInputRef.current.value = '';
-      if (type === 'cpr' && cprInputRef.current) cprInputRef.current.value = '';
+      if (logoInputRef.current) logoInputRef.current.value = '';
     }
   }
 
@@ -1182,6 +1061,7 @@ export function App() {
         boardCount={specs.length}
         previewCount={Object.keys(workbenchState.previewStates).length}
         hasPendingSpecChanges={hasPendingSpecChanges}
+        onOpenSettings={() => setSettingsDialogOpen(true)}
       />
 
       <section className="workspace">
@@ -1227,6 +1107,27 @@ export function App() {
           </div>
 
           <BrandPanel>
+          <LogoGroupControls
+            group={logoGroup}
+            onChange={(next) => {
+              setLogoGroup(next);
+              const anchor = next.placement === 'corner-left' ? 'top-left' : next.placement === 'corner-right' ? 'top-right' : 'center';
+              const color = next.colorMode === 'black' ? '#000000' : '#ffffff';
+              setBrandLayer((previous) => ({
+                ...previous,
+                logoGroup: next,
+                logoAnchor: next.placement === 'custom' ? previous.logoAnchor : anchor,
+                // A custom Logo Group must not move CPR. Keep the most recent explicit
+                // left/center/right alignment for its bottom-fixed placement.
+                cprAnchor: next.placement === 'custom' ? previous.cprAnchor : anchor,
+                logoSize: next.sizePreset,
+                cprFollowsLogoGroup: true,
+                logoEffect: { ...previous.logoEffect, colorEnabled: next.colorMode !== 'original', color, strokeEnabled: false, glowEnabled: false, shadowEnabled: false },
+                cprEffect: { ...previous.cprEffect, colorEnabled: next.colorMode !== 'original', color, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
+              }));
+            }}
+          />
+          <BrandGuideControls settings={brandSettings} onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }} />
           <div className="brand-section">
             <div className="panel-heading">
               <h2>Logo 资源</h2>
@@ -1240,12 +1141,12 @@ export function App() {
               accept=".svg,image/svg+xml"
               multiple
               hidden
-              onChange={(event) => void handleBrandFiles(event.target.files, 'logo')}
+              onChange={(event) => void handleLogoFiles(event.target.files)}
             />
             <div className="toolbar-line">
               <select
                 value={brandLayer.logoLanguage}
-                onChange={(event) => changeBrandLanguage('logo', event.target.value as BrandLanguage)}
+                onChange={(event) => changeBrandLanguage(event.target.value as BrandLanguage)}
               >
                 {BRAND_LANGUAGE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -1273,108 +1174,20 @@ export function App() {
                 }))
               }
             />
-            <div className="toolbar-line compact">
-              <select
-                value={brandLayer.logoAnchor}
-                onChange={(event) =>
-                  setBrandLayer((previous) => ({ ...previous, logoAnchor: event.target.value as BrandLayerState['logoAnchor'] }))
-                }
-              >
-                <option value="top-left">Logo 左上</option>
-                <option value="top-right">Logo 右上</option>
-                <option value="center">Logo 居中</option>
-              </select>
-              <select
-                value={brandLayer.logoSize}
-                onChange={(event) =>
-                  setBrandLayer((previous) => ({ ...previous, logoSize: event.target.value as BrandLayerState['logoSize'] }))
-                }
-              >
-                <option value="small">小</option>
-                <option value="standard">标准</option>
-                <option value="large">大</option>
-              </select>
-            </div>
           </div>
 
           <div className="brand-section">
-            <div className="panel-heading">
-              <h2>CPR SVG</h2>
-              <button type="button" onClick={() => cprInputRef.current?.click()}>
-                导入
-              </button>
-            </div>
-            <input
-              ref={cprInputRef}
-              type="file"
-              accept=".svg,image/svg+xml"
-              multiple
-              hidden
-              onChange={(event) => void handleBrandFiles(event.target.files, 'cpr')}
-            />
-            <div className="toolbar-line">
-              <select
-                value={brandLayer.cprLanguage}
-                onChange={(event) => changeBrandLanguage('cpr', event.target.value as BrandLanguage)}
-              >
-                {BRAND_LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={brandLayer.cprEnabled}
-                  onChange={(event) => setBrandLayer((previous) => ({ ...previous, cprEnabled: event.target.checked }))}
-                />
-                启用
-              </label>
-            </div>
-            <BrandAssetList
-              assets={cprAssets}
-              selectedId={brandLayer.selectedCprId}
-              onSelect={(asset) =>
-                setBrandLayer((previous) => ({
-                  ...previous,
-                  cprLanguage: asset.language,
-                  selectedCprId: asset.id
-                }))
-              }
-            />
-            <div className="toolbar-line compact">
-              <select
-                value={brandLayer.cprAnchor}
-                onChange={(event) =>
-                  setBrandLayer((previous) => ({ ...previous, cprAnchor: event.target.value as BrandLayerState['cprAnchor'] }))
-                }
-              >
-                <option value="top-left">CPR 左上</option>
-                <option value="top-right">CPR 右上</option>
-                <option value="center">CPR 居中</option>
-              </select>
-              <select
-                value={brandLayer.cprSize}
-                onChange={(event) =>
-                  setBrandLayer((previous) => ({ ...previous, cprSize: event.target.value as BrandLayerState['cprSize'] }))
-                }
-              >
-                <option value="small">小</option>
-                <option value="standard">标准</option>
-                <option value="large">大</option>
-              </select>
-            </div>
+            <div className="panel-heading"><h2>CPR</h2><small>固定品牌组件</small></div>
+            <label className="toggle">
+              <input type="checkbox" checked={brandLayer.cprEnabled} onChange={(event) => setBrandLayer((previous) => ({ ...previous, cprEnabled: event.target.checked }))} />
+              显示固定版权信息
+            </label>
+            <p className="inline-note">正式 SVG 固定于底部；仅继承 Logo 的左 / 中 / 右对齐和黑白模式。</p>
           </div>
           <BrandEffectControls
             title="Logo 样式"
             effect={brandLayer.logoEffect}
             onChange={(logoEffect) => setBrandLayer((previous) => ({ ...previous, logoEffect }))}
-          />
-          <BrandEffectControls
-            title="CPR 样式"
-            effect={brandLayer.cprEffect}
-            onChange={(cprEffect) => setBrandLayer((previous) => ({ ...previous, cprEffect }))}
           />
           </BrandPanel>
         </AssetSidebar>
@@ -1388,6 +1201,10 @@ export function App() {
             logoAsset={selectedLogo}
             cprAsset={selectedCpr}
             brandLayer={brandLayer}
+            brandSettings={brandSettings}
+            logoGroup={logoGroup}
+            overlayCompanyLogo={companyLogoAsset}
+            overlayGameLogo={gameLogoAsset}
             onSelectSpec={setSelectedSpecId}
             onEditSpec={openFocusEditor}
           />
@@ -1519,6 +1336,10 @@ export function App() {
           logoAsset={selectedLogo}
           cprAsset={selectedCpr}
           brandLayer={brandLayer}
+          brandSettings={brandSettings}
+          logoGroup={logoGroup}
+          overlayCompanyLogo={companyLogoAsset}
+          overlayGameLogo={gameLogoAsset}
           onCancel={closeFocusEditor}
           onSave={saveFocusPreview}
         />
@@ -1548,167 +1369,14 @@ export function App() {
           onComplete={setMessage}
         />
       )}
+      {settingsDialogOpen && (
+        <BrandSettingsDialog
+          settings={brandSettings}
+          onClose={() => setSettingsDialogOpen(false)}
+          onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }}
+          onReset={() => { setBrandSettings(DEFAULT_BRAND_SETTINGS); saveBrandSettings(DEFAULT_BRAND_SETTINGS); }}
+        />
+      )}
     </main>
-  );
-}
-
-function BrandAssetList({
-  assets,
-  selectedId,
-  onSelect
-}: {
-  assets: BrandAsset[];
-  selectedId: string | undefined;
-  onSelect: (asset: BrandAsset) => void;
-}) {
-  if (!assets.length) {
-    return <div className="mini-empty">未导入 SVG</div>;
-  }
-  return (
-    <div className="brand-list">
-      {assets.map((asset) => (
-        <button
-          key={asset.id}
-          type="button"
-          className={`brand-row ${asset.id === selectedId ? 'active' : ''}`}
-          onClick={() => onSelect(asset)}
-        >
-          <span>
-            <strong>{asset.name}</strong>
-            <small>
-              {asset.sourceKind.toUpperCase()} · {getBrandLanguageLabel(asset.language)}
-              {asset.viewBoxSize ? ` · ${Math.round(asset.viewBoxSize.width)}x${Math.round(asset.viewBoxSize.height)}` : ''}
-            </small>
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function BrandEffectControls({
-  title,
-  effect,
-  onChange
-}: {
-  title: string;
-  effect: BrandEffectState;
-  onChange: (effect: BrandEffectState) => void;
-}) {
-  function patch(next: Partial<BrandEffectState>) {
-    onChange({ ...effect, ...next });
-  }
-
-  return (
-    <div className="brand-section effect-section">
-      <details className="effect-details">
-        <summary>{title} 高级样式</summary>
-        <div className="effect-grid">
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={effect.colorEnabled}
-              onChange={(event) => patch({ colorEnabled: event.target.checked })}
-            />
-            改色
-          </label>
-          <input
-            className="color-input"
-            type="color"
-            value={effect.color}
-            onChange={(event) => patch({ color: event.target.value })}
-            aria-label={`${title} 颜色`}
-          />
-
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={effect.strokeEnabled}
-              onChange={(event) => patch({ strokeEnabled: event.target.checked })}
-            />
-            描边
-          </label>
-          <input
-            className="color-input"
-            type="color"
-            value={effect.strokeColor}
-            onChange={(event) => patch({ strokeColor: event.target.value })}
-            aria-label={`${title} 描边颜色`}
-          />
-          <label className="range-field">
-            <span>粗细</span>
-            <input
-              type="range"
-              min="1"
-              max="8"
-              step="1"
-              value={effect.strokeWidth}
-              onChange={(event) => patch({ strokeWidth: Number(event.target.value) })}
-            />
-          </label>
-
-          <label className="toggle">
-            <input checked={effect.glowEnabled} type="checkbox" onChange={(event) => patch({ glowEnabled: event.target.checked })} />
-            外发光
-          </label>
-          <input
-            className="color-input"
-            type="color"
-            value={effect.glowColor}
-            onChange={(event) => patch({ glowColor: event.target.value })}
-            aria-label={`${title} 外发光颜色`}
-          />
-          <label className="range-field">
-            <span>强度</span>
-            <input
-              type="range"
-              min="2"
-              max="32"
-              step="1"
-              value={effect.glowBlur}
-              onChange={(event) => patch({ glowBlur: Number(event.target.value) })}
-            />
-          </label>
-
-          <label className="toggle">
-            <input
-              checked={effect.shadowEnabled}
-              type="checkbox"
-              onChange={(event) => patch({ shadowEnabled: event.target.checked })}
-            />
-            阴影
-          </label>
-          <input
-            className="color-input"
-            type="color"
-            value={effect.shadowColor}
-            onChange={(event) => patch({ shadowColor: event.target.value })}
-            aria-label={`${title} 阴影颜色`}
-          />
-          <label className="range-field">
-            <span>模糊</span>
-            <input
-              type="range"
-              min="2"
-              max="36"
-              step="1"
-              value={effect.shadowBlur}
-              onChange={(event) => patch({ shadowBlur: Number(event.target.value) })}
-            />
-          </label>
-          <label className="range-field">
-            <span>Y</span>
-            <input
-              type="range"
-              min="-24"
-              max="24"
-              step="1"
-              value={effect.shadowOffsetY}
-              onChange={(event) => patch({ shadowOffsetY: Number(event.target.value) })}
-            />
-          </label>
-        </div>
-      </details>
-    </div>
   );
 }

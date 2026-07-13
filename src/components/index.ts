@@ -5,4 +5,6 @@ export * from './ExportDialog';
 export * from './FocusEditor';
 export * from './SpecPanel';
 export * from './WorkbenchHeader';
+export * from './brand';
+export * from './canvas';
 export * from './ui';
