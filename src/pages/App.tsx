@@ -49,7 +49,7 @@ import {
   type PresetTemplate,
   type WorkbenchState
 } from '../core';
-import { chooseOutputTarget, downloadBlobFile, saveBlobToDirectory } from '../platform/fileSystem';
+import { chooseOutputTarget, saveBlobToOutputTarget } from '../platform/fileSystem';
 import {
   AssetSidebar,
   BoardOverview,
@@ -652,10 +652,8 @@ function BatchExportDialog({
           format,
           quality
         });
-        if (outputTarget.kind === 'directory') {
-          await saveBlobToDirectory(outputTarget.handle, row.fileName, blob);
-        } else {
-          downloadBlobFile(blob, row.fileName);
+        await saveBlobToOutputTarget(outputTarget, row.fileName, blob);
+        if (outputTarget.kind === 'downloads') {
           await new Promise((resolve) => setTimeout(resolve, 180));
         }
         completed += 1;

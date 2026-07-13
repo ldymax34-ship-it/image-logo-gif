@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.16，使用 Vite + React + TypeScript 搭建模块化前端应用。
+当前项目已推进到 0.1.16，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 分别构建 Windows x64、macOS Apple Silicon 与 macOS Intel 产物。
 
 当前已建立：
 
@@ -34,7 +34,8 @@
 - Photoshop 式批量导出总览：文件列表、大图预览、格式与品牌设置
 - 直接选择文件夹逐张导出，不生成压缩包
 - `npm start` / `npm stop` 以及 macOS / Windows 双击启停脚本
-- `platform/` 抽象层占位
+- 浏览器 / Tauri 共用的 `platform/` 文件选择和文件写入适配层
+- Tauri 2 Preview 封包与 Windows、macOS 多平台构建工作流
 
 待继续接入：
 
@@ -84,11 +85,38 @@ npm stop
 
 第一阶段只做图片，不做视频 / GIF。
 
-跨平台桌面应用是中期目标：
+跨平台桌面应用已进入内部 Preview 封包阶段：
 
 - 0.1.x：先完成 Vite + React + TypeScript Web 工作台闭环
-- 0.2.x：再接 Tauri，做 macOS / Windows 双平台桌面化
-- 0.1.x 可预留 `platform/` 抽象层，但不做 `.dmg` / `.msi` / Tauri 打包
+- 当前：Tauri 2 桌面壳、原生目录选择和本地文件写入
+- Preview 构建：Windows 10/11 x64（NSIS）、macOS Apple Silicon（DMG / App）、macOS Intel（DMG / App）
+- Preview 阶段不含正式代码签名或自动更新
+
+## 桌面 Preview 封包
+
+桌面包仍然完全本地运行：不上传素材、不调用远程 API、不依赖 CDN。
+
+### 开发与本机构建
+
+```bash
+npm install
+npm run tauri:dev
+
+# 依次完成核心验证、测试、前端构建和当前平台的 Tauri 构建
+npm run package:preview
+```
+
+`npm run dev`、`npm start` 和浏览器模式仍可继续使用。
+
+### 平台产物
+
+GitHub Actions 在 Preview tag（例如 `v0.1.16-preview.1`）上构建：
+
+- Windows 10/11 x64：NSIS Setup EXE，内置离线 WebView2。
+- macOS Apple Silicon：arm64 DMG 与 App ZIP。
+- macOS Intel：x64 DMG 与 App ZIP。
+
+Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macOS 首次启动可能要求在“系统设置 → 隐私与安全性”中手动允许。不要关闭系统安全机制或运行绕过脚本。
 
 ## UI 方向
 

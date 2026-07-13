@@ -7,7 +7,7 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
 }) {
   return <header className="topbar">
     <div>
-      <p className="eyebrow">Brand Material Workbench · 0.1.16</p>
+      <p className="eyebrow">Brand Material Workbench · 0.1.16 Preview 1</p>
       <h1>品宣物料工作台</h1>
     </div>
     <div className="topbar-status" aria-label="当前工作台状态">

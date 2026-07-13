@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.16 CPR 独立样式与品牌面板整理
+## 当前版本：0.1.16-preview.1 桌面 Preview 封包
 
 ### 产品方向
 
@@ -106,6 +106,11 @@
 - [x] CPR 支持独立黑 / 白 / 原始色以及描边、阴影、外发光，默认全部效果关闭
 - [x] Logo 高级样式加入独立单项实时预览
 - [x] 品牌面板整理为 Logo、CPR、辅助工具三个扁平分组
+- [x] 接入 Tauri 2 桌面壳，保留浏览器开发模式
+- [x] Tauri 模式使用系统原生目录选择器，并在用户选择的目录内逐张写入导出文件
+- [x] Tauri 导出遇到同名文件时自动追加 `_2`、`_3`，不静默覆盖
+- [x] 新增 Windows x64、macOS Apple Silicon、macOS Intel 的 GitHub Actions Preview 构建矩阵
+- [x] Windows NSIS Preview 使用离线 WebView2；macOS Preview 使用 ad-hoc 签名
 
 ### 本轮验证记录
 
@@ -142,7 +147,7 @@
 - [ ] 不做视频 / GIF 新功能
 - [ ] 不做整份需求文档语义识别
 - [ ] 不在第一阶段内嵌完整思源黑体 / 思源宋体
-- [ ] 不在 0.1.x 做 Tauri 打包、dmg、msi
+- [x] 用户已明确授权：在 0.1.16-preview.1 提前接入 Tauri 封包；仅限桌面壳、原生目录选择、本地写入和构建，不扩展业务功能
 - [ ] 不恢复旧 HTML / assets / vendor
 - [ ] 不引入远程 API / CDN
 
@@ -153,6 +158,7 @@
 - 图片 Object URL 当前在应用卸载时统一释放；后续增加删除素材功能时，需要在删除单项时同步 revoke。
 - SVG 校验已阻止常见外部引用，但复杂 SVG 安全策略仍建议在批量导出前继续收紧。
 - Logo / CPR 样式的 Canvas 复现已覆盖改色、描边、外发光、阴影近似效果，但与 CSS 预览仍可能有细微像素差异。
+- macOS Apple Silicon 本机构建与实测、Windows x64 实机导出、macOS Intel 实机验证需在 Preview Release 前分别记录；CI 构建成功不等同于实机回归。
 
 ### 下一步建议给 Codex
 
