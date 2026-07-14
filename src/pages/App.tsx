@@ -6,7 +6,6 @@ import {
   buildBoardRenderPlan,
   createBatchExportItems,
   DEFAULT_BRAND_ASSETS,
-  DEFAULT_BRAND_SETTINGS,
   DEFAULT_CPR_EFFECT,
   DEFAULT_LOGO_EFFECT,
   buildOutputFileName,
@@ -1488,7 +1487,6 @@ export function App() {
           settings={brandSettings}
           onClose={() => setSettingsDialogOpen(false)}
           onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }}
-          onReset={() => { setBrandSettings(DEFAULT_BRAND_SETTINGS); saveBrandSettings(DEFAULT_BRAND_SETTINGS); }}
         />
       )}
     </main>

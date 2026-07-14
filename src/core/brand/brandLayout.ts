@@ -62,7 +62,7 @@ function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRende
 export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, options: BuildBrandRenderOptions = {}): BrandRenderPlan {
   const grid = createBrandGrid(canvas); const color = getBrandColor(group.colorMode) ?? '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
-  const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, placement: 'bottom-center' as const, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
+  const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, placement: 'bottom-right' as const, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;
   if (!hasCompany && !hasGame) return { grid, logoItems: [], cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
   const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);

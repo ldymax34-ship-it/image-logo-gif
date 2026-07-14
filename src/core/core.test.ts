@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_CPR_STATE, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -122,6 +122,12 @@ describe('core 0.1.x foundation', () => {
     expect(DEFAULT_BRAND_EFFECT.strokeEnabled).toBe(false);
     expect(DEFAULT_BRAND_EFFECT.glowEnabled).toBe(false);
     expect(DEFAULT_BRAND_EFFECT.shadowEnabled).toBe(false);
+  });
+
+  it('defaults fixed CPR to the bottom-right brand position', () => {
+    expect(DEFAULT_BRAND_SETTINGS.defaultCprPlacement).toBe('bottom-right');
+    expect(DEFAULT_CPR_STATE.placement).toBe('bottom-right');
+    expect(createDefaultCprState().placement).toBe('bottom-right');
   });
 
   it('builds a grouped logo render plan with CPR fixed to the bottom', () => {

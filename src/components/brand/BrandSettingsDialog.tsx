@@ -39,13 +39,11 @@ const GROUP_MODE_OPTIONS: Array<{ value: BrandSettingsV1['defaultLogoGroupMode']
 export function BrandSettingsDialog({
   settings,
   onClose,
-  onChange,
-  onReset
+  onChange
 }: {
   settings: BrandSettingsV1;
   onClose: () => void;
   onChange: (next: BrandSettingsV1) => void;
-  onReset: () => void;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const [draft, setDraft] = useState<BrandSettingsV1>(settings);
@@ -100,7 +98,6 @@ export function BrandSettingsDialog({
   }
 
   function resetToDefaults() {
-    onReset();
     setDraft(DEFAULT_BRAND_SETTINGS);
   }
 

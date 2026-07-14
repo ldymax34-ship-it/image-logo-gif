@@ -5,6 +5,7 @@ fn is_safe_file_name(file_name: &str) -> bool {
     path.components().count() == 1
         && matches!(path.components().next(), Some(Component::Normal(_)))
         && !file_name.trim().is_empty()
+        && !file_name.contains(['/', '\\', ':'])
 }
 
 fn split_file_name(file_name: &str) -> (&str, &str) {
@@ -70,6 +71,8 @@ mod tests {
         assert!(is_safe_file_name("output.png"));
         assert!(!is_safe_file_name("../output.png"));
         assert!(!is_safe_file_name("nested/output.png"));
+        assert!(!is_safe_file_name("nested\\output.png"));
+        assert!(!is_safe_file_name("C:\\output.png"));
         assert!(!is_safe_file_name(""));
     }
 
@@ -79,6 +82,16 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(directory.join("output.png"), b"existing").unwrap();
         assert_eq!(next_available_path(&directory, "output.png"), directory.join("output_2.png"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn writes_the_export_to_the_selected_directory() {
+        let directory = std::env::temp_dir().join(format!("brand-workbench-write-test-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let name = super::save_export_file(directory.to_string_lossy().into_owned(), "export.png".into(), vec![1, 2, 3]).unwrap();
+        assert_eq!(name, "export.png");
+        assert_eq!(std::fs::read(directory.join(name)).unwrap(), vec![1, 2, 3]);
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -4,19 +4,19 @@ import type { BrandColorMode, BrandSettingsV1, CprPlacement, CprState, LogoGroup
 export const DEFAULT_BRAND_SETTINGS: BrandSettingsV1 = {
   version: 1, defaultLogoGroupMode: 'game-only', defaultLanguage: 'zh-CN', defaultColorMode: 'white', defaultSize: 'standard',
   defaultPlacementByAspect: { landscape: 'corner-right', square: 'corner-right', portrait: 'corner-right' },
-  cprEnabled: false, defaultCprPlacement: 'bottom-center', defaultCprColorMode: 'white',
+  cprEnabled: false, defaultCprPlacement: 'bottom-right', defaultCprColorMode: 'white',
   gridVisible: false, safeAreaVisible: true, guidesVisible: true, snapEnabled: true, snapThreshold: 8
 };
 
 export const DEFAULT_BRAND_EFFECT: BrandEffectState = { ...DEFAULT_LOGO_EFFECT, colorEnabled: true, color: '#ffffff', strokeEnabled: false, glowEnabled: false, shadowEnabled: false };
 
 /**
- * CPR 默认状态：固定 SVG、固定尺寸、底部居中、白色、所有效果关闭。
+ * CPR 默认状态：固定 SVG、固定尺寸、右下、白色、所有效果关闭。
  * 预览 / 单导出 / 批导出共用此默认。
  */
 export const DEFAULT_CPR_STATE: CprState = {
   enabled: false,
-  placement: 'bottom-center',
+  placement: 'bottom-right',
   colorMode: 'white',
   effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
 };
@@ -29,7 +29,7 @@ export function createDefaultLogoGroup(language: BrandLanguage = 'zh-CN'): LogoG
 export function createDefaultCprState(): CprState {
   return {
     enabled: false,
-    placement: 'bottom-center',
+    placement: 'bottom-right',
     colorMode: 'white',
     effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
   };
