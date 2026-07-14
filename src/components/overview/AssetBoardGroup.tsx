@@ -6,6 +6,7 @@ import {
   type BrandAsset,
   type BrandLayerState,
   type BrandSettingsV1,
+  type CprState,
   type LogoGroupState,
   type MaterialAsset,
   type MaterialSpec
@@ -24,6 +25,7 @@ export function AssetBoardGroup({
   brandSettings,
   logoGroup,
   logoGroupsByBoard,
+  cprStatesByBoard,
   companyLogo,
   gameLogo,
   thumbnailWidth,
@@ -42,6 +44,7 @@ export function AssetBoardGroup({
   brandSettings: BrandSettingsV1;
   logoGroup: LogoGroupState;
   logoGroupsByBoard: Record<string, LogoGroupState>;
+  cprStatesByBoard: Record<string, CprState>;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
   thumbnailWidth: number;
@@ -95,6 +98,7 @@ export function AssetBoardGroup({
               brandLayer={brandLayer}
               brandSettings={brandSettings}
               logoGroup={logoGroupsByBoard[getBoardPreviewKey(asset.id, spec.id)] ?? logoGroup}
+              cprState={cprStatesByBoard[getBoardPreviewKey(asset.id, spec.id)]}
               companyLogo={companyLogo}
               gameLogo={gameLogo}
               thumbnailWidth={thumbnailWidth}

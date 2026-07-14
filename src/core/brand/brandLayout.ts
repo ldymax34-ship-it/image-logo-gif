@@ -17,13 +17,11 @@ function getCompanyHeightMultiplier(group: LogoGroupState): number {
 
 function getGroupWidth(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, game?: BrandAsset): number {
   const languageScale = getLogoLanguageScale(canvas, group, game);
-  const sizeFactor = group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : 1;
-  if (group.sizePreset === 'xl') {
-    const family = classifyAspect(canvas);
-    const ratio = family === 'portrait' ? 0.48 : family === 'square' ? 0.36 : 0.34;
-    return Math.min(canvas.width - gridUnit * 2, canvas.width * ratio) * languageScale;
-  }
-  return gridUnit * (group.placement === 'center' ? 4 : 2) * sizeFactor * languageScale;
+  // Every preset shares the same base geometry. This keeps a drag-slider
+  // continuous: changing scale never switches to a different sizing formula.
+  const presetScale = group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : group.sizePreset === 'xl' ? 1.45 : 1;
+  const width = gridUnit * (group.placement === 'center' ? 4 : 2) * presetScale * (group.scale ?? 1) * languageScale;
+  return Math.min(canvas.width - gridUnit * 2, width);
 }
 
 function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
@@ -70,11 +68,20 @@ export type BuildBrandRenderOptions = {
  * 计算 CPR 独立位置：固定尺寸、固定 SVG，底部三档对齐，均离底边和侧边 1 格。
  * 此函数为纯函数，预览与导出共用，确保结果一致。
  */
-export function computeCprPlacementRect(canvas: CanvasSize, placement: CprState['placement']): LayoutRect {
+export function computeCprPlacementRect(canvas: CanvasSize, placement: CprState['placement'], manualOffset?: CprState['manualOffset']): LayoutRect {
   const grid = createBrandGrid(canvas);
   const cprWidth = grid.unit * 5.5;
   const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
-  const y = canvas.height - grid.unit - cprHeight;
+  const defaultY = canvas.height - grid.unit - cprHeight;
+  if (placement === 'custom' && manualOffset) {
+    return {
+      x: Math.max(grid.unit, Math.min(canvas.width - grid.unit - cprWidth, manualOffset.x)),
+      y: Math.max(grid.unit, Math.min(canvas.height - grid.unit - cprHeight, manualOffset.y)),
+      width: cprWidth,
+      height: cprHeight
+    };
+  }
+  const y = defaultY;
   const x = placement === 'bottom-left'
     ? grid.unit
     : placement === 'bottom-right'
@@ -84,7 +91,7 @@ export function computeCprPlacementRect(canvas: CanvasSize, placement: CprState[
 }
 
 function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRenderPlan['cpr']> {
-  const rect = computeCprPlacementRect(canvas, cpr.placement);
+  const rect = computeCprPlacementRect(canvas, cpr.placement, cpr.manualOffset);
   const color = getCprRenderColor(cpr.colorMode) ?? '#ffffff';
   return { id: 'cpr:fixed', kind: 'cpr', rect, color, effect: { ...cpr.effect, colorEnabled: cpr.colorMode !== 'original', color } };
 }

@@ -602,3 +602,19 @@
 - `npm test`：通过，45 tests
 - `npm run build`：通过
 - `git diff --check`：通过
+
+## 0.1.20
+
+1. [问题修复-大] `src/core/brand/brandLayout.ts`、`src/core/brand/brandTypes.ts`、`src/components/brand/LogoGroupControls.tsx`、`src/pages/App.tsx`：预设大小与连续缩放解耦；所有 Logo 缩放均使用同一几何公式，聚焦编辑与设媒面板支持连续 Logo 缩放，不再在阈值处跳变。
+2. [新需求-大] `src/pages/App.tsx`、`src/core/brand/brandLayout.ts`、`src/components/brand/CprControls.tsx`、`src/components/overview/*`：CPR 状态按 `assetId:specId` 保存，支持当前画板独立位置、自定义拖动、底部微调，并在总览、聚焦编辑与导出使用同一状态。
+3. [新需求-中] `src/core/export/batchExport.ts`、`src/pages/App.tsx`：批量导出新增“全部语种分别导出”，输出矩阵扩展为素材 × 画板 × 语种，文件名带语种后缀且缺失资源会明确报错。
+4. [新需求-中] `src/components/BrandAssetWorkspace.tsx`：自定义构图接入游戏 Logo、公司 Logo 与 CPR 的高级效果；替换图片时立即释放旧 Object URL，坐标输入只显示格式化数值。
+5. [维护-中] `.github/workflows/preview-release.yml`、`src/components/WorkbenchHeader.tsx`：统一页面版本为 0.1.19 Preview 2，并移除 Preview 工作流中硬编码的版本号，发布资源名改从 tag 推导。
+6. [维护-小] `src/core/core.test.ts`：补充连续缩放、CPR 自定义边界和多语种导出矩阵回归测试。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test`：通过，48 tests
+- `npm run build`：通过
+- `git diff --check`：通过

@@ -70,6 +70,7 @@ describe('multi asset overview', () => {
         brandSettings={DEFAULT_BRAND_SETTINGS}
         logoGroup={logoGroup}
         logoGroupsByBoard={logoGroupsByBoard}
+        cprStatesByBoard={{}}
         onSelect={() => undefined}
         onEdit={() => undefined}
         onDelete={() => undefined}

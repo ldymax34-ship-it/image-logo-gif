@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -150,6 +150,27 @@ describe('core 0.1.x foundation', () => {
     const large = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...group, companyLogoScale: 'large' }, { companyLogo: company });
     expect(small.logoGroupRect?.width).toBeLessThan(match.logoGroupRect?.width ?? 0);
     expect(match.logoGroupRect?.width).toBeLessThan(large.logoGroupRect?.width ?? 0);
+  });
+
+  it('uses one continuous formula for logo scale across preset boundaries', () => {
+    const game = createRasterBrandAsset({ id: 'continuous-scale', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 });
+    const base = { ...createDefaultLogoGroup('zh-CN'), sizePreset: 'standard' as const };
+    const before = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...base, scale: 1.2 }, { gameLogo: game });
+    const after = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...base, scale: 1.21 }, { gameLogo: game });
+    expect((after.logoGroupRect?.width ?? 0) - (before.logoGroupRect?.width ?? 0)).toBeCloseTo(1.2);
+  });
+
+  it('keeps a custom CPR position inside the board bounds', () => {
+    const rect = computeCprPlacementRect({ width: 1920, height: 1080 }, 'custom', { x: 1800, y: 1060 });
+    expect(rect.x + rect.width).toBeLessThanOrEqual(1860);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(1020);
+  });
+
+  it('expands a batch export matrix with every selected language', () => {
+    const asset = { id: 'a', fileName: 'a.png', objectUrl: 'blob:a', width: 100, height: 100, fileSize: 100, mimeType: 'image/png' };
+    const spec = { id: 's', name: 'square', width: 100, height: 100, format: 'png' as const };
+    const items = createLanguageBatchExportItems([asset], [spec], ['zh-CN', 'en-US']);
+    expect(items).toEqual([{ id: 'a:s:zh-CN', assetId: 'a', specId: 's', language: 'zh-CN' }, { id: 'a:s:en-US', assetId: 'a', specId: 's', language: 'en-US' }]);
   });
 
   it('keeps CPR independent from a custom logo position', () => {

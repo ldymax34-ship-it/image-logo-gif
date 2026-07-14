@@ -22,7 +22,7 @@ export const DEFAULT_CPR_STATE: CprState = {
 };
 
 export function createDefaultLogoGroup(language: BrandLanguage = 'zh-CN'): LogoGroupState {
-  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', companyLogoScale: 'match', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right' };
+  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', scale: 1, companyLogoScale: 'match', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right' };
 }
 
 /** 创建一份独立的 CPR 默认状态（返回新对象，调用方可安全修改）。 */
@@ -65,7 +65,7 @@ export function resolveCprState(layer: BrandLayerState): CprState {
 }
 
 export function normalizeLogoGroup(group: LogoGroupState): LogoGroupState {
-  return { ...group, companyLogoScale: group.companyLogoScale ?? 'match' };
+  return { ...group, scale: group.scale ?? 1, companyLogoScale: group.companyLogoScale ?? 'match' };
 }
 
 /** 把当前 CPR 配色档位转成渲染用的纯色（original 返回 undefined 表示保留原色）。 */

@@ -1,11 +1,14 @@
 import type { MaterialAsset } from '../image/imageMeta';
 import type { MaterialFormat, MaterialSpec } from '../spec/specParser';
+import type { BrandLanguage } from '../brand/brandAsset';
 
 export type BatchExportItem = {
   id: string;
   assetId: string;
   specId: string;
 };
+
+export type LanguageBatchExportItem = BatchExportItem & { language: BrandLanguage };
 
 export function getBatchExportItemId(assetId: string, specId: string): string {
   return `${assetId}:${specId}`;
@@ -19,6 +22,11 @@ export function createBatchExportItems(assets: MaterialAsset[], specs: MaterialS
       specId: spec.id
     }))
   );
+}
+
+/** Expands the normal asset × board matrix with a language dimension for batch output. */
+export function createLanguageBatchExportItems(assets: MaterialAsset[], specs: MaterialSpec[], languages: BrandLanguage[]): LanguageBatchExportItem[] {
+  return createBatchExportItems(assets, specs).flatMap((item) => languages.map((language) => ({ ...item, id: `${item.id}:${language}`, language })));
 }
 
 function clamp(value: number, min: number, max: number): number {

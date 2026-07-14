@@ -7,7 +7,7 @@ export type BrandColorMode = 'white' | 'black' | 'original';
 export type BrandSize = 'small' | 'standard' | 'large' | 'xl';
 export type CompanyLogoScale = 'small' | 'match' | 'large';
 
-export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right';
+export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right' | 'custom';
 
 /**
  * CPR 独立状态：开关、位置、配色、效果。
@@ -16,6 +16,8 @@ export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right';
 export type CprState = {
   enabled: boolean;
   placement: CprPlacement;
+  /** Canvas-space top-left coordinate used only when placement is custom. */
+  manualOffset?: { x: number; y: number };
   colorMode: BrandColorMode;
   effect: BrandEffectState;
 };
@@ -36,6 +38,8 @@ export type LogoGroupState = {
   gameLogoLanguage: BrandLanguage;
   colorMode: BrandColorMode;
   sizePreset: BrandSize;
+  /** Continuous visual scale. Presets only provide the initial scale. */
+  scale?: number;
   companyLogoScale: CompanyLogoScale;
   /** Only used by the custom module; the standard material module keeps presets. */
   gameLogoScale?: number;

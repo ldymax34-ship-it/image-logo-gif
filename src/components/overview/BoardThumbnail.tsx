@@ -6,6 +6,7 @@ import {
   type BrandAsset,
   type BrandLayerState,
   type BrandSettingsV1,
+  type CprState,
   type LogoGroupState,
   type MaterialAsset,
   type MaterialSpec
@@ -36,6 +37,7 @@ export function BoardThumbnail({
   brandLayer,
   brandSettings,
   logoGroup,
+  cprState,
   companyLogo,
   gameLogo,
   thumbnailWidth,
@@ -51,6 +53,7 @@ export function BoardThumbnail({
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
   logoGroup: LogoGroupState;
+  cprState?: CprState;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
   thumbnailWidth: number;
@@ -97,7 +100,7 @@ export function BoardThumbnail({
             previewState={previewState}
             logoAsset={logoAsset}
             cprAsset={cprAsset}
-            brandLayer={{ ...brandLayer, logoGroup }}
+            brandLayer={{ ...brandLayer, logoGroup, cprState: cprState ?? brandLayer.cprState, cprEnabled: (cprState ?? brandLayer.cprState)?.enabled ?? brandLayer.cprEnabled }}
             scale={scale}
             brandSettings={thumbnailGuideSettings}
             logoGroup={logoGroup}
