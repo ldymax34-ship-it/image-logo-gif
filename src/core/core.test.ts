@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_CPR_STATE, snapLogoGroupPosition
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_CPR_STATE, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -87,6 +87,33 @@ describe('core 0.1.x foundation', () => {
   it('builds the 32-column brand grid from the canvas width', () => {
     const grid = createBrandGrid({ width: 1920, height: 1080 });
     expect(grid).toMatchObject({ columns: 32, unit: 60, halfUnit: 30, rows: 18 });
+  });
+
+  it('keeps the reference grid scale across aspect ratios', () => {
+    expect(createBrandGrid({ width: 3840, height: 2160 })).toMatchObject({ columns: 32, unit: 120, rows: 18 });
+    expect(createBrandGrid({ width: 800, height: 600 })).toMatchObject({ columns: 24, unit: 600 / 18, rows: 18 });
+    expect(createBrandGrid({ width: 1080, height: 1920 })).toMatchObject({ columns: 18, unit: 60, rows: 32 });
+    expect(createBrandGrid({ width: 1080, height: 1080 })).toMatchObject({ columns: 18, unit: 60, rows: 18 });
+  });
+
+  it('keeps the standard corner Logo size consistent for equal short sides', () => {
+    const gameLogo = createRasterBrandAsset({ id: 'grid-logo', type: 'logo', name: 'Logo', language: 'zh-CN', sourceUrl: '/logo.png', width: 3, height: 1 });
+    const group = createDefaultLogoGroup('zh-CN');
+    const landscape = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, { gameLogo });
+    const portrait = buildBrandRenderPlan({ width: 1080, height: 1920 }, group, { gameLogo });
+    const square = buildBrandRenderPlan({ width: 1080, height: 1080 }, group, { gameLogo });
+    expect(landscape.logoGroupRect?.width).toBe(120);
+    expect(portrait.logoGroupRect?.width).toBe(120);
+    expect(square.logoGroupRect?.width).toBe(120);
+  });
+
+  it('applies a small visual-size correction to the English game Logo', () => {
+    const englishLogo = createRasterBrandAsset({ id: 'english-grid-logo', type: 'logo', name: 'English Logo', language: 'en-US', sourceUrl: '/english-logo.png', width: 4, height: 1 });
+    const group = createDefaultLogoGroup('en-US');
+    const landscape = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, { gameLogo: englishLogo });
+    const portrait = buildBrandRenderPlan({ width: 1080, height: 1920 }, group, { gameLogo: englishLogo });
+    expect(landscape.logoGroupRect?.width).toBeCloseTo(132);
+    expect(portrait.logoGroupRect?.width).toBeCloseTo(138);
   });
 
   it('ships CPR as a fixed SVG preset and defaults all effects off', () => {
@@ -353,6 +380,37 @@ describe('core 0.1.x foundation', () => {
     expect(jpgBytes).toBeGreaterThan(0);
     expect(pngBytes).toBeGreaterThan(jpgBytes);
     expect(formatMegabytes(1024 * 1024)).toBe('1.00 MB');
+  });
+
+  it('uses 8MiB by default and honors explicit spec limits', () => {
+    const defaultSpec = { id: 'default', name: 'default', width: 100, height: 100, format: 'jpg' as const };
+    const explicitSpec = { ...defaultSpec, id: 'explicit', maxSizeKb: 3072 };
+    expect(DEFAULT_MAX_SIZE_KB).toBe(8192);
+    expect(getEffectiveMaxSizeKb(defaultSpec)).toBe(8192);
+    expect(getEffectiveMaxSizeKb(explicitSpec)).toBe(3072);
+    expect(isOverSizeLimit(1.4 * 1024 * 1024, DEFAULT_MAX_SIZE_KB)).toBe(false);
+    expect(isOverSizeLimit(8.1 * 1024 * 1024, DEFAULT_MAX_SIZE_KB)).toBe(true);
+    expect(PRESET_TEMPLATES.flatMap((preset) => preset.specs).every((spec) => spec.maxSizeKb === undefined)).toBe(true);
+  });
+
+  it('keeps a compliant JPG at its starting quality', async () => {
+    let calls = 0;
+    const result = await exportJpegWithinLimit({
+      initialQuality: 0.9,
+      maxBytes: 1000,
+      encode: async () => { calls += 1; return new Blob([new Uint8Array(900)]); }
+    });
+    expect(result).toMatchObject({ ok: true, quality: 0.9, compressed: false });
+    expect(calls).toBe(1);
+  });
+
+  it('finds the highest JPG quality that fits and fails below the quality floor', async () => {
+    const encode = async (quality: number) => new Blob([new Uint8Array(Math.round(quality * 1000))]);
+    const result = await exportJpegWithinLimit({ initialQuality: 0.9, minQuality: 0.4, maxBytes: 700, encode });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.quality).toBeGreaterThan(0.69);
+    const failure = await exportJpegWithinLimit({ initialQuality: 0.9, minQuality: 0.4, maxBytes: 300, encode });
+    expect(failure).toMatchObject({ ok: false, minQuality: 0.4 });
   });
 
   it('creates raster brand assets with reusable dimensions and effect defaults', () => {

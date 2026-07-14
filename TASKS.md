@@ -1,6 +1,6 @@
 # 任务看板
 
-## 当前版本：0.1.16-preview.1 桌面 Preview 封包
+## 当前版本：0.1.17-preview.1 桌面 Preview 封包
 
 ### 产品方向
 
@@ -89,7 +89,7 @@
 - [x] 建立统一 Button、Tabs、Modal、Select、Toggle、Panel、Toolbar、ConfirmDialog 基础组件
 - [x] 将 App Shell 拆为 WorkbenchHeader、AssetSidebar、BoardOverview、SpecPanel、BrandPanel、FocusEditor、ExportDialog 组件边界
 - [x] 浅色面板、14px 基础排版、轻量弹窗动效完成；运行时不使用 backdrop blur
-- [x] 新增 32 列品牌网格纯函数、半格、网格安全区与辅助线数据
+- [x] 新增以 1920×1080 的 32×18 为参考、按短边等比缩放的品牌网格、半格、安全区与辅助线数据
 - [x] 新增固定 CPR SVG 预设：保留 viewBox 与原始比例，尺寸与底部位置由品牌网格计算
 - [x] 新增 Logo Group、位置、颜色和 Brand Render Plan 数据结构
 - [x] 新增版本化 BrandSettings 本地读取、写入及恢复默认值 API
@@ -111,6 +111,8 @@
 - [x] Tauri 导出遇到同名文件时自动追加 `_2`、`_3`，不静默覆盖
 - [x] 新增 Windows x64、macOS Apple Silicon 的 GitHub Actions Preview 构建矩阵
 - [x] Windows NSIS Preview 使用离线 WebView2；macOS Preview 使用 ad-hoc 签名
+- [x] 总览缩略图使用固定预览舞台；极端宽高比规格按舞台内适配显示，不再撑破卡片或展示编辑参考线
+- [x] 常见横版、方图、竖版缩略图继续响应网格、安全区与参考线开关；仅超窄 / 超高诊断规格静默辅助层
 
 ### 本轮验证记录
 

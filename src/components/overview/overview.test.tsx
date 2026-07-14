@@ -13,6 +13,7 @@ import {
   type MaterialSpec
 } from '../../core';
 import { MultiAssetBoardOverview } from './BoardOverview';
+import { snapThumbnailSize } from './ThumbnailSizeControl';
 
 describe('multi asset overview', () => {
   it('renders every asset group and every asset/spec board pair', () => {
@@ -71,6 +72,7 @@ describe('multi asset overview', () => {
         logoGroupsByBoard={logoGroupsByBoard}
         onSelect={() => undefined}
         onEdit={() => undefined}
+        onDelete={() => undefined}
       />
     );
 
@@ -78,5 +80,15 @@ describe('multi asset overview', () => {
     expect((markup.match(/data-board-key=/g) ?? [])).toHaveLength(9);
     expect(markup).toContain('asset-board-group active');
     expect(markup).toContain('asset-1:square');
+    expect(markup).toContain('缩略图');
+    expect(markup).toContain('1080 x 1080 · 右上');
+    expect(markup).toContain('brand-guide');
+  });
+
+  it('snaps thumbnail size near its small, medium, and large presets', () => {
+    expect(snapThumbnailSize(176)).toBe(170);
+    expect(snapThumbnailSize(226)).toBe(220);
+    expect(snapThumbnailSize(284)).toBe(290);
+    expect(snapThumbnailSize(250)).toBe(250);
   });
 });

@@ -20,7 +20,7 @@ export type CprState = {
 };
 
 export type BrandGrid = {
-  columns: 32;
+  columns: number;
   unit: number;
   halfUnit: number;
   width: number;

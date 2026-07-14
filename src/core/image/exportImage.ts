@@ -1,3 +1,4 @@
+import { exportJpegWithinLimit, type JpegLimitResult } from '../export/sizeLimit';
 import { buildBrandRenderPlan, DEFAULT_CPR_EFFECT, getBrandAssetUrl, resolveCprState, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
 import { renderBrandLayer } from '../layout';
 import { computeCropTransform, type BoardPreviewState } from './crop';
@@ -53,6 +54,22 @@ export type ExportBoardImageOptions = BoardRenderInput & {
   format?: MaterialFormat;
   quality?: number;
 };
+
+export type SizeLimitedExportSuccess = {
+  ok: true;
+  blob: Blob;
+  quality?: number;
+  compressed: boolean;
+};
+
+export type SizeLimitedExportFailure = {
+  ok: false;
+  reason: 'png-over-limit' | 'jpeg-over-limit';
+  size: number;
+  minQuality?: number;
+};
+
+export type SizeLimitedExportResult = SizeLimitedExportSuccess | SizeLimitedExportFailure;
 
 export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
   const transform = computeCropTransform(input.asset, input.spec, input.previewState.crop);
@@ -288,10 +305,7 @@ export async function renderBoardToCanvas(input: BoardRenderInput & { format?: M
   return canvas;
 }
 
-export async function exportBoardImage(options: ExportBoardImageOptions): Promise<Blob> {
-  const canvas = await renderBoardToCanvas(options);
-  const format = options.format ?? options.spec.format;
-  const quality = options.quality ?? 0.92;
+export function canvasToBlob(canvas: HTMLCanvasElement, format: MaterialFormat, quality = 0.92): Promise<Blob> {
   const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -306,4 +320,43 @@ export async function exportBoardImage(options: ExportBoardImageOptions): Promis
       format === 'png' ? undefined : quality
     );
   });
+}
+
+export async function exportBoardImage(options: ExportBoardImageOptions): Promise<Blob> {
+  const canvas = await renderBoardToCanvas(options);
+  return canvasToBlob(canvas, options.format ?? options.spec.format, options.quality ?? 0.92);
+}
+
+export async function exportBoardImageWithinLimit(options: ExportBoardImageOptions & {
+  maxBytes: number;
+  autoCompressJpeg?: boolean;
+  minJpegQuality?: number;
+}): Promise<SizeLimitedExportResult> {
+  const canvas = await renderBoardToCanvas(options);
+  const format = options.format ?? options.spec.format;
+  const quality = options.quality ?? 0.92;
+
+  if (format === 'png') {
+    const blob = await canvasToBlob(canvas, 'png');
+    return blob.size <= options.maxBytes
+      ? { ok: true, blob, compressed: false }
+      : { ok: false, reason: 'png-over-limit', size: blob.size };
+  }
+
+  const initialBlob = await canvasToBlob(canvas, 'jpg', quality);
+  if (!options.autoCompressJpeg || initialBlob.size <= options.maxBytes) {
+    return initialBlob.size <= options.maxBytes
+      ? { ok: true, blob: initialBlob, quality, compressed: false }
+      : { ok: false, reason: 'jpeg-over-limit', size: initialBlob.size, minQuality: options.minJpegQuality ?? 0.4 };
+  }
+
+  const result: JpegLimitResult = await exportJpegWithinLimit({
+    encode: (nextQuality) => canvasToBlob(canvas, 'jpg', nextQuality),
+    initialQuality: quality,
+    maxBytes: options.maxBytes,
+    minQuality: options.minJpegQuality
+  });
+  return result.ok
+    ? { ok: true, blob: result.blob, quality: result.quality, compressed: result.compressed }
+    : { ok: false, reason: 'jpeg-over-limit', size: result.size, minQuality: result.minQuality };
 }

@@ -19,6 +19,13 @@ function getAspectLabel(spec: MaterialSpec): string {
   return '方图';
 }
 
+function getPlacementLabel(placement: LogoGroupState['placement']): string {
+  if (placement === 'corner-left') return '左上';
+  if (placement === 'corner-right') return '右上';
+  if (placement === 'center') return '居中';
+  return '自定义';
+}
+
 export function BoardThumbnail({
   asset,
   spec,
@@ -31,6 +38,7 @@ export function BoardThumbnail({
   logoGroup,
   companyLogo,
   gameLogo,
+  thumbnailWidth,
   onSelect,
   onEdit
 }: {
@@ -45,10 +53,21 @@ export function BoardThumbnail({
   logoGroup: LogoGroupState;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
+  thumbnailWidth: number;
   onSelect: () => void;
   onEdit: () => void;
 }) {
-  const scale = Math.min(220 / spec.width, 160 / spec.height, 1);
+  const stageWidth = Math.max(120, thumbnailWidth - 18);
+  const stageHeight = Math.max(104, Math.round(thumbnailWidth * 0.73));
+  const scale = Math.min(stageWidth / spec.width, stageHeight / spec.height, 1);
+  const aspectRatio = spec.width / spec.height;
+  // Normal artwork thumbnails should reflect the guide controls. For extreme
+  // diagnostic ratios, the guide density is not legible and can overwhelm the
+  // fixed stage, so keep that special case visually quiet.
+  const isExtremeAspect = aspectRatio > 5 || aspectRatio < 0.2;
+  const thumbnailGuideSettings = isExtremeAspect
+    ? { ...brandSettings, gridVisible: false, safeAreaVisible: false, guidesVisible: false }
+    : brandSettings;
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key !== 'Enter') return;
@@ -69,21 +88,23 @@ export function BoardThumbnail({
       >
         <div className="board-card-title">
           <strong>{spec.name}</strong>
-          <small>{spec.width} x {spec.height}</small>
+          <small>{spec.width} x {spec.height} · {getPlacementLabel(logoGroup.placement)}</small>
         </div>
-        <BoardCanvas
-          asset={asset}
-          spec={spec}
-          previewState={previewState}
-          logoAsset={logoAsset}
-          cprAsset={cprAsset}
-          brandLayer={{ ...brandLayer, logoGroup }}
-          scale={scale}
-          brandSettings={brandSettings}
-          logoGroup={logoGroup}
-          overlayCompanyLogo={companyLogo}
-          overlayGameLogo={gameLogo}
-        />
+        <div className="board-thumbnail-stage" style={{ width: stageWidth, height: stageHeight }}>
+          <BoardCanvas
+            asset={asset}
+            spec={spec}
+            previewState={previewState}
+            logoAsset={logoAsset}
+            cprAsset={cprAsset}
+            brandLayer={{ ...brandLayer, logoGroup }}
+            scale={scale}
+            brandSettings={thumbnailGuideSettings}
+            logoGroup={logoGroup}
+            overlayCompanyLogo={companyLogo}
+            overlayGameLogo={gameLogo}
+          />
+        </div>
         <div className="board-card-footer">
           <span>{getAspectLabel(spec)}</span>
           <span>{previewState?.fitMode === 'contain' ? '适应' : '填满'}</span>

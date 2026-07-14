@@ -26,8 +26,10 @@ export function AssetBoardGroup({
   logoGroupsByBoard,
   companyLogo,
   gameLogo,
+  thumbnailWidth,
   onSelect,
-  onEdit
+  onEdit,
+  onDelete
 }: {
   asset: MaterialAsset;
   specs: MaterialSpec[];
@@ -42,8 +44,10 @@ export function AssetBoardGroup({
   logoGroupsByBoard: Record<string, LogoGroupState>;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
+  thumbnailWidth: number;
   onSelect: (assetId: string, specId: string) => void;
   onEdit: (assetId: string, specId: string) => void;
+  onDelete: (assetId: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const active = selectedAssetId === asset.id;
@@ -75,6 +79,7 @@ export function AssetBoardGroup({
         >
           <span aria-hidden="true">{collapsed ? '›' : '⌄'}</span>
         </button>
+        <button type="button" className="asset-group-delete icon-button" onClick={() => onDelete(asset.id)} aria-label={`删除素材 ${asset.fileName}`} title="删除素材">×</button>
       </header>
       {!collapsed ? (
         <div className="asset-board-grid">
@@ -92,6 +97,7 @@ export function AssetBoardGroup({
               logoGroup={logoGroupsByBoard[getBoardPreviewKey(asset.id, spec.id)] ?? logoGroup}
               companyLogo={companyLogo}
               gameLogo={gameLogo}
+              thumbnailWidth={thumbnailWidth}
               onSelect={() => onSelect(asset.id, spec.id)}
               onEdit={() => onEdit(asset.id, spec.id)}
             />

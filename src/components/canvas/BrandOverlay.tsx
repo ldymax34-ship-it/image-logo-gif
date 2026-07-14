@@ -10,12 +10,6 @@ export type BrandOverlayOptions = {
   scale: number;
 };
 
-function positionToAnchor(placement: LogoGroupState['placement']): 'top-left' | 'top-right' | 'center' {
-  if (placement === 'corner-left') return 'top-left';
-  if (placement === 'corner-right') return 'top-right';
-  return 'center';
-}
-
 export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, cprState, scale }: BrandOverlayOptions) {
   if (!settings.gridVisible && !settings.safeAreaVisible && !settings.guidesVisible) {
     return null;
@@ -74,9 +68,7 @@ export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, c
             width: plan.logoGroupRect.width * scale,
             height: plan.logoGroupRect.height * scale
           }}
-        >
-          <small className="brand-overlay-label">{positionToAnchor(group.placement)}</small>
-        </span>
+        />
       ) : null}
 
       {plan.cpr ? (

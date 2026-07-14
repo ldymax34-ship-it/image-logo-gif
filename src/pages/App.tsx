@@ -18,11 +18,13 @@ import {
   createDefaultLogoGroup,
   createInitialCropState,
   createMaterialAsset,
-  exportBoardImage,
+  DEFAULT_MAX_SIZE_KB,
+  exportBoardImageWithinLimit,
   estimateExportBytes,
   formatFileSize,
   formatMegabytes,
   getBoardPreviewKey,
+  getEffectiveMaxSizeKb,
   getBrandLanguageLabel,
   loadBrandSettings,
   loadCustomPresetTemplates,
@@ -87,7 +89,8 @@ type PresetApplyMode = 'replace' | 'append';
 
 type PendingConfirmation =
   | { type: 'apply-specs'; count: number }
-  | { type: 'delete-preset'; presetId: string; presetName: string };
+  | { type: 'delete-preset'; presetId: string; presetName: string }
+  | { type: 'delete-asset'; assetId: string; fileName: string };
 
 function getAspectLabel(spec: MaterialSpec): string {
   const family = classifyAspect({ width: spec.width, height: spec.height });
@@ -530,10 +533,9 @@ function BatchExportDialog({
   const [activeItemId, setActiveItemId] = useState(items[0]?.id);
   const [format, setFormat] = useState<MaterialFormat>('png');
   const [quality, setQuality] = useState(0.9);
+  const [defaultMaxSizeMb, setDefaultMaxSizeMb] = useState(8);
+  const [autoCompressJpeg, setAutoCompressJpeg] = useState(true);
   const [batchName, setBatchName] = useState('material');
-  const [logoEnabled, setLogoEnabled] = useState(brandLayer.logoEnabled);
-  const [cprEnabled, setCprEnabled] = useState(brandLayer.cprEnabled);
-  const [logoLanguage, setLogoLanguage] = useState(brandLayer.logoLanguage);
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [errorMessage, setErrorMessage] = useState('');
@@ -544,19 +546,16 @@ function BatchExportDialog({
   const activePreviewState = activeAsset && activeSpec
     ? previewStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]
     : undefined;
-  const selectedLogoId = resolvePreferredBrandAssetId(brandAssets, 'logo', logoLanguage, brandLayer.selectedLogoId);
-  const selectedCprId = resolvePreferredBrandAssetId(brandAssets, 'cpr', 'custom', brandLayer.selectedCprId);
-  const exportLogo = brandAssets.find((asset) => asset.id === selectedLogoId);
-  const exportCpr = brandAssets.find((asset) => asset.id === selectedCprId);
-  const exportBrandLayer: BrandLayerState = {
-    ...brandLayer,
-    logoEnabled,
-    cprEnabled,
-    logoLanguage,
-    selectedLogoId,
-    selectedCprId
-  };
-  const missingBrandResource = (logoEnabled && !exportLogo) || (cprEnabled && !exportCpr);
+  // Export deliberately reads the workspace state as-is. It must not create a
+  // second, divergent set of Logo / CPR choices inside the export dialog.
+  const exportLogo = brandAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
+  const exportCpr = brandAssets.find((asset) => asset.id === brandLayer.selectedCprId);
+  const activeBoardLogoGroup = activeAsset && activeSpec
+    ? logoGroupsByBoard[getBoardPreviewKey(activeAsset.id, activeSpec.id)] ?? brandLayer.logoGroup
+    : brandLayer.logoGroup;
+  const activeCompanyLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.companyLogoId)
+    ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
+  const activeGameLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.gameLogoId) ?? exportLogo;
 
   const rows = items.map((item, index) => {
     const asset = assets.find((candidate) => candidate.id === item.assetId);
@@ -568,11 +567,12 @@ function BatchExportDialog({
       {
         batchName,
         sourceName: asset.fileName.replace(/\.[^.]+$/g, ''),
-        language: logoEnabled ? logoLanguage : undefined,
+        language: brandLayer.logoEnabled ? brandLayer.logoLanguage : undefined,
         index
       }
     );
-    return { item, asset, spec, estimatedBytes, fileName };
+    const effectiveMaxSizeKb = getEffectiveMaxSizeKb(spec, Math.round(defaultMaxSizeMb * 1024) || DEFAULT_MAX_SIZE_KB);
+    return { item, asset, spec, estimatedBytes, effectiveMaxSizeKb, fileName };
   }).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.item.id));
@@ -628,47 +628,67 @@ function BatchExportDialog({
     setProgress({ current: 0, total: selectedRows.length });
     const failures: string[] = [];
     let completed = 0;
+    let processed = 0;
 
     for (const row of selectedRows) {
       const previewState = previewStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
       if (!previewState) {
         failures.push(`${row.fileName}：缺少画板预览状态`);
+        processed += 1;
+        setProgress({ current: processed, total: selectedRows.length });
         continue;
       }
       try {
-        const boardLogoGroup = logoGroupsByBoard[getBoardPreviewKey(row.asset.id, row.spec.id)] ?? exportBrandLayer.logoGroup;
+        const boardLogoGroup = logoGroupsByBoard[getBoardPreviewKey(row.asset.id, row.spec.id)] ?? brandLayer.logoGroup;
         const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
           ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
         const boardGameLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.gameLogoId) ?? exportLogo;
-        const blob = await exportBoardImage({
+        const result = await exportBoardImageWithinLimit({
           asset: row.asset,
           spec: row.spec,
           previewState,
-          brandLayer: { ...exportBrandLayer, logoGroup: boardLogoGroup },
+          brandLayer: { ...brandLayer, logoGroup: boardLogoGroup },
           logoAsset: exportLogo,
           cprAsset: exportCpr,
           companyLogoAsset: boardCompanyLogo,
           gameLogoAsset: boardGameLogo,
           format,
-          quality
+          quality,
+          maxBytes: row.effectiveMaxSizeKb * 1024,
+          autoCompressJpeg,
+          minJpegQuality: 0.4
         });
-        await saveBlobToOutputTarget(outputTarget, row.fileName, blob);
+        if (!result.ok) {
+          const maxLabel = `${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB`;
+          throw new Error(
+            result.reason === 'png-over-limit'
+              ? `PNG 实际为 ${formatMegabytes(result.size)}，超过 ${maxLabel}；请改用 JPG 或调整尺寸`
+              : `在保持当前尺寸时无法压缩到 ${maxLabel} 以下，请降低尺寸或调整内容`
+          );
+        }
+        await saveBlobToOutputTarget(outputTarget, row.fileName, result.blob);
         if (outputTarget.kind === 'downloads') {
           await new Promise((resolve) => setTimeout(resolve, 180));
         }
         completed += 1;
+        if (result.compressed && result.quality) {
+          failures.push(`__info__${row.fileName}：已自动压缩至 ${formatMegabytes(result.blob.size)}（${Math.round(result.quality * 100)}%）`);
+        }
       } catch (error) {
         failures.push(`${row.fileName}：${error instanceof Error ? error.message : '导出失败'}`);
       }
-      setProgress({ current: completed + failures.length, total: selectedRows.length });
+      processed += 1;
+      setProgress({ current: processed, total: selectedRows.length });
     }
 
     setExporting(false);
-    if (failures.length) {
-      setErrorMessage(`已导出 ${completed} 个文件，${failures.length} 个失败。${failures[0]}`);
+    const actualFailures = failures.filter((item) => !item.startsWith('__info__'));
+    const compressionInfo = failures.find((item) => item.startsWith('__info__'))?.replace('__info__', '');
+    if (actualFailures.length) {
+      setErrorMessage(`已导出 ${completed} 个文件，${actualFailures.length} 个失败。${actualFailures[0]}`);
       return;
     }
-    onComplete(`已导出 ${completed} 个文件`);
+    onComplete(compressionInfo ?? `已导出 ${completed} 个文件`);
     onClose();
   }
 
@@ -699,7 +719,7 @@ function BatchExportDialog({
             </div>
             <div className="export-file-list">
               {rows.map((row) => {
-                const overLimit = Boolean(row.spec.maxSizeKb && row.estimatedBytes > row.spec.maxSizeKb * 1024);
+                const overLimit = row.estimatedBytes > row.effectiveMaxSizeKb * 1024;
                 return (
                   <div key={row.item.id} className={`export-file-row ${row.item.id === activeItem?.id ? 'active' : ''}`}>
                     <input
@@ -712,7 +732,7 @@ function BatchExportDialog({
                       <strong>{row.fileName}</strong>
                       <span>{row.spec.width} x {row.spec.height}</span>
                       <small className={overLimit ? 'size-warning' : ''}>
-                        预计 {formatMegabytes(row.estimatedBytes)}{overLimit ? ' · 可能超限' : ''}
+                        预计 {formatMegabytes(row.estimatedBytes)}{overLimit ? ` · 超过${row.spec.maxSizeKb ? '规格限制 ' : ' '}${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB` : ''}
                       </small>
                     </button>
                   </div>
@@ -735,13 +755,11 @@ function BatchExportDialog({
                   logoAsset={exportLogo}
                   cprAsset={exportCpr}
                   brandLayer={{
-                    ...exportBrandLayer,
-                    logoGroup: activeAsset
-                      ? logoGroupsByBoard[getBoardPreviewKey(activeAsset.id, activeSpec.id)] ?? exportBrandLayer.logoGroup
-                      : exportBrandLayer.logoGroup
+                    ...brandLayer,
+                    logoGroup: activeBoardLogoGroup
                   }}
-                  overlayCompanyLogo={brandAssets.find((asset) => asset.id === exportBrandLayer.logoGroup?.companyLogoId) ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom')}
-                  overlayGameLogo={exportLogo}
+                  overlayCompanyLogo={activeCompanyLogo}
+                  overlayGameLogo={activeGameLogo}
                   scale={previewScale}
                 />
               ) : (
@@ -777,38 +795,26 @@ function BatchExportDialog({
                 <input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} />
               </label>
             ) : null}
-            <div className="export-setting-group">
-              <label className="toggle">
-                <input type="checkbox" checked={logoEnabled} onChange={(event) => setLogoEnabled(event.target.checked)} />
-                添加 Logo
-              </label>
-              <select value={logoLanguage} onChange={(event) => setLogoLanguage(event.target.value as BrandLanguage)} disabled={!logoEnabled}>
-                {BRAND_LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </div>
-            <div className="export-setting-group">
-              <label className="toggle">
-                <input type="checkbox" checked={cprEnabled} onChange={(event) => setCprEnabled(event.target.checked)} />
-                添加 CPR
-              </label>
-            </div>
+            <label className="export-field">
+              <span>指定</span>
+              <div className="export-limit-input"><input aria-label="指定 MB" type="number" min="0.1" max="100" step="0.1" value={defaultMaxSizeMb} onChange={(event) => setDefaultMaxSizeMb(Math.min(100, Math.max(0.1, Number(event.target.value) || 8)))} /><small>MB</small></div>
+            </label>
+            {format === 'jpg' ? <label className="toggle"><input type="checkbox" checked={autoCompressJpeg} onChange={(event) => setAutoCompressJpeg(event.target.checked)} />JPG 超限时自动压缩</label> : null}
             <div className="export-summary-box">
               <span>已选 {selectedRows.length} 个文件</span>
-              {logoEnabled && !exportLogo ? <small className="size-warning">当前 Logo 语种没有可用资源</small> : null}
-              {cprEnabled && !exportCpr ? <small className="size-warning">固定 CPR SVG 不可用</small> : null}
             </div>
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>
         </div>
 
         <div className="dialog-footer export-footer">
-          <div>
-            {exporting ? <span>正在导出 {progress.current} / {progress.total}</span> : <span>每张图独立输出</span>}
-            {errorMessage ? <strong className="export-error">{errorMessage}</strong> : null}
+          <div className="export-status" aria-live="polite">
+            <span>{exporting ? `正在导出 ${progress.current} / ${progress.total}` : '每张图独立输出'}</span>
+            <strong className="export-error" title={errorMessage}>{errorMessage || ' '}</strong>
           </div>
           <div className="dialog-actions">
             <button type="button" onClick={onClose} disabled={exporting}>取消</button>
-            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting || missingBrandResource}>
+            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting}>
               {exporting ? '正在导出...' : `导出 ${selectedRows.length} 个文件`}
             </button>
           </div>
@@ -846,6 +852,7 @@ export function App() {
   const [newPresetName, setNewPresetName] = useState('');
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [message, setMessage] = useState<string>('');
+  const [importFailures, setImportFailures] = useState<string[]>([]);
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
@@ -941,16 +948,17 @@ export function App() {
     const nextAssets = results
       .filter((result): result is PromiseFulfilledResult<MaterialAsset> => result.status === 'fulfilled')
       .map((result) => result.value);
-    const failures = results.filter((result) => result.status === 'rejected');
+    const failures = results.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [`${files[index]?.name ?? '未知文件'}：${result.reason instanceof Error ? result.reason.message : '导入失败'}`]
+        : []
+    );
     if (nextAssets.length) {
       setAssets((previous) => [...previous, ...nextAssets]);
       setSelectedAssetId((current) => current ?? nextAssets[0]?.id);
     }
-    setMessage(
-      failures.length
-        ? `已导入 ${nextAssets.length} 张图片，${failures.length} 个文件失败`
-        : `已导入 ${nextAssets.length} 张图片`
-    );
+    setImportFailures(failures);
+    setMessage(failures.length ? `已导入 ${nextAssets.length} 张图片，${failures.length} 个文件失败` : `已导入 ${nextAssets.length} 张图片`);
     if (imageInputRef.current) imageInputRef.current.value = '';
   }
 
@@ -1034,9 +1042,11 @@ export function App() {
     if (!pendingConfirmation) return;
     if (pendingConfirmation.type === 'apply-specs') {
       commitParsedSpecs();
-    } else {
+    } else if (pendingConfirmation.type === 'delete-preset') {
       setCustomPresets((previous) => previous.filter((preset) => preset.id !== pendingConfirmation.presetId));
       setMessage(`已删除套组：${pendingConfirmation.presetName}`);
+    } else {
+      deleteAsset(pendingConfirmation.assetId);
     }
     setPendingConfirmation(undefined);
   }
@@ -1051,6 +1061,25 @@ export function App() {
     requestAnimationFrame(() => {
       document.getElementById(`asset-board-group-${assetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  }
+
+  function requestDeleteAsset(assetId: string) {
+    const asset = assets.find((item) => item.id === assetId);
+    if (asset) setPendingConfirmation({ type: 'delete-asset', assetId, fileName: asset.fileName });
+  }
+
+  function deleteAsset(assetId: string) {
+    const index = assets.findIndex((asset) => asset.id === assetId);
+    if (index < 0) return;
+    const removed = assets[index];
+    const replacement = assets[index + 1] ?? assets[index - 1];
+    URL.revokeObjectURL(removed.objectUrl);
+    setAssets((previous) => previous.filter((asset) => asset.id !== assetId));
+    setPreviewStates((previous) => Object.fromEntries(Object.entries(previous).filter(([, state]) => state.assetId !== assetId)));
+    setLogoGroupsByBoard((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${assetId}:`))));
+    if (focusAssetId === assetId) closeFocusEditor();
+    if (selectedAssetId === assetId) setSelectedAssetId(replacement?.id);
+    setMessage(`已删除素材：${removed.fileName}`);
   }
 
   function openFocusEditor(assetId: string, specId: string) {
@@ -1156,23 +1185,23 @@ export function App() {
               </div>
             ) : (
               assets.map((asset) => (
-                <button
+                <div
                   key={asset.id}
-                  type="button"
                   className={`asset-row ${asset.id === selectedAsset?.id ? 'active' : ''}`}
-                  onClick={() => selectAssetAndScroll(asset.id)}
                 >
-                  <img src={asset.objectUrl} alt={asset.fileName} />
-                  <span>
-                    <strong>{asset.fileName}</strong>
-                    <small>
-                      {asset.width} x {asset.height} · {formatFileSize(asset.fileSize)}
-                    </small>
-                  </span>
-                </button>
+                  <button type="button" className="asset-select-button" onClick={() => selectAssetAndScroll(asset.id)}>
+                    <img src={asset.objectUrl} alt={asset.fileName} />
+                    <span>
+                      <strong>{asset.fileName}</strong>
+                      <small>{asset.width} x {asset.height} · {formatFileSize(asset.fileSize)}</small>
+                    </span>
+                  </button>
+                  <button type="button" className="asset-delete-button icon-button" onClick={(event) => { event.stopPropagation(); requestDeleteAsset(asset.id); }} aria-label={`删除素材 ${asset.fileName}`} title="删除素材">×</button>
+                </div>
               ))
             )}
           </div>
+          {importFailures.length ? <div className="import-failures"><strong>失败文件</strong>{importFailures.map((failure) => <small key={failure}>{failure}</small>)}</div> : null}
 
           <BrandPanel>
           <section className="brand-control-group" aria-labelledby="logo-controls-title">
@@ -1284,29 +1313,12 @@ export function App() {
             gameLogo={gameLogoAsset}
             onSelect={selectBoard}
             onEdit={openFocusEditor}
+            onDelete={requestDeleteAsset}
           />
         </BoardOverview>
 
         <SpecPanel boardCount={specs.length}>
           <div className="preset-section">
-            <div className="toolbar-line panel-actions">
-              <div className="segmented-control">
-                <button
-                  type="button"
-                  className={presetApplyMode === 'replace' ? 'active' : ''}
-                  onClick={() => setPresetApplyMode('replace')}
-                >
-                  替换填入
-                </button>
-                <button
-                  type="button"
-                  className={presetApplyMode === 'append' ? 'active' : ''}
-                  onClick={() => setPresetApplyMode('append')}
-                >
-                  追加到末尾
-                </button>
-              </div>
-            </div>
             <div className="preset-list">
               {PRESET_TEMPLATES.map((preset) => (
                 <button key={preset.id} type="button" className="preset-card" onClick={() => applyPresetTemplate(preset, presetApplyMode)}>
@@ -1344,12 +1356,33 @@ export function App() {
               </div>
             ) : null}
           </div>
-          <textarea
-            value={draftText}
-            onChange={(event) => setDraftText(event.target.value)}
-            placeholder="粘贴尺寸片段，例如 1080x1920、1920*1080、16:9 1920"
-            spellCheck={false}
-          />
+          <div className="spec-editor">
+            <div className="spec-editor-header">
+              <span>输入尺寸</span>
+              <div className="segmented-control" aria-label="套组填入方式">
+                <button
+                  type="button"
+                  className={presetApplyMode === 'replace' ? 'active' : ''}
+                  onClick={() => setPresetApplyMode('replace')}
+                >
+                  替换填入
+                </button>
+                <button
+                  type="button"
+                  className={presetApplyMode === 'append' ? 'active' : ''}
+                  onClick={() => setPresetApplyMode('append')}
+                >
+                  追加到末尾
+                </button>
+              </div>
+            </div>
+            <textarea
+              value={draftText}
+              onChange={(event) => setDraftText(event.target.value)}
+              placeholder="粘贴尺寸片段，例如 1080x1920、1920*1080、16:9 1920"
+              spellCheck={false}
+            />
+          </div>
           <div className="toolbar-line text-actions">
             <button type="button" onClick={applyParsedSpecs} disabled={!hasPendingSpecChanges}>
               应用尺寸
@@ -1424,14 +1457,16 @@ export function App() {
       )}
       {pendingConfirmation && (
         <ConfirmationDialog
-          title={pendingConfirmation.type === 'apply-specs' ? '更新尺寸矩阵' : '删除常用套组'}
+          title={pendingConfirmation.type === 'apply-specs' ? '更新尺寸矩阵' : pendingConfirmation.type === 'delete-asset' ? '删除素材' : '删除常用套组'}
           message={
             pendingConfirmation.type === 'apply-specs'
               ? `将更新为 ${pendingConfirmation.count} 个画板。同规格裁切会尽量保留，已删除规格的状态会被移除。`
-              : `确定删除“${pendingConfirmation.presetName}”吗？删除后无法恢复。`
+              : pendingConfirmation.type === 'delete-asset'
+                ? `删除“${pendingConfirmation.fileName}”后，它对应的所有画板裁切和品牌位置调整也会被移除，且无法恢复。`
+                : `确定删除“${pendingConfirmation.presetName}”吗？删除后无法恢复。`
           }
           confirmLabel={pendingConfirmation.type === 'apply-specs' ? '确认更新' : '确认删除'}
-          destructive={pendingConfirmation.type === 'delete-preset'}
+          destructive={pendingConfirmation.type !== 'apply-specs'}
           onCancel={() => setPendingConfirmation(undefined)}
           onConfirm={confirmPendingAction}
         />

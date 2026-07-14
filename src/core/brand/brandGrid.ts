@@ -2,8 +2,17 @@ import type { CanvasSize, LayoutRect } from '../layout/layoutProfile';
 import type { BrandGrid, BrandGuideLine } from './brandTypes';
 
 export function createBrandGrid(canvas: CanvasSize): BrandGrid {
-  const unit = canvas.width / 32;
-  return { columns: 32, unit, halfUnit: unit / 2, width: canvas.width, height: canvas.height, rows: Math.ceil(canvas.height / unit) };
+  // 1920x1080 defines a 32x18 reference grid. Other aspect ratios keep the
+  // same visual scale by deriving the square unit from the canvas short side.
+  const unit = Math.min(canvas.width, canvas.height) / 18;
+  return {
+    columns: canvas.width / unit,
+    unit,
+    halfUnit: unit / 2,
+    width: canvas.width,
+    height: canvas.height,
+    rows: canvas.height / unit
+  };
 }
 
 export function getGridSafeArea(grid: BrandGrid): LayoutRect {

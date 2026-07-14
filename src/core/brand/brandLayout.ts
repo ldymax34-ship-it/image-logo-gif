@@ -3,10 +3,16 @@ import { DEFAULT_BRAND_EFFECT, getCprRenderColor } from './brandDefaults';
 import { createBrandGrid, getBrandGuideLines, getGridSafeArea } from './brandGrid';
 import { CPR_PRESET, getBrandColor } from './cprPreset';
 import type { BrandRenderPlan, BrandPlacement, CprState, LogoGroupState } from './brandTypes';
-import type { CanvasSize, LayoutRect } from '../layout/layoutProfile';
+import { classifyAspect, type CanvasSize, type LayoutRect } from '../layout/layoutProfile';
 
-function groupDimensions(gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
-  const width = gridUnit * (group.placement === 'center' ? 4 : 2) * (group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : 1);
+export function getLogoLanguageScale(canvas: CanvasSize, group: LogoGroupState, game?: BrandAsset): number {
+  if (group.mode === 'company-only' || game?.language !== 'en-US') return 1;
+  return classifyAspect(canvas) === 'portrait' ? 1.15 : 1.1;
+}
+
+function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
+  const languageScale = getLogoLanguageScale(canvas, group, game);
+  const width = gridUnit * (group.placement === 'center' ? 4 : 2) * (group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : 1) * languageScale;
   const aspect = group.mode === 'company-and-game' ? 3.4 : (group.mode === 'company-only' ? company?.aspectRatio : game?.aspectRatio) ?? 3;
   return { width, height: width / aspect };
 }
@@ -59,7 +65,7 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
   const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, placement: 'bottom-center' as const, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;
   if (!hasCompany && !hasGame) return { grid, logoItems: [], cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
-  const dimensions = groupDimensions(grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);
+  const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);
   const items = [] as BrandRenderPlan['logoItems'];
   if (hasCompany && hasGame) {
     const gap = grid.unit * group.gapUnits; const available = rect.width - gap; const companyWidth = available * .42; const gameWidth = available - companyWidth;
