@@ -19,6 +19,20 @@ body {
 }
 
 .app-shell { max-width: none; padding: 0; background: var(--color-app); }
+.app-module-shell { display: grid; grid-template-columns: 56px minmax(0, 1fr); min-height: calc(100vh - 56px); }
+.module-nav { display: grid; align-content: start; gap: 4px; padding: 8px; border-right: 1px solid var(--color-border); background: var(--color-panel); }
+.module-nav button { position: relative; width: 40px; height: 40px; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text-muted); font-size: 12px; font-weight: 700; }
+.module-nav button:hover { background: var(--color-panel-raised); color: var(--color-text); }
+.module-nav button.active { background: var(--color-primary-soft); color: #dcecff; }
+.module-nav button.active::before { content: ''; position: absolute; left: -8px; top: 12px; width: 3px; height: 16px; border-radius: 2px; background: var(--color-primary); }
+.module-nav button::after { content: attr(aria-label); position: absolute; left: 48px; top: 6px; z-index: 70; display: none; width: max-content; padding: 5px 7px; border: 1px solid var(--color-border-strong); border-radius: 4px; background: var(--color-canvas-deep); color: var(--color-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: var(--shadow-dialog); }
+.module-nav button:hover::after, .module-nav button:focus-visible::after { display: block; }
+.app-module-shell .workspace { grid-column: 2; }
+.module-placeholder { grid-column: 2; display: grid; place-items: center; min-height: calc(100vh - 56px); background: var(--color-canvas); }
+.module-placeholder > div { width: min(420px, calc(100% - 48px)); display: grid; gap: 10px; padding: 24px; border: 1px solid var(--color-border); background: var(--color-panel); }
+.section-title { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text); font-size: 14px; font-weight: 600; }
+.section-title > span, .brand-control-heading h3::before, .brand-resource-manager h3::before, .spec-editor-header > span::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 7px; border-radius: 50%; background: var(--color-text-muted); vertical-align: middle; }
+.brand-control-heading h3::before { background: var(--color-primary); }
 .topbar {
   min-height: 56px;
   padding: 8px 12px;
@@ -202,6 +216,32 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
   scrollbar-gutter: stable;
 }
 .brand-control-group .brand-row { min-height: 48px; padding-block: 7px; }
+.brand-resource-link { width: 100%; min-height: 32px; padding: 6px 8px; border-style: dashed; color: var(--color-text-muted); text-align: left; }
+.brand-resource-manager { display: grid; gap: 8px; }
+.brand-resource-manager-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.brand-resource-manager-heading h3 { margin: 0; font-size: 14px; }
+.brand-resource-manager-heading small, .brand-resource-row small { display: block; margin-top: 2px; }
+.brand-resource-row { display: grid; grid-template-columns: 46px minmax(0, 1fr) max-content; align-items: center; gap: 8px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--color-border); }
+.brand-resource-row.active { background: var(--color-primary-soft); }
+.brand-resource-row strong, .brand-resource-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-resource-row button { min-height: 28px; padding: 4px 7px; }
+.resource-select { border: 0; background: transparent; }
+.resource-preview-empty, .resource-select img, .brand-resource-row > .resource-preview-empty { display: grid; width: 42px; height: 32px; place-items: center; object-fit: contain; color: var(--color-text-muted); font-size: 10px; }
+.resource-select img { width: 42px; height: 32px; }
+.custom-workspace { grid-column: 2; display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100vh - 56px); background: var(--color-border); }
+.custom-controls, .custom-stage { min-width: 0; padding: 16px; background: var(--color-panel); }
+.custom-controls { display: grid; align-content: start; gap: 12px; border-right: 1px solid var(--color-border); }
+.custom-stage { display: grid; place-items: center; background: var(--color-canvas); }
+.custom-canvas-stack { position: relative; display: grid; place-items: center; }
+.custom-canvas-stack > .preview-canvas { grid-area: 1 / 1; }
+.custom-number-field > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 8px; align-items: center; }
+.custom-number-field input[type='number'] { width: 72px; min-height: 32px; padding: 4px 6px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-panel-muted); color: var(--color-text); }
+.custom-guides { position: absolute; z-index: 55; inset: 0; pointer-events: none; }
+.custom-guides span { position: absolute; background: rgb(96 165 250 / 52%); }
+.custom-guides span:first-child { top: 0; bottom: 0; left: 50%; width: 1px; }
+.custom-guides span:last-child { left: 0; right: 0; top: 50%; height: 1px; }
+.custom-drag-layer { position: absolute; z-index: 60; width: 128px; height: 80px; transform: translate(-20%, -20%); cursor: move; border: 1px dashed rgb(96 165 250 / 68%); border-radius: 3px; touch-action: none; }
+.custom-drag-layer:hover { border-color: var(--color-primary); background: var(--color-primary-soft); }
 
 .preview-shell,
 .focus-stage-frame,
@@ -271,6 +311,7 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 @media (max-width: 960px) {
   .workspace { gap: 1px; }
   .panel { min-height: auto; }
+  .custom-workspace { grid-template-columns: 220px minmax(0, 1fr); }
 }
 
 @media (max-width: 900px) {
@@ -279,6 +320,11 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
   .multi-asset-overview { max-height: none; }
   .focus-side-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-field { grid-template-columns: 96px minmax(0, 1fr); }
+  .app-module-shell { grid-template-columns: 52px minmax(0, 1fr); }
+  .module-nav { padding: 6px; }
+  .module-nav button { width: 40px; }
+  .custom-workspace { grid-template-columns: 1fr; }
+  .custom-controls { border-right: 0; border-bottom: 1px solid var(--color-border); grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

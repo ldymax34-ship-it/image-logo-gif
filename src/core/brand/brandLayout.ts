@@ -10,11 +10,41 @@ export function getLogoLanguageScale(canvas: CanvasSize, group: LogoGroupState, 
   return classifyAspect(canvas) === 'portrait' ? 1.15 : 1.1;
 }
 
-function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
+function getCompanyHeightMultiplier(group: LogoGroupState): number {
+  const preset = group.companyLogoScale === 'small' ? 0.7 : group.companyLogoScale === 'large' ? 0.86 : 0.78;
+  return preset * (group.companyLogoScaleFactor ?? 1);
+}
+
+function getGroupWidth(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, game?: BrandAsset): number {
   const languageScale = getLogoLanguageScale(canvas, group, game);
-  const width = gridUnit * (group.placement === 'center' ? 4 : 2) * (group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : 1) * languageScale;
-  const aspect = group.mode === 'company-and-game' ? 3.4 : (group.mode === 'company-only' ? company?.aspectRatio : game?.aspectRatio) ?? 3;
-  return { width, height: width / aspect };
+  const sizeFactor = group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : 1;
+  if (group.sizePreset === 'xl') {
+    const family = classifyAspect(canvas);
+    const ratio = family === 'portrait' ? 0.48 : family === 'square' ? 0.36 : 0.34;
+    return Math.min(canvas.width - gridUnit * 2, canvas.width * ratio) * languageScale;
+  }
+  return gridUnit * (group.placement === 'center' ? 4 : 2) * sizeFactor * languageScale;
+}
+
+function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
+  const width = getGroupWidth(canvas, gridUnit, group, game);
+  if (group.mode !== 'company-and-game' || !company || !game) {
+    const aspect = (group.mode === 'company-only' ? company?.aspectRatio : game?.aspectRatio) ?? 3;
+    // Keep the standalone company mark aligned with the same visual hierarchy
+    // used by the paired logo group. Previously the selected company size
+    // preset was ignored whenever only the company mark was enabled.
+    const visualScale = group.mode === 'company-only'
+      ? getCompanyHeightMultiplier(group)
+      : group.gameLogoScale ?? 1;
+    const contentWidth = width * visualScale;
+    return { width: contentWidth, height: contentWidth / aspect };
+  }
+  const gap = gridUnit * group.gapUnits;
+  const companyHeightMultiplier = getCompanyHeightMultiplier(group);
+  const gameAspect = game.aspectRatio ?? 1.5;
+  const companyAspect = company.aspectRatio ?? 4;
+  const gameHeight = Math.max(1, (width - gap) / (gameAspect * (group.gameLogoScale ?? 1) + companyAspect * companyHeightMultiplier));
+  return { width, height: gameHeight, gameHeight, companyHeight: gameHeight * companyHeightMultiplier, gap };
 }
 
 function placeGroup(canvas: CanvasSize, width: number, height: number, placement: BrandPlacement, offset?: { x: number; y: number }): LayoutRect {
@@ -60,6 +90,7 @@ function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRende
 }
 
 export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, options: BuildBrandRenderOptions = {}): BrandRenderPlan {
+  group = { ...group, companyLogoScale: group.companyLogoScale ?? 'match' };
   const grid = createBrandGrid(canvas); const color = getBrandColor(group.colorMode) ?? '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
   const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, placement: 'bottom-right' as const, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
@@ -68,9 +99,15 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
   const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);
   const items = [] as BrandRenderPlan['logoItems'];
   if (hasCompany && hasGame) {
-    const gap = grid.unit * group.gapUnits; const available = rect.width - gap; const companyWidth = available * .42; const gameWidth = available - companyWidth;
-    items.push({ id: `logo:${options.companyLogo!.id}`, kind: 'logo', rect: { x: rect.x, y: rect.y, width: companyWidth, height: rect.height }, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
-    items.push({ id: `logo:${options.gameLogo!.id}`, kind: 'logo', rect: { x: rect.x + companyWidth + gap, y: rect.y, width: gameWidth, height: rect.height }, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
+    const gap = dimensions.gap ?? grid.unit * group.gapUnits;
+    const companyHeight = dimensions.companyHeight ?? rect.height * getCompanyHeightMultiplier(group);
+    const gameHeight = dimensions.gameHeight ?? rect.height;
+    const companyWidth = companyHeight * (options.companyLogo!.aspectRatio ?? 4);
+    const gameWidth = gameHeight * (options.gameLogo!.aspectRatio ?? 1.5) * (group.gameLogoScale ?? 1);
+    const actualWidth = companyWidth + gap + gameWidth;
+    const offsetX = rect.x + Math.max(0, (rect.width - actualWidth) / 2);
+    items.push({ id: `logo:${options.companyLogo!.id}`, kind: 'logo', rect: { x: offsetX, y: rect.y + (rect.height - companyHeight) / 2, width: companyWidth, height: companyHeight }, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
+    items.push({ id: `logo:${options.gameLogo!.id}`, kind: 'logo', rect: { x: offsetX + companyWidth + gap, y: rect.y + (rect.height - gameHeight) / 2, width: gameWidth, height: gameHeight }, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
   } else {
     const asset = hasCompany ? options.companyLogo! : options.gameLogo!;
     items.push({ id: `logo:${asset.id}`, kind: 'logo', rect, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });

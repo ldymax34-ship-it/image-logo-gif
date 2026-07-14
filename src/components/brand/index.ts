@@ -1,4 +1,5 @@
 export * from './BrandAssetList';
+export * from './BrandResourceManager';
 export * from './BrandEffectControls';
 export * from './CprControls';
 export * from './LogoStylePreview';

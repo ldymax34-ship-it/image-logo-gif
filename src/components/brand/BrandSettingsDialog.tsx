@@ -10,6 +10,7 @@ import {
   type BrandSize,
   type CprPlacement
 } from '../../core';
+import { BrandResourceManager } from './BrandResourceManager';
 
 const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original'>; label: string }> = [
   { value: 'white', label: '白色' },
@@ -38,10 +39,22 @@ const GROUP_MODE_OPTIONS: Array<{ value: BrandSettingsV1['defaultLogoGroupMode']
 
 export function BrandSettingsDialog({
   settings,
+  assets,
+  selectedLogoId,
+  selectedCompanyLogoId,
+  onSelectResource,
+  onReplaceResource,
+  onRestoreResources,
   onClose,
   onChange
 }: {
   settings: BrandSettingsV1;
+  assets: import('../../core').BrandAsset[];
+  selectedLogoId?: string;
+  selectedCompanyLogoId?: string;
+  onSelectResource: (asset: import('../../core').BrandAsset) => void;
+  onReplaceResource: (asset: import('../../core').BrandAsset | undefined, language: BrandLanguage) => void;
+  onRestoreResources: () => void;
   onClose: () => void;
   onChange: (next: BrandSettingsV1) => void;
 }) {
@@ -120,7 +133,7 @@ export function BrandSettingsDialog({
           <div>
             <span className="dialog-kicker">品牌设置</span>
             <h2 id="brand-settings-title">默认配置</h2>
-            <small>设置保存在浏览器 localStorage，不写入导出文件</small>
+            <small>仅影响新工作区默认值；品牌资源仅保存在当前打开的工作区</small>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭设置" title="关闭">×</button>
         </div>
@@ -270,6 +283,9 @@ export function BrandSettingsDialog({
               </select>
             </label>
             <small className="cpr-sample">不提供文案、字体、字号、字重或独立坐标编辑。</small>
+          </div>
+          <div className="settings-group">
+            <BrandResourceManager assets={assets} selectedLogoId={selectedLogoId} selectedCompanyLogoId={selectedCompanyLogoId} onSelect={onSelectResource} onReplace={onReplaceResource} onRestore={onRestoreResources} />
           </div>
         </div>
 

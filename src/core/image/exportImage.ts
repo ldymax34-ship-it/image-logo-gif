@@ -305,6 +305,14 @@ export async function renderBoardToCanvas(input: BoardRenderInput & { format?: M
   return canvas;
 }
 
+export async function drawBrandLayersToCanvas(canvas: HTMLCanvasElement, layers: BoardRenderLayer[]): Promise<void> {
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法创建导出画布');
+  for (const layer of [...layers].sort((left, right) => left.zIndex - right.zIndex)) {
+    await drawBrandLayer(context, layer);
+  }
+}
+
 export function canvasToBlob(canvas: HTMLCanvasElement, format: MaterialFormat, quality = 0.92): Promise<Blob> {
   const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
   return new Promise<Blob>((resolve, reject) => {

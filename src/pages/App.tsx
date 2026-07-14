@@ -15,6 +15,7 @@ import {
   createBrandAssetFromFile,
   createDefaultCprState,
   createDefaultLogoGroup,
+  normalizeLogoGroup,
   createInitialCropState,
   createMaterialAsset,
   DEFAULT_MAX_SIZE_KB,
@@ -54,7 +55,7 @@ import { chooseOutputTarget, saveBlobToOutputTarget } from '../platform/fileSyst
 import {
   AssetSidebar,
   BoardOverview,
-  BrandAssetList,
+  BrandAssetWorkspace,
   CprControls,
   BrandEffectControls,
   BrandGuideControls,
@@ -66,17 +67,19 @@ import {
   LogoStylePreview,
   MultiAssetBoardOverview,
   SpecPanel,
-  WorkbenchHeader
+  WorkbenchHeader,
+  ModuleNav,
+  type WorkbenchModule
 } from '../components';
 import { BoardCanvas } from '../components/canvas';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
-  cprEnabled: false,
+  cprEnabled: true,
   logoLanguage: 'zh-CN',
   cprLanguage: 'zh-CN',
   logoAnchor: 'top-right',
-  cprAnchor: 'center',
+  cprAnchor: 'top-right',
   logoSize: 'standard',
   cprSize: 'standard',
   logoEffect: DEFAULT_LOGO_EFFECT,
@@ -161,6 +164,7 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
     gameLogoLanguage: settings.defaultLanguage,
     colorMode: settings.defaultColorMode,
     sizePreset: settings.defaultSize,
+    companyLogoScale: 'match',
     gapUnits: 0.5,
     placement,
     lastExplicitPlacement: placement
@@ -177,7 +181,7 @@ function ensureLogoGroups(
   for (const asset of assets) {
     for (const spec of specs) {
       const key = getBoardPreviewKey(asset.id, spec.id);
-      next[key] = previous[key] ?? createLogoGroupFromSettings(settings, spec);
+      next[key] = normalizeLogoGroup(previous[key] ?? createLogoGroupFromSettings(settings, spec));
     }
   }
   return next;
@@ -824,6 +828,7 @@ function BatchExportDialog({
 }
 
 export function App() {
+  const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
@@ -852,13 +857,15 @@ export function App() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [message, setMessage] = useState<string>('');
   const [importFailures, setImportFailures] = useState<string[]>([]);
+  const [resourceUploadLanguage, setResourceUploadLanguage] = useState<BrandLanguage>('zh-CN');
+  const [replacingResourceId, setReplacingResourceId] = useState<string | undefined>();
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
   const selectedBoardKey = selectedAsset && selectedSpec ? getBoardPreviewKey(selectedAsset.id, selectedSpec.id) : undefined;
-  const selectedLogoGroup = selectedBoardKey ? logoGroupsByBoard[selectedBoardKey] ?? logoGroup : logoGroup;
+  const selectedLogoGroup = normalizeLogoGroup(selectedBoardKey ? logoGroupsByBoard[selectedBoardKey] ?? logoGroup : logoGroup);
   const focusAsset = assets.find((asset) => asset.id === focusAssetId);
   const focusSpec = specs.find((spec) => spec.id === focusSpecId);
   const focusPreviewKey = focusAsset && focusSpec ? getBoardPreviewKey(focusAsset.id, focusSpec.id) : undefined;
@@ -1123,29 +1130,46 @@ export function App() {
   }
 
   function changeBrandLanguage(language: BrandLanguage) {
+    const selectedId = resolvePreferredBrandAssetId(brandAssets, 'logo', language, brandLayer.selectedLogoId);
     setBrandLayer((previous) => ({
       ...previous,
       logoLanguage: language,
-      selectedLogoId: resolvePreferredBrandAssetId(brandAssets, 'logo', language, previous.selectedLogoId)
+      selectedLogoId: selectedId
     }));
+    setLogoGroup((previous) => ({ ...normalizeLogoGroup(previous), gameLogoLanguage: language, gameLogoId: selectedId }));
+    if (selectedBoardKey) {
+      setLogoGroupsByBoard((previous) => ({
+        ...previous,
+        [selectedBoardKey]: { ...normalizeLogoGroup(previous[selectedBoardKey] ?? logoGroup), gameLogoLanguage: language, gameLogoId: selectedId }
+      }));
+    }
   }
 
-  async function handleLogoFiles(fileList: FileList | null) {
+  async function handleLogoFiles(fileList: FileList | null, language = brandLayer.logoLanguage) {
     const files = Array.from(fileList ?? []);
     if (!files.length) return;
     setMessage('正在读取 SVG 资源...');
-    const language = brandLayer.logoLanguage;
     try {
       const nextAssets = await Promise.all(files.map((file) => createBrandAssetFromFile(file, 'logo', language)));
-      setBrandAssets((previous) => [...previous, ...nextAssets]);
+      setBrandAssets((previous) => [
+        ...previous.filter((asset) => replacingResourceId
+          ? asset.id !== replacingResourceId
+          : !(asset.type === 'logo' && asset.language === language)),
+        ...nextAssets
+      ]);
       setBrandLayer((previous) => ({
         ...previous,
-        selectedLogoId: nextAssets[0]?.id ?? previous.selectedLogoId
+        selectedLogoId: language === 'custom' ? previous.selectedLogoId : nextAssets[0]?.id ?? previous.selectedLogoId
       }));
+      if (language === 'custom' && nextAssets[0]) {
+        setLogoGroup((previous) => ({ ...previous, companyLogoId: nextAssets[0].id }));
+        setLogoGroupsByBoard((previous) => Object.fromEntries(Object.entries(previous).map(([key, group]) => [key, { ...normalizeLogoGroup(group), companyLogoId: nextAssets[0]!.id }])));
+      }
       setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'SVG 导入失败');
     } finally {
+      setReplacingResourceId(undefined);
       if (logoInputRef.current) logoInputRef.current.value = '';
     }
   }
@@ -1159,8 +1183,9 @@ export function App() {
         hasPendingSpecChanges={hasPendingSpecChanges}
         onOpenSettings={() => setSettingsDialogOpen(true)}
       />
-
-      <section className="workspace">
+      <div className="app-module-shell">
+      <ModuleNav active={activeModule} onChange={setActiveModule} />
+      {activeModule === 'media' ? <section className="workspace">
         <AssetSidebar>
           <div className="panel-heading">
             <h2>素材</h2>
@@ -1207,6 +1232,8 @@ export function App() {
           <div className="brand-control-heading"><div><h3 id="logo-controls-title">Logo</h3><small>组合与单项资源</small></div></div>
           <LogoGroupControls
             group={selectedLogoGroup}
+            language={brandLayer.logoLanguage}
+            onLanguageChange={changeBrandLanguage}
             onChange={(next) => {
               setLogoGroup(next);
               if (selectedBoardKey) {
@@ -1223,53 +1250,7 @@ export function App() {
               }));
             }}
           />
-          <div className="brand-section">
-            <div className="panel-heading">
-              <h2>Logo 资源</h2>
-              <button type="button" onClick={() => logoInputRef.current?.click()}>
-                导入
-              </button>
-            </div>
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept=".svg,image/svg+xml"
-              multiple
-              hidden
-              onChange={(event) => void handleLogoFiles(event.target.files)}
-            />
-            <div className="toolbar-line">
-              <select
-                value={brandLayer.logoLanguage}
-                onChange={(event) => changeBrandLanguage(event.target.value as BrandLanguage)}
-              >
-                {BRAND_LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={brandLayer.logoEnabled}
-                  onChange={(event) => setBrandLayer((previous) => ({ ...previous, logoEnabled: event.target.checked }))}
-                />
-                启用
-              </label>
-            </div>
-            <BrandAssetList
-              assets={logoAssets}
-              selectedId={brandLayer.selectedLogoId}
-              onSelect={(asset) =>
-                setBrandLayer((previous) => ({
-                  ...previous,
-                  logoLanguage: asset.language,
-                  selectedLogoId: asset.id
-                }))
-              }
-            />
-          </div>
+          <label className="toggle compact-toggle"><input type="checkbox" checked={brandLayer.logoEnabled} onChange={(event) => setBrandLayer((previous) => ({ ...previous, logoEnabled: event.target.checked }))} />显示 Logo</label>
 
           <BrandEffectControls
             title="Logo"
@@ -1435,7 +1416,8 @@ export function App() {
             </div>
           )}
         </SpecPanel>
-      </section>
+      </section> : activeModule === 'custom' ? <BrandAssetWorkspace brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} /> : <section className="module-placeholder"><div><span className="section-title"><span />GIF 压缩</span><h2>开发中</h2><p>GIF 压缩模块正在规划中，当前不会转换或修改任何文件。</p></div></section>}
+      </div>
       {focusAsset && focusSpec && (
         <FocusEditorModal
           key={`${focusAsset.id}:${focusSpec.id}`}
@@ -1485,10 +1467,24 @@ export function App() {
       {settingsDialogOpen && (
         <BrandSettingsDialog
           settings={brandSettings}
+          assets={brandAssets}
+          selectedLogoId={brandLayer.selectedLogoId}
+          selectedCompanyLogoId={selectedLogoGroup.companyLogoId}
+          onSelectResource={(asset) => {
+            if (asset.language === 'custom') setLogoGroup((previous) => ({ ...previous, companyLogoId: asset.id }));
+            else setBrandLayer((previous) => ({ ...previous, logoLanguage: asset.language, selectedLogoId: asset.id }));
+          }}
+          onReplaceResource={(asset, language) => {
+            setReplacingResourceId(asset?.id);
+            setResourceUploadLanguage(language);
+            logoInputRef.current?.click();
+          }}
+          onRestoreResources={() => { setBrandAssets(DEFAULT_BRAND_ASSETS); setLogoGroup((previous) => ({ ...previous, companyLogoId: undefined })); setMessage('已恢复内置品牌资源'); }}
           onClose={() => setSettingsDialogOpen(false)}
           onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }}
         />
       )}
+      <input ref={logoInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={(event) => void handleLogoFiles(event.target.files, resourceUploadLanguage)} />
     </main>
   );
 }

@@ -4,7 +4,8 @@ import type { BrandLanguage, BrandEffectState } from './brandAsset';
 export type LogoGroupMode = 'game-only' | 'company-only' | 'company-and-game';
 export type BrandPlacement = 'corner-left' | 'center' | 'corner-right' | 'custom';
 export type BrandColorMode = 'white' | 'black' | 'original';
-export type BrandSize = 'small' | 'standard' | 'large';
+export type BrandSize = 'small' | 'standard' | 'large' | 'xl';
+export type CompanyLogoScale = 'small' | 'match' | 'large';
 
 export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right';
 
@@ -35,6 +36,10 @@ export type LogoGroupState = {
   gameLogoLanguage: BrandLanguage;
   colorMode: BrandColorMode;
   sizePreset: BrandSize;
+  companyLogoScale: CompanyLogoScale;
+  /** Only used by the custom module; the standard material module keeps presets. */
+  gameLogoScale?: number;
+  companyLogoScaleFactor?: number;
   gapUnits: number;
   placement: BrandPlacement;
   lastExplicitPlacement?: Exclude<BrandPlacement, 'custom'>;

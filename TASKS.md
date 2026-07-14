@@ -171,3 +171,15 @@
 1. 用真实物料校准 PNG / JPG 预估大小和超限提示。
 2. 增加删除 / 替换素材与单项 Object URL 回收。
 3. 按 [自动更新规划](docs/AUTO_UPDATE_PLAN.md) 先完成 Windows 的 GitHub Release 更新通道，再准备 macOS 正式签名与公证。
+
+## 0.1.19
+
+1. [新需求-大] `src/components/ModuleNav.tsx`、`src/components/BrandAssetWorkspace.tsx`、`src/pages/App.tsx` 新增自定义构图模块：本地单图导入、游戏 / 公司 Logo 独立摆放、语种切换、网格吸附与 PNG / JPG 导出。
+2. [新需求-中] `src/components/brand/BrandResourceManager.tsx`、`src/components/brand/BrandSettingsDialog.tsx` 整合品牌资源管理：可替换指定语种资源、替换当前公司 Logo、选择与恢复内置资源。
+3. [功能调整-中] `src/core/brand/brandLayout.ts`、`src/components/brand/LogoGroupControls.tsx` 支持特大 Logo 与公司 Logo 比例；仅公司 Logo 模式现正确应用比例预设。
+4. [问题修复-中] `src/components/BrandAssetWorkspace.tsx` 在公司 Logo 叠加后的最终输出上执行 8MB 限制校验与 JPG 自动压缩。
+5. [维护-小] `src/core/core.test.ts` 补充公司 Logo 比例回归测试。
+
+### 本轮验证记录
+
+- [x] 0.1.19 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、`git diff --check` 通过；45 tests。

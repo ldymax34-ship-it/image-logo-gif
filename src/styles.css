@@ -574,6 +574,8 @@ code {
   cursor: grabbing;
 }
 
+.preview-canvas.is-transparent { background: transparent; border-color: transparent; }
+
 .preview-image {
   position: absolute;
   user-select: none;

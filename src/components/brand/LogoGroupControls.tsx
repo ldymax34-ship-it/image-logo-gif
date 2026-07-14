@@ -1,4 +1,4 @@
-import type { BrandColorMode, BrandPlacement, BrandSize, LogoGroupMode, LogoGroupState } from '../../core';
+import type { BrandColorMode, BrandLanguage, BrandPlacement, BrandSize, CompanyLogoScale, LogoGroupMode, LogoGroupState } from '../../core';
 
 const GROUP_MODE_OPTIONS: Array<{ value: LogoGroupMode; label: string }> = [
   { value: 'game-only', label: '仅游戏 Logo' },
@@ -15,7 +15,14 @@ const COLOR_MODE_OPTIONS: Array<{ value: BrandColorMode; label: string }> = [
 const SIZE_OPTIONS: Array<{ value: BrandSize; label: string }> = [
   { value: 'small', label: '小' },
   { value: 'standard', label: '标准' },
-  { value: 'large', label: '大' }
+  { value: 'large', label: '大' },
+  { value: 'xl', label: '特大（视频 / KV）' }
+];
+
+const COMPANY_SCALE_OPTIONS: Array<{ value: CompanyLogoScale; label: string }> = [
+  { value: 'small', label: '较小' },
+  { value: 'match', label: '匹配' },
+  { value: 'large', label: '较大' }
 ];
 
 const PLACEMENT_OPTIONS: Array<{ value: Exclude<BrandPlacement, 'custom'>; label: string }> = [
@@ -26,9 +33,13 @@ const PLACEMENT_OPTIONS: Array<{ value: Exclude<BrandPlacement, 'custom'>; label
 
 export function LogoGroupControls({
   group,
+  language,
+  onLanguageChange,
   onChange
 }: {
   group: LogoGroupState;
+  language: BrandLanguage;
+  onLanguageChange: (language: BrandLanguage) => void;
   onChange: (next: LogoGroupState) => void;
 }) {
   function patch(next: Partial<LogoGroupState>) {
@@ -52,6 +63,12 @@ export function LogoGroupControls({
               {option.label}
             </option>
           ))}
+        </select>
+      </div>
+      <div className="toolbar-line compact">
+        <label className="control-label small">语种</label>
+        <select value={language} onChange={(event) => onLanguageChange(event.target.value as BrandLanguage)}>
+          <option value="zh-CN">简中</option><option value="zh-TW">繁中</option><option value="ja-JP">日文</option><option value="ko-KR">韩文</option><option value="en-US">英文</option>
         </select>
       </div>
       <div className="toolbar-line compact">
@@ -107,6 +124,12 @@ export function LogoGroupControls({
           onChange={(event) => patch({ gapUnits: Number(event.target.value) })}
         />
       </label>
+      {group.mode === 'company-and-game' ? <div className="toolbar-line compact">
+        <label className="control-label small">公司比例</label>
+        <select value={group.companyLogoScale} onChange={(event) => patch({ companyLogoScale: event.target.value as CompanyLogoScale })}>
+          {COMPANY_SCALE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </div> : null}
       <p className="inline-note">位置与大小按当前画板保存；CPR 在底部独立设置。</p>
     </div>
   );

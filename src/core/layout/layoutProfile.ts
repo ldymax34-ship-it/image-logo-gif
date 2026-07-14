@@ -1,6 +1,6 @@
 export type AspectFamily = 'landscape' | 'square' | 'portrait';
 export type BrandAnchor = 'top-left' | 'top-right' | 'center';
-export type BrandSizeLevel = 'small' | 'standard' | 'large';
+export type BrandSizeLevel = 'small' | 'standard' | 'large' | 'xl';
 
 export type CanvasSize = {
   width: number;
@@ -105,6 +105,7 @@ export function getFamilyRule(canvas: CanvasSize, profile: LayoutProfile = DEFAU
 export function getSizeLevelMultiplier(sizeLevel: BrandSizeLevel = 'standard'): number {
   if (sizeLevel === 'small') return 0.85;
   if (sizeLevel === 'large') return 1.15;
+  if (sizeLevel === 'xl') return 1.45;
   return 1;
 }
 

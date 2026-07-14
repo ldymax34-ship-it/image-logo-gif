@@ -21,6 +21,8 @@ export function BoardCanvas({
   cprAsset,
   brandLayer,
   scale,
+  showImage = true,
+  transparent = false,
   draggable,
   brandSettings,
   logoGroup,
@@ -37,6 +39,8 @@ export function BoardCanvas({
   cprAsset: BrandAsset | undefined;
   brandLayer: BrandLayerState;
   scale: number;
+  showImage?: boolean;
+  transparent?: boolean;
   draggable?: boolean;
   brandSettings?: BrandSettingsV1;
   logoGroup?: LogoGroupState;
@@ -63,7 +67,7 @@ export function BoardCanvas({
 
   return (
     <div
-      className={`preview-canvas board-canvas ${draggable ? 'is-draggable' : ''}`}
+      className={`preview-canvas board-canvas ${draggable ? 'is-draggable' : ''} ${transparent ? 'is-transparent' : ''}`}
       style={{ width: spec.width * scale, height: spec.height * scale }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -72,7 +76,7 @@ export function BoardCanvas({
     >
       {plan ? (
         <>
-          <img
+          {showImage ? <img
             className="preview-image"
             src={plan.image.src}
             alt={plan.image.alt}
@@ -83,8 +87,8 @@ export function BoardCanvas({
               width: plan.image.rect.width * scale,
               height: plan.image.rect.height * scale
             }}
-          />
-          {brandSettings?.safeAreaVisible === false ? null : <div className="safe-area" />}
+          /> : null}
+          {showImage && brandSettings?.safeAreaVisible !== false ? <div className="safe-area" /> : null}
           {plan.layers.map((layer) => (
             <div
               key={layer.id}

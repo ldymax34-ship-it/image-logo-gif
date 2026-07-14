@@ -4,7 +4,7 @@ import type { BrandColorMode, BrandSettingsV1, CprPlacement, CprState, LogoGroup
 export const DEFAULT_BRAND_SETTINGS: BrandSettingsV1 = {
   version: 1, defaultLogoGroupMode: 'game-only', defaultLanguage: 'zh-CN', defaultColorMode: 'white', defaultSize: 'standard',
   defaultPlacementByAspect: { landscape: 'corner-right', square: 'corner-right', portrait: 'corner-right' },
-  cprEnabled: false, defaultCprPlacement: 'bottom-right', defaultCprColorMode: 'white',
+  cprEnabled: true, defaultCprPlacement: 'bottom-right', defaultCprColorMode: 'white',
   gridVisible: false, safeAreaVisible: true, guidesVisible: true, snapEnabled: true, snapThreshold: 8
 };
 
@@ -15,20 +15,20 @@ export const DEFAULT_BRAND_EFFECT: BrandEffectState = { ...DEFAULT_LOGO_EFFECT, 
  * 预览 / 单导出 / 批导出共用此默认。
  */
 export const DEFAULT_CPR_STATE: CprState = {
-  enabled: false,
+  enabled: true,
   placement: 'bottom-right',
   colorMode: 'white',
   effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
 };
 
 export function createDefaultLogoGroup(language: BrandLanguage = 'zh-CN'): LogoGroupState {
-  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right' };
+  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', companyLogoScale: 'match', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right' };
 }
 
 /** 创建一份独立的 CPR 默认状态（返回新对象，调用方可安全修改）。 */
 export function createDefaultCprState(): CprState {
   return {
-    enabled: false,
+    enabled: true,
     placement: 'bottom-right',
     colorMode: 'white',
     effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
@@ -62,6 +62,10 @@ export function resolveCprState(layer: BrandLayerState): CprState {
     colorMode: deriveCprColorMode(layer.cprEffect),
     effect: { ...layer.cprEffect }
   };
+}
+
+export function normalizeLogoGroup(group: LogoGroupState): LogoGroupState {
+  return { ...group, companyLogoScale: group.companyLogoScale ?? 'match' };
 }
 
 /** 把当前 CPR 配色档位转成渲染用的纯色（original 返回 undefined 表示保留原色）。 */

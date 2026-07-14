@@ -142,6 +142,16 @@ describe('core 0.1.x foundation', () => {
     expect(plan.cpr?.rect.x).toBe(60);
   });
 
+  it('applies the company visual hierarchy in company-only mode', () => {
+    const company = createRasterBrandAsset({ id: 'company-only', type: 'logo', name: 'Company', language: 'custom', sourceUrl: '/company.png', width: 4, height: 1 });
+    const group = { ...createDefaultLogoGroup('zh-CN'), mode: 'company-only' as const };
+    const small = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...group, companyLogoScale: 'small' }, { companyLogo: company });
+    const match = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...group, companyLogoScale: 'match' }, { companyLogo: company });
+    const large = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...group, companyLogoScale: 'large' }, { companyLogo: company });
+    expect(small.logoGroupRect?.width).toBeLessThan(match.logoGroupRect?.width ?? 0);
+    expect(match.logoGroupRect?.width).toBeLessThan(large.logoGroupRect?.width ?? 0);
+  });
+
   it('keeps CPR independent from a custom logo position', () => {
     const group = {
       ...createDefaultLogoGroup('zh-CN'),

@@ -45,7 +45,7 @@ export type BrandLayerState = {
   selectedCprId?: string;
   logoAnchor: 'top-left' | 'top-right' | 'center';
   cprAnchor: 'top-left' | 'top-right' | 'center';
-  logoSize: 'small' | 'standard' | 'large';
+  logoSize: import('./brandTypes').BrandSize;
   cprSize: 'small' | 'standard' | 'large';
   logoEffect: BrandEffectState;
   cprEffect: BrandEffectState;

@@ -587,3 +587,18 @@
 5. [重构-中] 新增 `src/platform/` 抽象层占位，0.1.x 暂不接 Tauri。
 6. [体验-中] 新应用首页提供最小工作台壳。
 7. [维护-中] 新增 `scripts/verify-core.ts` 与 `src/core/core.test.ts`。
+
+## 0.1.19
+
+1. [新需求-大] `src/components/ModuleNav.tsx`、`src/components/BrandAssetWorkspace.tsx`、`src/pages/App.tsx`：新增“自定义构图”工作区，可导入单张本地图片、独立摆放游戏 / 公司 Logo、切换游戏语种、使用参考线与网格吸附，并直接导出 PNG / JPG。
+2. [新需求-中] `src/components/brand/BrandResourceManager.tsx`、`src/components/brand/BrandSettingsDialog.tsx`：把品牌资源管理收拢至设置弹窗，支持按语种替换游戏 Logo、替换当前选中的公司 Logo、选择资源与恢复内置资源。
+3. [功能调整-中] `src/core/brand/brandTypes.ts`、`src/core/brand/brandDefaults.ts`、`src/core/brand/brandLayout.ts`、`src/components/brand/LogoGroupControls.tsx`：新增特大 Logo 尺寸与公司 Logo 视觉比例控制；修复“仅公司 Logo”模式忽略公司比例预设的问题。
+4. [问题修复-中] `src/components/BrandAssetWorkspace.tsx`：自定义构图导出在叠加公司 Logo 后重新执行 PNG / JPG 8MB 限制校验，JPG 会自动降质压缩，避免绕过导出限制。
+5. [维护-小] `src/core/core.test.ts`：补充公司 Logo 单独模式的视觉比例回归测试。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test`：通过，45 tests
+- `npm run build`：通过
+- `git diff --check`：通过
