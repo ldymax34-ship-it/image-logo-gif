@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.16，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 分别构建 Windows x64、macOS Apple Silicon 与 macOS Intel 产物。
+当前项目已推进到 0.1.19，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
 
 当前已建立：
 
@@ -89,8 +89,8 @@ npm stop
 
 - 0.1.x：先完成 Vite + React + TypeScript Web 工作台闭环
 - 当前：Tauri 2 桌面壳、原生目录选择和本地文件写入
-- Preview 构建：Windows 10/11 x64（NSIS）、macOS Apple Silicon（DMG / App）、macOS Intel（DMG / App）
-- Preview 阶段不含正式代码签名或自动更新
+- Preview 构建：Windows 10/11 x64（NSIS）、macOS Apple Silicon（DMG / App）
+- Preview 阶段不含正式代码签名或自动更新；自动更新将使用 GitHub Release 资源，详见 [自动更新规划](docs/AUTO_UPDATE_PLAN.md)
 
 ## 桌面 Preview 封包
 
@@ -110,12 +110,18 @@ npm run package:preview
 
 ### 平台产物
 
-GitHub Actions 在 Preview tag（例如 `v0.1.16-preview.2`）上构建：
+GitHub Actions 在 Preview tag（例如 `v0.1.19-preview.1`）上构建：
 
 - Windows 10/11 x64：NSIS Setup EXE，内置离线 WebView2。
 - macOS Apple Silicon：arm64 DMG 与 App ZIP。
 
 Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macOS Apple Silicon 首次启动可能要求在“系统设置 → 隐私与安全性”中手动允许。不要关闭系统安全机制或运行绕过脚本。
+
+## 自动更新规划
+
+后续正式版本计划使用 GitHub Release 作为跨网络更新源：客户端只读取版本清单与平台更新包，所有素材处理仍然完全在本地完成。更新不会把安装包提交到 Git 历史，也不会上传图片或工作台数据。
+
+Windows 将先接入提示式更新，完整离线 WebView2 安装包保留为首次安装和无网络环境兜底。macOS 需要先完成 Developer ID 签名和公证后再启用更新通道。完整实施步骤、签名边界和发布检查见 [自动更新规划](docs/AUTO_UPDATE_PLAN.md)。
 
 ## UI 方向
 
