@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="0.1.17-preview.1"
+          VERSION="0.1.18-preview.1"
           ARCH="${{ matrix.arch }}"
           mkdir -p release
           DMG=$(find src-tauri/target/${{ matrix.target }}/release/bundle/dmg -name '*.dmg' -print -quit)
@@ -67,7 +67,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
           $installer = Get-ChildItem "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter *.exe | Select-Object -First 1
-          Copy-Item $installer.FullName "release/BrandMaterialWorkbench_0.1.17-preview.1_Windows_x64_Setup.exe"
+          Copy-Item $installer.FullName "release/BrandMaterialWorkbench_0.1.18-preview.1_Windows_x64_Setup.exe"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -88,10 +88,10 @@ jobs:
         shell: bash
         run: |
           cd release
-          sha256sum * > BrandMaterialWorkbench_0.1.17-preview.1_SHA256.txt
+          sha256sum * > BrandMaterialWorkbench_0.1.18-preview.1_SHA256.txt
       - uses: softprops/action-gh-release@v2
         with:
-          name: 品宣物料工作台 0.1.17 Preview 1
+          name: 品宣物料工作台 0.1.18 Preview 1
           prerelease: true
           generate_release_notes: true
           body: |

@@ -1,3 +1,6 @@
+import { invoke } from '@tauri-apps/api/core';
+import { isDesktopBridgeAvailable } from './desktopBridge';
+
 export type PickedFile = {
   name: string;
   type: string;
@@ -72,24 +75,6 @@ export async function saveBlobToDirectory(handle: OutputDirectoryHandle, fileNam
   await writable.close();
 }
 
-function splitFileName(fileName: string): { base: string; extension: string } {
-  const match = /^(.*?)(\.[^.]+)?$/.exec(fileName);
-  return { base: match?.[1] || 'export', extension: match?.[2] || '' };
-}
-
-async function getDesktopAvailableFileName(directory: string, fileName: string, reserved: Set<string>): Promise<string> {
-  const { exists } = await import('@tauri-apps/plugin-fs');
-  const { base, extension } = splitFileName(fileName);
-  let candidate = fileName;
-  let index = 2;
-  while (reserved.has(candidate) || await exists(`${directory}/${candidate}`)) {
-    candidate = `${base}_${index}${extension}`;
-    index += 1;
-  }
-  reserved.add(candidate);
-  return candidate;
-}
-
 /** Writes only to a directory actively chosen by the user. */
 export async function saveBlobToOutputTarget(target: OutputTarget, fileName: string, blob: Blob): Promise<string> {
   if (target.kind === 'directory') {
@@ -98,13 +83,19 @@ export async function saveBlobToOutputTarget(target: OutputTarget, fileName: str
   }
 
   if (target.kind === 'desktop-directory') {
-    const [{ writeFile }, bytes] = await Promise.all([
-      import('@tauri-apps/plugin-fs'),
-      blob.arrayBuffer()
-    ]);
-    const resolvedName = await getDesktopAvailableFileName(target.path, fileName, target.reservedFileNames);
-    await writeFile(`${target.path}/${resolvedName}`, new Uint8Array(bytes));
-    return resolvedName;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    try {
+      const resolvedName = await invoke<string>('save_export_file', {
+        directory: target.path,
+        fileName,
+        bytes: Array.from(bytes)
+      });
+      target.reservedFileNames.add(resolvedName);
+      return resolvedName;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`无法写入所选文件夹：${reason}`);
+    }
   }
 
   if (target.kind === 'downloads') {
@@ -123,4 +114,3 @@ export function downloadBlobFile(blob: Blob, fileName: string): void {
   link.click();
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
-import { isDesktopBridgeAvailable } from './desktopBridge';
