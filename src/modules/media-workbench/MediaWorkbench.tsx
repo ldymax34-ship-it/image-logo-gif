@@ -51,9 +51,9 @@ import {
   type MaterialFormat,
   type PresetTemplate,
   type WorkbenchState
-} from '../core';
-import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../services/export';
-import { chooseOutputTarget, saveBlobToOutputTarget } from '../platform/fileSystem';
+} from '../../core';
+import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../../services/export';
+import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import {
   AssetSidebar,
   BoardOverview,
@@ -72,12 +72,12 @@ import {
   WorkbenchHeader,
   ModuleNav,
   type WorkbenchModule
-} from '../components';
-import { BoardCanvas } from '../components/canvas';
-import { AppShell } from '../app/AppShell';
-import { BatchExportDialog } from '../modules/media-workbench/BatchExportDialog';
-import { GifCompressorPlaceholder } from '../modules/gif-compressor';
-import { boardBrandReducer } from '../modules/media-workbench';
+} from '../../components';
+import { BoardCanvas } from '../../components/canvas';
+import { AppShell } from '../../app/AppShell';
+import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
+import { GifCompressorPlaceholder } from '../../modules/gif-compressor';
+import { boardBrandReducer } from '../../modules/media-workbench';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -542,7 +542,7 @@ function ConfirmationDialog({
 
 
 
-export function App() {
+export function MediaWorkbench() {
   const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);

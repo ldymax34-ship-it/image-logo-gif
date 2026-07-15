@@ -1,1 +1,3 @@
-export { App } from '../pages/App';
+import { MediaWorkbench } from '../modules/media-workbench/MediaWorkbench';
+
+export function App() { return <MediaWorkbench />; }
