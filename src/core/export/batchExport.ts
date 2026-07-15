@@ -2,6 +2,8 @@ import type { MaterialAsset } from '../image/imageMeta';
 import type { MaterialFormat, MaterialSpec } from '../spec/specParser';
 import type { BrandLanguage } from '../brand/brandAsset';
 
+export const EXPORT_LANGUAGES: BrandLanguage[] = ['zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'en-US'];
+
 export type BatchExportItem = {
   id: string;
   assetId: string;
@@ -25,7 +27,7 @@ export function createBatchExportItems(assets: MaterialAsset[], specs: MaterialS
 }
 
 /** Expands the normal asset × board matrix with a language dimension for batch output. */
-export function createLanguageBatchExportItems(assets: MaterialAsset[], specs: MaterialSpec[], languages: BrandLanguage[]): LanguageBatchExportItem[] {
+export function createLanguageBatchExportItems(assets: MaterialAsset[], specs: MaterialSpec[], languages: BrandLanguage[] = EXPORT_LANGUAGES): LanguageBatchExportItem[] {
   return createBatchExportItems(assets, specs).flatMap((item) => languages.map((language) => ({ ...item, id: `${item.id}:${language}`, language })));
 }
 

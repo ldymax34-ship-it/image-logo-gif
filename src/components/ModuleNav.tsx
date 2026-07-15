@@ -1,9 +1,9 @@
 export type WorkbenchModule = 'media' | 'custom' | 'gif';
 
 const MODULES: Array<{ id: WorkbenchModule; label: string; glyph: string }> = [
-  { id: 'media', label: '设媒', glyph: 'M' },
-  { id: 'custom', label: '自定义', glyph: 'C' },
-  { id: 'gif', label: 'GIF 压缩', glyph: 'G' }
+  { id: 'media', label: '设媒', glyph: '▣' },
+  { id: 'custom', label: '自定义', glyph: '✦' },
+  { id: 'gif', label: 'GIF 压缩', glyph: '◌' }
 ];
 
 export function ModuleNav({ active, onChange }: { active: WorkbenchModule; onChange: (module: WorkbenchModule) => void }) {

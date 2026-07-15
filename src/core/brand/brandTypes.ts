@@ -9,15 +9,19 @@ export type CompanyLogoScale = 'small' | 'match' | 'large';
 
 export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right' | 'custom';
 
+export type CprTransform = {
+  placement: CprPlacement;
+  offsetX: number;
+  offsetY: number;
+};
+
 /**
  * CPR 独立状态：开关、位置、配色、效果。
  * 预览 / 单导出 / 批导出共用同一份状态，不继承 Logo custom 坐标。
  */
 export type CprState = {
   enabled: boolean;
-  placement: CprPlacement;
-  /** Canvas-space top-left coordinate used only when placement is custom. */
-  manualOffset?: { x: number; y: number };
+  transform: CprTransform;
   colorMode: BrandColorMode;
   effect: BrandEffectState;
 };
@@ -49,6 +53,13 @@ export type LogoGroupState = {
   lastExplicitPlacement?: Exclude<BrandPlacement, 'custom'>;
   manualOffset?: { x: number; y: number };
 };
+
+export type BoardBrandState = {
+  logo: LogoGroupState;
+  cpr: CprState;
+};
+
+export type BoardBrandStateMap = Record<string, BoardBrandState>;
 
 export type BrandSettingsV1 = {
   version: 1;

@@ -18,7 +18,7 @@ export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, c
   const plan = buildBrandRenderPlan(canvas, group, {
     companyLogo,
     gameLogo,
-    cpr: cprState ?? { ...DEFAULT_CPR_STATE, enabled: settings.cprEnabled, placement: settings.defaultCprPlacement, colorMode: settings.defaultCprColorMode }
+    cpr: cprState ?? { ...DEFAULT_CPR_STATE, enabled: settings.cprEnabled, transform: { placement: settings.defaultCprPlacement, offsetX: 0, offsetY: 0 }, colorMode: settings.defaultCprColorMode }
   });
 
   return (

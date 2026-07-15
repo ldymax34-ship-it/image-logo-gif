@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect, EXPORT_LANGUAGES, migrateBoardBrandStates
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -126,8 +126,8 @@ describe('core 0.1.x foundation', () => {
 
   it('defaults fixed CPR to the bottom-right brand position', () => {
     expect(DEFAULT_BRAND_SETTINGS.defaultCprPlacement).toBe('bottom-right');
-    expect(DEFAULT_CPR_STATE.placement).toBe('bottom-right');
-    expect(createDefaultCprState().placement).toBe('bottom-right');
+    expect(DEFAULT_CPR_STATE.transform.placement).toBe('bottom-right');
+    expect(createDefaultCprState().transform.placement).toBe('bottom-right');
   });
 
   it('builds a grouped logo render plan with CPR fixed to the bottom', () => {
@@ -135,11 +135,11 @@ describe('core 0.1.x foundation', () => {
     const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
       companyLogo: createRasterBrandAsset({ id: 'company', type: 'logo', name: 'Company', language: 'custom', sourceUrl: '/company.png', width: 4, height: 1 }),
       gameLogo: createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 }),
-      cpr: { ...DEFAULT_CPR_STATE, enabled: true, placement: 'bottom-left' }
+      cpr: { ...DEFAULT_CPR_STATE, enabled: true, transform: { placement: 'bottom-left', offsetX: 0, offsetY: 0 } }
     });
     expect(plan.logoItems).toHaveLength(2);
-    expect((plan.cpr?.rect.y ?? 0) + (plan.cpr?.rect.height ?? 0)).toBe(1020);
-    expect(plan.cpr?.rect.x).toBe(60);
+    expect((plan.cpr?.rect.y ?? 0) + (plan.cpr?.rect.height ?? 0)).toBe(1050);
+    expect(plan.cpr?.rect.x).toBe(30);
   });
 
   it('applies the company visual hierarchy in company-only mode', () => {
@@ -161,9 +161,19 @@ describe('core 0.1.x foundation', () => {
   });
 
   it('keeps a custom CPR position inside the board bounds', () => {
-    const rect = computeCprPlacementRect({ width: 1920, height: 1080 }, 'custom', { x: 1800, y: 1060 });
-    expect(rect.x + rect.width).toBeLessThanOrEqual(1860);
-    expect(rect.y + rect.height).toBeLessThanOrEqual(1020);
+    const rect = computeCprPlacementRect({ width: 1920, height: 1080 }, { placement: 'custom', offsetX: 1800, offsetY: 1060 });
+    expect(rect.x + rect.width).toBeLessThanOrEqual(1905);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(1065);
+  });
+
+  it('applies CPR offsets relative to the recommended placement and keeps a 0.25U safety margin', () => {
+    const base = computeCprPlacementRect({ width: 1920, height: 1080 }, { placement: 'bottom-right', offsetX: 0, offsetY: 0 });
+    const moved = computeCprPlacementRect({ width: 1920, height: 1080 }, { placement: 'bottom-right', offsetX: -12, offsetY: -18 });
+    expect(moved.x).toBe(base.x - 12);
+    expect(moved.y).toBe(base.y - 18);
+    const clamped = computeCprPlacementRect({ width: 1920, height: 1080 }, { placement: 'bottom-right', offsetX: 9999, offsetY: 9999 });
+    expect(clamped.x + clamped.width).toBe(1905);
+    expect(clamped.y + clamped.height).toBe(1065);
   });
 
   it('expands a batch export matrix with every selected language', () => {
@@ -171,6 +181,25 @@ describe('core 0.1.x foundation', () => {
     const spec = { id: 's', name: 'square', width: 100, height: 100, format: 'png' as const };
     const items = createLanguageBatchExportItems([asset], [spec], ['zh-CN', 'en-US']);
     expect(items).toEqual([{ id: 'a:s:zh-CN', assetId: 'a', specId: 's', language: 'zh-CN' }, { id: 'a:s:en-US', assetId: 'a', specId: 's', language: 'en-US' }]);
+  });
+
+  it('always uses the fixed five-language export set', () => {
+    const asset = { id: 'a', fileName: 'a.png', objectUrl: 'blob:a', width: 100, height: 100, fileSize: 100, mimeType: 'image/png' };
+    const spec = { id: 's', name: 'square', width: 100, height: 100, format: 'png' as const };
+    expect(createLanguageBatchExportItems([asset], [spec])).toHaveLength(EXPORT_LANGUAGES.length);
+  });
+
+  it('migrates split brand maps into independent board brand states', () => {
+    const logo = createDefaultLogoGroup('zh-CN');
+    const states = migrateBoardBrandStates({
+      boardKeys: ['asset-a:spec-1', 'asset-b:spec-1'],
+      legacyLogoGroups: { 'asset-a:spec-1': { ...logo, placement: 'corner-left' } },
+      legacyCprStates: { 'asset-a:spec-1': { ...DEFAULT_CPR_STATE, transform: { placement: 'bottom-left', offsetX: 8, offsetY: 2 } } },
+      defaults: { logo, cpr: DEFAULT_CPR_STATE }
+    });
+    expect(states['asset-a:spec-1'].logo.placement).toBe('corner-left');
+    expect(states['asset-a:spec-1'].cpr.transform).toMatchObject({ placement: 'bottom-left', offsetX: 8 });
+    expect(states['asset-b:spec-1']).not.toBe(states['asset-a:spec-1']);
   });
 
   it('keeps CPR independent from a custom logo position', () => {
@@ -182,10 +211,10 @@ describe('core 0.1.x foundation', () => {
     };
     const plan = buildBrandRenderPlan({ width: 1920, height: 1080 }, group, {
       gameLogo: createRasterBrandAsset({ id: 'game', type: 'logo', name: 'Game', language: 'zh-CN', sourceUrl: '/game.png', width: 3, height: 1 }),
-      cpr: { ...DEFAULT_CPR_STATE, enabled: true, placement: 'bottom-right' }
+      cpr: { ...DEFAULT_CPR_STATE, enabled: true, transform: { placement: 'bottom-right', offsetX: 0, offsetY: 0 } }
     });
     expect(plan.logoGroupRect?.x).toBe(640);
-    expect((plan.cpr?.rect.x ?? 0) + (plan.cpr?.rect.width ?? 0)).toBe(1860);
+    expect((plan.cpr?.rect.x ?? 0) + (plan.cpr?.rect.width ?? 0)).toBe(1890);
   });
 
   it('supports all fixed CPR positions and independent effects', () => {
@@ -194,9 +223,9 @@ describe('core 0.1.x foundation', () => {
     const plans = (['bottom-left', 'bottom-center', 'bottom-right'] as const).map((placement) => buildBrandRenderPlan(
       { width: 1920, height: 1080 },
       group,
-      { gameLogo, cpr: { ...DEFAULT_CPR_STATE, enabled: true, placement, colorMode: 'black', effect: { ...DEFAULT_CPR_STATE.effect, shadowEnabled: true } } }
+      { gameLogo, cpr: { ...DEFAULT_CPR_STATE, enabled: true, transform: { placement, offsetX: 0, offsetY: 0 }, colorMode: 'black', effect: { ...DEFAULT_CPR_STATE.effect, shadowEnabled: true } } }
     ));
-    expect(plans.map((plan) => plan.cpr?.rect.x)).toEqual([60, 795, 1530]);
+    expect(plans.map((plan) => plan.cpr?.rect.x)).toEqual([30, 795, 1560]);
     expect(plans[0].cpr?.effect).toMatchObject({ colorEnabled: true, color: '#000000', shadowEnabled: true });
     expect(DEFAULT_CPR_STATE.effect).toMatchObject({ strokeEnabled: false, glowEnabled: false, shadowEnabled: false });
   });
@@ -389,8 +418,8 @@ describe('core 0.1.x foundation', () => {
     });
     const cprLayer = plan.layers.find((layer) => layer.type === 'cpr');
     expect(cprLayer?.asset.id).toBe(CPR_PRESET.assetId);
-    expect((cprLayer?.rect.y ?? 0) + (cprLayer?.rect.height ?? 0)).toBe(1020);
-    expect((cprLayer?.rect.x ?? 0) + (cprLayer?.rect.width ?? 0)).toBe(1860);
+    expect((cprLayer?.rect.y ?? 0) + (cprLayer?.rect.height ?? 0)).toBe(1050);
+    expect((cprLayer?.rect.x ?? 0) + (cprLayer?.rect.width ?? 0)).toBe(1890);
     expect(cprLayer?.effect.shadowEnabled).toBe(false);
   });
 

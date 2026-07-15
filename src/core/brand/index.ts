@@ -6,3 +6,4 @@ export * from './brandDefaults';
 export * from './cprPreset';
 export * from './brandLayout';
 export * from './brandSnap';
+export * from './boardBrandState';

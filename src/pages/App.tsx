@@ -3,9 +3,7 @@ import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
   buildBrandRenderPlan,
-  createLanguageBatchExportItems,
   buildBoardRenderPlan,
-  createBatchExportItems,
   DEFAULT_BRAND_ASSETS,
   DEFAULT_CPR_EFFECT,
   DEFAULT_LOGO_EFFECT,
@@ -16,11 +14,11 @@ import {
   createBrandAssetFromFile,
   createDefaultCprState,
   createDefaultLogoGroup,
+  migrateBoardBrandStates,
   normalizeLogoGroup,
   createInitialCropState,
   createMaterialAsset,
   DEFAULT_MAX_SIZE_KB,
-  exportBoardImageWithinLimit,
   estimateExportBytes,
   formatFileSize,
   formatMegabytes,
@@ -43,6 +41,7 @@ import {
   type BrandLanguage,
   type BrandLayerState,
   type BrandSettingsV1,
+  type BoardBrandStateMap,
   type CprState,
   type CropState,
   type FitMode,
@@ -53,6 +52,7 @@ import {
   type PresetTemplate,
   type WorkbenchState
 } from '../core';
+import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../services/export';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../platform/fileSystem';
 import {
   AssetSidebar,
@@ -74,6 +74,8 @@ import {
   type WorkbenchModule
 } from '../components';
 import { BoardCanvas } from '../components/canvas';
+import { AppShell } from '../app/AppShell';
+import { GifCompressorPlaceholder } from '../modules/gif-compressor';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -193,7 +195,7 @@ function ensureCprStates(previous: Record<string, CprState>, assets: MaterialAss
   const next: Record<string, CprState> = {};
   for (const asset of assets) for (const spec of specs) {
     const key = getBoardPreviewKey(asset.id, spec.id);
-    next[key] = previous[key] ?? { ...fallback, effect: { ...fallback.effect }, manualOffset: fallback.manualOffset ? { ...fallback.manualOffset } : undefined };
+    next[key] = previous[key] ?? { ...fallback, transform: { ...fallback.transform }, effect: { ...fallback.effect } };
   }
   return next;
 }
@@ -231,7 +233,7 @@ function FocusEditorModal({
 }) {
   const dragRef = useRef<
     | { kind: 'crop'; pointerId: number; x: number; y: number }
-    | { kind: 'brand' | 'cpr'; pointerId: number; x: number; y: number; originX: number; originY: number; width: number; height: number }
+    | { kind: 'brand' | 'cpr'; pointerId: number; x: number; y: number; originX: number; originY: number; width: number; height: number; startOffsetX?: number; startOffsetY?: number }
     | null
   >(null);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -300,7 +302,9 @@ function FocusEditorModal({
         originX: rect.x,
         originY: rect.y,
         width: rect.width,
-        height: rect.height
+        height: rect.height,
+        startOffsetX: editMode === 'cpr' ? draftCprState.transform.offsetX : undefined,
+        startOffsetY: editMode === 'cpr' ? draftCprState.transform.offsetY : undefined
       };
       return;
     }
@@ -322,8 +326,16 @@ function FocusEditorModal({
             brandSettings.snapThreshold / stageScale
           )
         : raw;
-      if (dragRef.current.kind === 'brand') setDraftLogoGroup((previous) => ({ ...previous, placement: 'custom', manualOffset: { x: next.x, y: next.y } }));
-      else setDraftCprState((previous) => ({ ...previous, placement: 'custom', manualOffset: { x: next.x, y: next.y } }));
+      const drag = dragRef.current;
+      if (drag.kind === 'brand') setDraftLogoGroup((previous) => ({ ...previous, placement: 'custom', manualOffset: { x: next.x, y: next.y } }));
+      else setDraftCprState((previous) => ({
+        ...previous,
+        transform: {
+          placement: 'custom',
+          offsetX: (drag.startOffsetX ?? 0) + next.x - drag.originX,
+          offsetY: (drag.startOffsetY ?? 0) + next.y - drag.originY
+        }
+      }));
       return;
     }
     const deltaX = (event.clientX - dragRef.current.x) / stageScale;
@@ -549,8 +561,9 @@ function BatchExportDialog({
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const [exportAllLanguages, setExportAllLanguages] = useState(false);
-  const availableLanguages = useMemo<BrandLanguage[]>(() => brandAssets.filter((asset) => asset.type === 'logo' && asset.language !== 'custom').map((asset) => asset.language), [brandAssets]);
-  const items = useMemo(() => exportAllLanguages ? createLanguageBatchExportItems(assets, specs, availableLanguages) : createBatchExportItems(assets, specs), [assets, specs, availableLanguages, exportAllLanguages]);
+  const languageResolutions = useMemo(() => resolveExportLanguages(brandAssets), [brandAssets]);
+  const missingLanguages = useMemo(() => languageResolutions.filter((item) => item.missing).map((item) => item.language), [languageResolutions]);
+  const items = useMemo(() => buildExportMatrix(assets, specs, exportAllLanguages), [assets, specs, exportAllLanguages]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(items.map((item) => item.id)));
   const [activeItemId, setActiveItemId] = useState(items[0]?.id);
   const [format, setFormat] = useState<MaterialFormat>('png');
@@ -582,7 +595,8 @@ function BatchExportDialog({
     : brandLayer.logoGroup;
   const activeCompanyLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.companyLogoId)
     ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
-  const activeGameLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.gameLogoId) ?? exportLogo;
+  const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : brandLayer.logoLanguage) as BrandLanguage;
+  const activeGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === activeLanguage);
   const activeCprState = activeAsset && activeSpec ? cprStatesByBoard[getBoardPreviewKey(activeAsset.id, activeSpec.id)] ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
 
   const rows = items.map((item, index) => {
@@ -670,13 +684,11 @@ function BatchExportDialog({
         const boardLogoGroup = logoGroupsByBoard[getBoardPreviewKey(row.asset.id, row.spec.id)] ?? brandLayer.logoGroup;
         const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
           ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
-        const exportLanguage = ('language' in row.item ? row.item.language : brandLayer.logoLanguage) as BrandLanguage;
-        const boardGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === exportLanguage)
-          ?? brandAssets.find((asset) => asset.id === boardLogoGroup?.gameLogoId)
-          ?? exportLogo;
+        const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
+        const boardGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === exportLanguage);
         if (brandLayer.logoEnabled && !boardGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
         const languageGroup = { ...boardLogoGroup, gameLogoLanguage: exportLanguage, gameLogoId: boardGameLogo?.id };
-        const result = await exportBoardImageWithinLimit({
+        const result = await exportBoard({
           asset: row.asset,
           spec: row.spec,
           previewState,
@@ -837,7 +849,8 @@ function BatchExportDialog({
           <div className="export-summary-box">
             <span>已选 {selectedRows.length} 个文件</span>
           </div>
-          <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（{availableLanguages.length} 种）</label>
+          <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（5 种）</label>
+          {exportAllLanguages && missingLanguages.length ? <p className="size-warning">缺少资源：{missingLanguages.map(getBrandLanguageLabel).join('、')}。补齐后才能导出。</p> : null}
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>
         </div>
@@ -849,7 +862,7 @@ function BatchExportDialog({
           </div>
           <div className="dialog-actions">
             <button type="button" onClick={onClose} disabled={exporting}>取消</button>
-            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting}>
+            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting || (exportAllLanguages && missingLanguages.length > 0)}>
               {exporting ? '正在导出...' : `导出 ${selectedRows.length} 个文件`}
             </button>
           </div>
@@ -878,8 +891,7 @@ export function App() {
   const [logoGroup, setLogoGroup] = useState<LogoGroupState>(() =>
     createDefaultLogoGroup(loadBrandSettings().defaultLanguage)
   );
-  const [logoGroupsByBoard, setLogoGroupsByBoard] = useState<Record<string, LogoGroupState>>({});
-  const [cprStatesByBoard, setCprStatesByBoard] = useState<Record<string, CprState>>({});
+  const [boardBrandStates, setBoardBrandStates] = useState<BoardBrandStateMap>({});
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
   const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
@@ -898,7 +910,7 @@ export function App() {
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
   const selectedBoardKey = selectedAsset && selectedSpec ? getBoardPreviewKey(selectedAsset.id, selectedSpec.id) : undefined;
-  const selectedLogoGroup = normalizeLogoGroup(selectedBoardKey ? logoGroupsByBoard[selectedBoardKey] ?? logoGroup : logoGroup);
+  const selectedLogoGroup = normalizeLogoGroup(selectedBoardKey ? boardBrandStates[selectedBoardKey]?.logo ?? logoGroup : logoGroup);
   const focusAsset = assets.find((asset) => asset.id === focusAssetId);
   const focusSpec = specs.find((spec) => spec.id === focusSpecId);
   const focusPreviewKey = focusAsset && focusSpec ? getBoardPreviewKey(focusAsset.id, focusSpec.id) : undefined;
@@ -908,7 +920,11 @@ export function App() {
   const selectedLogo = logoAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
   const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const cprState = resolveCprState(brandLayer);
-  const selectedCprState = selectedBoardKey ? cprStatesByBoard[selectedBoardKey] ?? cprState : cprState;
+  const selectedCprState = selectedBoardKey ? boardBrandStates[selectedBoardKey]?.cpr ?? cprState : cprState;
+  // Legacy-shaped read models keep existing presentational components compatible;
+  // mutations below only write boardBrandStates.
+  const logoGroupsByBoard = useMemo(() => Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.logo])), [boardBrandStates]);
+  const cprStatesByBoard = useMemo(() => Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.cpr])), [boardBrandStates]);
   const companyLogoAsset = useMemo(
     () => logoAssets.find((asset) => asset.language === 'custom'),
     [logoAssets]
@@ -941,12 +957,14 @@ export function App() {
   }, [assets, specs]);
 
   useEffect(() => {
-    setLogoGroupsByBoard((previous) => ensureLogoGroups(previous, assets, specs, brandSettings));
-  }, [assets, specs, brandSettings]);
-
-  useEffect(() => {
-    setCprStatesByBoard((previous) => ensureCprStates(previous, assets, specs, resolveCprState(brandLayer)));
-  }, [assets, specs, brandLayer]);
+    const boardKeys = assets.flatMap((asset) => specs.map((spec) => getBoardPreviewKey(asset.id, spec.id)));
+    setBoardBrandStates((previous) => migrateBoardBrandStates({
+      boardKeys,
+      legacyLogoGroups: Object.fromEntries(Object.entries(previous).map(([key, state]) => [key, state.logo])),
+      legacyCprStates: Object.fromEntries(Object.entries(previous).map(([key, state]) => [key, state.cpr])),
+      defaults: { logo: createLogoGroupFromSettings(brandSettings), cpr: resolveCprState(brandLayer) }
+    }));
+  }, [assets, specs, brandSettings, brandLayer]);
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -1029,7 +1047,7 @@ export function App() {
         cprState: {
           ...resolveCprState(previous),
           enabled: brandSettings.cprEnabled,
-          placement: brandSettings.defaultCprPlacement,
+          transform: { placement: brandSettings.defaultCprPlacement, offsetX: 0, offsetY: 0 },
           colorMode: brandSettings.defaultCprColorMode,
           effect: {
             ...resolveCprState(previous).effect,
@@ -1120,8 +1138,7 @@ export function App() {
     URL.revokeObjectURL(removed.objectUrl);
     setAssets((previous) => previous.filter((asset) => asset.id !== assetId));
     setPreviewStates((previous) => Object.fromEntries(Object.entries(previous).filter(([, state]) => state.assetId !== assetId)));
-    setLogoGroupsByBoard((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${assetId}:`))));
-    setCprStatesByBoard((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${assetId}:`))));
+    setBoardBrandStates((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${assetId}:`))));
     if (focusAssetId === assetId) closeFocusEditor();
     if (selectedAssetId === assetId) setSelectedAssetId(replacement?.id);
     setMessage(`已删除素材：${removed.fileName}`);
@@ -1144,8 +1161,7 @@ export function App() {
   function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
     const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
     setPreviewStates((previous) => ({ ...previous, [key]: nextPreviewState }));
-    setLogoGroupsByBoard((previous) => ({ ...previous, [key]: nextLogoGroup }));
-    setCprStatesByBoard((previous) => ({ ...previous, [key]: nextCprState }));
+    setBoardBrandStates((previous) => ({ ...previous, [key]: { logo: nextLogoGroup, cpr: nextCprState } }));
     setLogoGroup(nextLogoGroup);
     setSelectedAssetId(nextPreviewState.assetId);
     setSelectedSpecId(nextPreviewState.specId);
@@ -1161,9 +1177,9 @@ export function App() {
         .filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family)
         .map((spec) => getBoardPreviewKey(asset.id, spec.id))
     );
-    setLogoGroupsByBoard((previous) => {
+    setBoardBrandStates((previous) => {
       const next = { ...previous };
-      for (const key of matchingKeys) next[key] = { ...nextLogoGroup };
+      for (const key of matchingKeys) next[key] = { ...next[key], logo: { ...nextLogoGroup } };
       return next;
     });
     setMessage(`已将品牌位置应用到 ${matchingKeys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
@@ -1178,9 +1194,9 @@ export function App() {
     }));
     setLogoGroup((previous) => ({ ...normalizeLogoGroup(previous), gameLogoLanguage: language, gameLogoId: selectedId }));
     if (selectedBoardKey) {
-      setLogoGroupsByBoard((previous) => ({
+      setBoardBrandStates((previous) => ({
         ...previous,
-        [selectedBoardKey]: { ...normalizeLogoGroup(previous[selectedBoardKey] ?? logoGroup), gameLogoLanguage: language, gameLogoId: selectedId }
+        [selectedBoardKey]: { ...previous[selectedBoardKey], logo: { ...normalizeLogoGroup(previous[selectedBoardKey]?.logo ?? logoGroup), gameLogoLanguage: language, gameLogoId: selectedId } }
       }));
     }
   }
@@ -1203,7 +1219,7 @@ export function App() {
       }));
       if (language === 'custom' && nextAssets[0]) {
         setLogoGroup((previous) => ({ ...previous, companyLogoId: nextAssets[0].id }));
-        setLogoGroupsByBoard((previous) => Object.fromEntries(Object.entries(previous).map(([key, group]) => [key, { ...normalizeLogoGroup(group), companyLogoId: nextAssets[0]!.id }])));
+        setBoardBrandStates((previous) => Object.fromEntries(Object.entries(previous).map(([key, state]) => [key, { ...state, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: nextAssets[0]!.id } }])));
       }
       setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
     } catch (error) {
@@ -1215,16 +1231,14 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <WorkbenchHeader
+    <>
+    <AppShell activeModule={activeModule} onModuleChange={setActiveModule} header={<WorkbenchHeader
         assetCount={assets.length}
         boardCount={specs.length}
         previewCount={Object.keys(workbenchState.previewStates).length}
         hasPendingSpecChanges={hasPendingSpecChanges}
         onOpenSettings={() => setSettingsDialogOpen(true)}
-      />
-      <div className="app-module-shell">
-      <ModuleNav active={activeModule} onChange={setActiveModule} />
+      />}>
       {activeModule === 'media' ? <section className="workspace">
         <AssetSidebar>
           <div className="panel-heading">
@@ -1277,7 +1291,7 @@ export function App() {
             onChange={(next) => {
               setLogoGroup(next);
               if (selectedBoardKey) {
-                setLogoGroupsByBoard((previous) => ({ ...previous, [selectedBoardKey]: next }));
+                setBoardBrandStates((previous) => ({ ...previous, [selectedBoardKey]: { ...previous[selectedBoardKey], logo: next } }));
               }
               const anchor = next.placement === 'corner-left' ? 'top-left' : next.placement === 'corner-right' ? 'top-right' : 'center';
               const color = next.colorMode === 'black' ? '#000000' : '#ffffff';
@@ -1302,13 +1316,13 @@ export function App() {
           <CprControls
             state={selectedCprState}
             onChange={(next) => {
-              if (selectedBoardKey) setCprStatesByBoard((previous) => ({ ...previous, [selectedBoardKey]: next }));
+              if (selectedBoardKey) setBoardBrandStates((previous) => ({ ...previous, [selectedBoardKey]: { ...previous[selectedBoardKey], cpr: next } }));
               setBrandLayer((previous) => ({
                 ...previous,
                 cprEnabled: next.enabled,
                 cprState: next,
                 cprEffect: next.effect,
-                cprAnchor: next.placement === 'bottom-left' ? 'top-left' : next.placement === 'bottom-right' ? 'top-right' : 'center'
+                cprAnchor: next.transform.placement === 'bottom-left' ? 'top-left' : next.transform.placement === 'bottom-right' ? 'top-right' : 'center'
               }));
             }}
           />
@@ -1460,8 +1474,8 @@ export function App() {
             </div>
           )}
         </SpecPanel>
-      </section> : activeModule === 'custom' ? <BrandAssetWorkspace brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} /> : <section className="module-placeholder"><div><span className="section-title"><span />GIF 压缩</span><h2>开发中</h2><p>GIF 压缩模块正在规划中，当前不会转换或修改任何文件。</p></div></section>}
-      </div>
+      </section> : activeModule === 'custom' ? <BrandAssetWorkspace brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} /> : <GifCompressorPlaceholder />}
+      </AppShell>
       {focusAsset && focusSpec && (
         <FocusEditorModal
           key={`${focusAsset.id}:${focusSpec.id}`}
@@ -1531,6 +1545,6 @@ export function App() {
         />
       )}
       <input ref={logoInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={(event) => void handleLogoFiles(event.target.files, resourceUploadLanguage)} />
-    </main>
+    </>
   );
 }

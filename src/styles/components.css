@@ -330,3 +330,5 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }
+.topbar { min-height: 48px; padding-block: 8px; }
+.topbar h1 { font-size: 16px; line-height: 1.2; }

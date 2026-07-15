@@ -68,30 +68,29 @@ export type BuildBrandRenderOptions = {
  * 计算 CPR 独立位置：固定尺寸、固定 SVG，底部三档对齐，均离底边和侧边 1 格。
  * 此函数为纯函数，预览与导出共用，确保结果一致。
  */
-export function computeCprPlacementRect(canvas: CanvasSize, placement: CprState['placement'], manualOffset?: CprState['manualOffset']): LayoutRect {
+export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState['transform']): LayoutRect {
   const grid = createBrandGrid(canvas);
   const cprWidth = grid.unit * 5.5;
   const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
-  const defaultY = canvas.height - grid.unit - cprHeight;
-  if (placement === 'custom' && manualOffset) {
-    return {
-      x: Math.max(grid.unit, Math.min(canvas.width - grid.unit - cprWidth, manualOffset.x)),
-      y: Math.max(grid.unit, Math.min(canvas.height - grid.unit - cprHeight, manualOffset.y)),
-      width: cprWidth,
-      height: cprHeight
-    };
-  }
-  const y = defaultY;
-  const x = placement === 'bottom-left'
-    ? grid.unit
+  const safeMargin = grid.unit * .25;
+  const recommendedMargin = grid.unit * .5;
+  const placement = transform.placement === 'custom' ? 'bottom-right' : transform.placement;
+  const baseY = canvas.height - recommendedMargin - cprHeight;
+  const baseX = placement === 'bottom-left'
+    ? recommendedMargin
     : placement === 'bottom-right'
-      ? canvas.width - grid.unit - cprWidth
+      ? canvas.width - recommendedMargin - cprWidth
       : (canvas.width - cprWidth) / 2;
-  return { x, y, width: cprWidth, height: cprHeight };
+  return {
+    x: Math.max(safeMargin, Math.min(canvas.width - safeMargin - cprWidth, baseX + transform.offsetX)),
+    y: Math.max(safeMargin, Math.min(canvas.height - safeMargin - cprHeight, baseY + transform.offsetY)),
+    width: cprWidth,
+    height: cprHeight
+  };
 }
 
 function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRenderPlan['cpr']> {
-  const rect = computeCprPlacementRect(canvas, cpr.placement, cpr.manualOffset);
+  const rect = computeCprPlacementRect(canvas, cpr.transform);
   const color = getCprRenderColor(cpr.colorMode) ?? '#ffffff';
   return { id: 'cpr:fixed', kind: 'cpr', rect, color, effect: { ...cpr.effect, colorEnabled: cpr.colorMode !== 'original', color } };
 }
@@ -100,7 +99,7 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
   group = { ...group, companyLogoScale: group.companyLogoScale ?? 'match' };
   const grid = createBrandGrid(canvas); const color = getBrandColor(group.colorMode) ?? '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
-  const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, placement: 'bottom-right' as const, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
+  const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;
   if (!hasCompany && !hasGame) return { grid, logoItems: [], cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
   const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);

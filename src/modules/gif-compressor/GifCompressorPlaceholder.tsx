@@ -1,0 +1,1 @@
+export function GifCompressorPlaceholder() { return <section className="module-placeholder"><div><span className="section-title"><span />GIF 压缩</span><h2>开发中</h2><p>GIF 压缩模块正在规划中，当前不会转换或修改任何文件。</p></div></section>; }

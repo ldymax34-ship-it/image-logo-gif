@@ -196,3 +196,15 @@
 ### 本轮验证记录
 
 - [x] 0.1.20 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、`git diff --check` 通过；48 tests。
+
+## 0.1.20.1 → 0.1.22
+
+1. [问题修复-大] CPR 使用相对偏移、0.5U 推荐底边距和 0.25U 安全边距，支持画板级拖动与恢复推荐位置。
+2. [问题修复-大] 五语言导出固定且严格校验资源，无跨语言静默回退；导出计数、预览和语言文件名一致。
+3. [重构-大] 品牌状态迁移至 `BoardBrandStateMap`，画板级 Logo / CPR 由同一状态记录派生。
+4. [重构-中] 建立 `services/export` 服务边界，建立 app 外壳与 GIF 模块占位。
+5. [维护-中] 版本统一为 0.1.22；新增 CPR、语言矩阵、状态迁移测试；自动更新仍未启用。
+
+### 本轮验证记录
+
+- [x] 0.1.22 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、`git diff --check` 通过；51 tests。
