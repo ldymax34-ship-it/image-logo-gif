@@ -3,10 +3,11 @@ import {
   DEFAULT_MAX_SIZE_KB, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveCprState,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
 } from '../../core';
-import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard, exportSequentially } from '../../services/export';
+import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../../services/export';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { ExportDialog } from '../../components/ExportDialog';
 import { BoardCanvas } from '../../components/canvas';
+import { useBatchExportController } from './useBatchExportController';
 
 export function BatchExportDialog({
   assets,
@@ -41,11 +42,6 @@ export function BatchExportDialog({
   const [defaultMaxSizeMb, setDefaultMaxSizeMb] = useState(8);
   const [autoCompressJpeg, setAutoCompressJpeg] = useState(true);
   const [batchName, setBatchName] = useState('material');
-  const [exporting, setExporting] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [errorMessage, setErrorMessage] = useState('');
-
-  useEffect(() => { onExportingChange?.(exporting); }, [exporting, onExportingChange]);
 
   useEffect(() => {
     setSelectedIds(new Set(items.map((item) => item.id)));
@@ -91,6 +87,11 @@ export function BatchExportDialog({
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.item.id));
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
+  type ExportRow = (typeof selectedRows)[number];
+  const controller = useBatchExportController<ExportRow>();
+  const { exporting, progress, errorMessage } = controller;
+
+  useEffect(() => { onExportingChange?.(exporting); }, [exporting, onExportingChange]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -134,13 +135,9 @@ export function BatchExportDialog({
 
   async function exportSelectedFiles() {
     if (!selectedRows.length || exporting) return;
-    setErrorMessage('');
     const outputTarget = await chooseOutputTarget();
     if (outputTarget.kind === 'cancelled') return;
-
-    setExporting(true);
-    setProgress({ current: 0, total: selectedRows.length });
-    const batchResult = await exportSequentially(selectedRows, async (row) => {
+    const batchResult = await controller.run(selectedRows, async (row) => {
       const previewState = previewStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
       if (!previewState) {
         throw new Error(`${row.fileName}：缺少画板预览状态`);
@@ -175,11 +172,9 @@ export function BatchExportDialog({
       await saveBlobToOutputTarget(outputTarget, row.fileName, result.blob);
       if (outputTarget.kind === 'downloads') await new Promise((resolve) => setTimeout(resolve, 180));
       return { info: result.compressed && result.quality ? `${row.fileName}：已自动压缩至 ${formatMegabytes(result.blob.size)}（${Math.round(result.quality * 100)}%）` : undefined };
-    }, setProgress);
-
-    setExporting(false);
+    });
+    if (!batchResult) return;
     if (batchResult.failures.length) {
-      setErrorMessage(`已导出 ${batchResult.completed} 个文件，${batchResult.failures.length} 个失败。${batchResult.failures[0].message}`);
       return;
     }
     onComplete(batchResult.info[0]?.message ?? `已导出 ${batchResult.completed} 个文件`);
