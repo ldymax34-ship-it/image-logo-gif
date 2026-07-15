@@ -221,3 +221,10 @@
 
 - [x] 0.1.23 每个阶段均执行 `npm run verify:core`、`npm test -- --run`、`npx tsc --noEmit -p tsconfig.app.json`、`npm run build`、`git diff --check`。
 - [x] 最终验证：51 tests 通过。
+
+## 0.1.24
+
+1. [重构-大] 画板品牌状态 reconcile 单源化，默认值不会覆盖已有画板。
+2. [重构-大] 批量导出编排移入导出服务，进度、失败与压缩信息结构化返回。
+3. [重构-中] 建立媒体 actions/selectors，AppActivity 接入真实模块活动状态。
+4. [维护-中] package、Cargo、Cargo.lock、Tauri 版本统一为 0.1.24；不接入 updater，不修改产品行为。

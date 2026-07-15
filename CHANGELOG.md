@@ -652,3 +652,11 @@
 - `npx tsc --noEmit -p tsconfig.app.json`：通过
 - `npm run build`：通过
 - `git diff --check`：通过
+
+## 0.1.24
+
+1. [重构-大] `boardBrandReducer` 新增增量 reconcile，保留现有画板品牌状态、初始化新画板、移除失效画板，并深拷贝可变嵌套状态；默认设置不再通过全量 replace 覆盖已有画板。
+2. [重构-大] 画板品牌状态继续收口，预览、聚焦编辑与导出直接使用 `BoardBrandStateMap`。
+3. [重构-大] 批量导出循环、逐项失败继续执行、进度和结构化信息结果进入 `services/export/exportBatch.ts`；对话框只保留导出 UI 与触发逻辑。
+4. [重构-中] 新增媒体工作台 actions/selectors，继续按状态所有权拆分；AppActivity 聚合真实 exporting、编辑器和弹窗活动状态。
+5. [维护-中] Cargo.lock 应用版本与 package、Cargo、Tauri 配置统一为 0.1.24；未接入更新器、未改变产品行为。
