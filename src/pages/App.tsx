@@ -1,4 +1,4 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
@@ -76,6 +76,7 @@ import {
 import { BoardCanvas } from '../components/canvas';
 import { AppShell } from '../app/AppShell';
 import { GifCompressorPlaceholder } from '../modules/gif-compressor';
+import { boardBrandReducer } from '../modules/media-workbench';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -891,7 +892,7 @@ export function App() {
   const [logoGroup, setLogoGroup] = useState<LogoGroupState>(() =>
     createDefaultLogoGroup(loadBrandSettings().defaultLanguage)
   );
-  const [boardBrandStates, setBoardBrandStates] = useState<BoardBrandStateMap>({});
+  const [boardBrandStates, dispatchBoardBrand] = useReducer(boardBrandReducer, {} as BoardBrandStateMap);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
   const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
@@ -958,13 +959,13 @@ export function App() {
 
   useEffect(() => {
     const boardKeys = assets.flatMap((asset) => specs.map((spec) => getBoardPreviewKey(asset.id, spec.id)));
-    setBoardBrandStates((previous) => migrateBoardBrandStates({
+    dispatchBoardBrand({ type: 'replace', states: migrateBoardBrandStates({
       boardKeys,
-      legacyLogoGroups: Object.fromEntries(Object.entries(previous).map(([key, state]) => [key, state.logo])),
-      legacyCprStates: Object.fromEntries(Object.entries(previous).map(([key, state]) => [key, state.cpr])),
+      legacyLogoGroups: Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.logo])),
+      legacyCprStates: Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.cpr])),
       defaults: { logo: createLogoGroupFromSettings(brandSettings), cpr: resolveCprState(brandLayer) }
-    }));
-  }, [assets, specs, brandSettings, brandLayer]);
+    }) });
+  }, [assets, specs, brandSettings]);
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -1138,7 +1139,7 @@ export function App() {
     URL.revokeObjectURL(removed.objectUrl);
     setAssets((previous) => previous.filter((asset) => asset.id !== assetId));
     setPreviewStates((previous) => Object.fromEntries(Object.entries(previous).filter(([, state]) => state.assetId !== assetId)));
-    setBoardBrandStates((previous) => Object.fromEntries(Object.entries(previous).filter(([key]) => !key.startsWith(`${assetId}:`))));
+    dispatchBoardBrand({ type: 'remove-asset', assetId });
     if (focusAssetId === assetId) closeFocusEditor();
     if (selectedAssetId === assetId) setSelectedAssetId(replacement?.id);
     setMessage(`已删除素材：${removed.fileName}`);
@@ -1161,7 +1162,8 @@ export function App() {
   function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
     const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
     setPreviewStates((previous) => ({ ...previous, [key]: nextPreviewState }));
-    setBoardBrandStates((previous) => ({ ...previous, [key]: { logo: nextLogoGroup, cpr: nextCprState } }));
+    dispatchBoardBrand({ type: 'update-logo', key, logo: nextLogoGroup });
+    dispatchBoardBrand({ type: 'update-cpr', key, cpr: nextCprState });
     setLogoGroup(nextLogoGroup);
     setSelectedAssetId(nextPreviewState.assetId);
     setSelectedSpecId(nextPreviewState.specId);
@@ -1177,11 +1179,8 @@ export function App() {
         .filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family)
         .map((spec) => getBoardPreviewKey(asset.id, spec.id))
     );
-    setBoardBrandStates((previous) => {
-      const next = { ...previous };
-      for (const key of matchingKeys) next[key] = { ...next[key], logo: { ...nextLogoGroup } };
-      return next;
-    });
+    const source = boardBrandStates[focusPreviewKey ?? ''];
+    if (source) dispatchBoardBrand({ type: 'apply-brand', keys: matchingKeys, source: { ...source, logo: nextLogoGroup } });
     setMessage(`已将品牌位置应用到 ${matchingKeys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
   }
 
@@ -1194,10 +1193,7 @@ export function App() {
     }));
     setLogoGroup((previous) => ({ ...normalizeLogoGroup(previous), gameLogoLanguage: language, gameLogoId: selectedId }));
     if (selectedBoardKey) {
-      setBoardBrandStates((previous) => ({
-        ...previous,
-        [selectedBoardKey]: { ...previous[selectedBoardKey], logo: { ...normalizeLogoGroup(previous[selectedBoardKey]?.logo ?? logoGroup), gameLogoLanguage: language, gameLogoId: selectedId } }
-      }));
+      dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: { ...normalizeLogoGroup(boardBrandStates[selectedBoardKey]?.logo ?? logoGroup), gameLogoLanguage: language, gameLogoId: selectedId } });
     }
   }
 
@@ -1219,7 +1215,7 @@ export function App() {
       }));
       if (language === 'custom' && nextAssets[0]) {
         setLogoGroup((previous) => ({ ...previous, companyLogoId: nextAssets[0].id }));
-        setBoardBrandStates((previous) => Object.fromEntries(Object.entries(previous).map(([key, state]) => [key, { ...state, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: nextAssets[0]!.id } }])));
+        for (const [key, state] of Object.entries(boardBrandStates)) dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: nextAssets[0]!.id } });
       }
       setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
     } catch (error) {
@@ -1291,7 +1287,7 @@ export function App() {
             onChange={(next) => {
               setLogoGroup(next);
               if (selectedBoardKey) {
-                setBoardBrandStates((previous) => ({ ...previous, [selectedBoardKey]: { ...previous[selectedBoardKey], logo: next } }));
+                dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next });
               }
               const anchor = next.placement === 'corner-left' ? 'top-left' : next.placement === 'corner-right' ? 'top-right' : 'center';
               const color = next.colorMode === 'black' ? '#000000' : '#ffffff';
@@ -1316,7 +1312,7 @@ export function App() {
           <CprControls
             state={selectedCprState}
             onChange={(next) => {
-              if (selectedBoardKey) setBoardBrandStates((previous) => ({ ...previous, [selectedBoardKey]: { ...previous[selectedBoardKey], cpr: next } }));
+              if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next });
               setBrandLayer((previous) => ({
                 ...previous,
                 cprEnabled: next.enabled,
