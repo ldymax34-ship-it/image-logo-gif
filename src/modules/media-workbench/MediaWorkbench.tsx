@@ -14,7 +14,6 @@ import {
   createBrandAssetFromFile,
   createDefaultCprState,
   createDefaultLogoGroup,
-  migrateBoardBrandStates,
   normalizeLogoGroup,
   createInitialCropState,
   createMaterialAsset,
@@ -601,12 +600,7 @@ export function MediaWorkbench() {
 
   useEffect(() => {
     const boardKeys = assets.flatMap((asset) => specs.map((spec) => getBoardPreviewKey(asset.id, spec.id)));
-    dispatchBoardBrand({ type: 'replace', states: migrateBoardBrandStates({
-      boardKeys,
-      legacyLogoGroups: Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.logo])),
-      legacyCprStates: Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.cpr])),
-      defaults: { logo: createLogoGroupFromSettings(brandSettings), cpr: resolveCprState(brandLayer) }
-    }) });
+    dispatchBoardBrand({ type: 'reconcile-boards', keys: boardKeys, defaults: { logo: createLogoGroupFromSettings(brandSettings), cpr: resolveCprState(brandLayer) } });
   }, [assets, specs, brandSettings]);
 
   useEffect(() => {

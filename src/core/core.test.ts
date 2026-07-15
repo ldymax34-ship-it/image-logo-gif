@@ -534,3 +534,18 @@ describe('core 0.1.x foundation', () => {
     ).toThrow(/外部资源/);
   });
 });
+
+describe('board brand reconcile', () => {
+  it('preserves existing board state, creates missing states, removes stale states, and clones nested values', async () => {
+    const { boardBrandReducer } = await import('../modules/media-workbench/boardBrandReducer');
+    const logo = createDefaultLogoGroup('zh-CN');
+    const defaults = { logo, cpr: createDefaultCprState() };
+    const existing = { 'a:one': { logo: { ...logo, manualOffset: { x: 9, y: 8 } }, cpr: { ...defaults.cpr, transform: { placement: 'bottom-left' as const, offsetX: 2, offsetY: 3 }, effect: { ...defaults.cpr.effect } } }, 'stale:one': defaults };
+    const next = boardBrandReducer(existing, { type: 'reconcile-boards', keys: ['a:one', 'b:one'], defaults });
+    expect(Object.keys(next)).toEqual(['a:one', 'b:one']);
+    expect(next['a:one'].logo.manualOffset).toEqual({ x: 9, y: 8 });
+    expect(next['a:one'].cpr.transform).toMatchObject({ placement: 'bottom-left', offsetX: 2 });
+    expect(next['a:one'].logo.manualOffset).not.toBe(existing['a:one'].logo.manualOffset);
+    expect(next['b:one'].cpr.transform).not.toBe(defaults.cpr.transform);
+  });
+});
