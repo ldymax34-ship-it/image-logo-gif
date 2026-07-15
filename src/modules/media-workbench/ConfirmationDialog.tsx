@@ -1,0 +1,6 @@
+import { useEffect } from 'react';
+
+export function ConfirmationDialog({ title, message, confirmLabel, destructive, onCancel, onConfirm }: { title: string; message: string; confirmLabel: string; destructive?: boolean; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => { function handleKeyDown(event: KeyboardEvent) { if (event.key === 'Escape') onCancel(); } document.addEventListener('keydown', handleKeyDown); return () => document.removeEventListener('keydown', handleKeyDown); }, [onCancel]);
+  return <div className="dialog-backdrop confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message"><div className="dialog-header"><h2 id="confirm-dialog-title">{title}</h2><button type="button" className="icon-button" onClick={onCancel} aria-label="关闭确认弹窗" title="关闭">×</button></div><p id="confirm-dialog-message">{message}</p><div className="dialog-footer"><span /><div className="dialog-actions"><button type="button" onClick={onCancel} autoFocus>取消</button><button type="button" className={destructive ? 'danger-button' : 'primary-button'} onClick={onConfirm}>{confirmLabel}</button></div></div></section></div>;
+}

@@ -6,13 +6,14 @@ import { BoardCanvas } from '../../components/canvas';
 
 const CUSTOM_SPEC: MaterialSpec = { id: 'custom-canvas', name: '自定义画板', width: 1920, height: 1080, format: 'png' };
 
-export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos }: {
+export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos, onDirtyChange }: {
   brandLayer: BrandLayerState;
   logoAsset?: BrandAsset;
   cprAsset?: BrandAsset;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
   gameLogos: BrandAsset[];
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [asset, setAsset] = useState<MaterialAsset>();
@@ -33,6 +34,12 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const [guidesVisible, setGuidesVisible] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const dragRef = useRef<{ target: 'game' | 'company'; pointerId: number; startX: number; startY: number; origin: { x: number; y: number } }>();
+
+  useEffect(() => {
+    const dirty = Boolean(asset);
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [asset, onDirtyChange]);
 
   const group = brandLayer.logoGroup ?? { mode: 'game-only' as const, gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white' as const, sizePreset: 'xl' as const, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'center' as const, lastExplicitPlacement: 'center' as const };
   const gameGroup = {

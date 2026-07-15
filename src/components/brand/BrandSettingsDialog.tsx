@@ -45,6 +45,7 @@ export function BrandSettingsDialog({
   onSelectResource,
   onReplaceResource,
   onRestoreResources,
+  onDirtyChange,
   onClose,
   onChange
 }: {
@@ -55,6 +56,7 @@ export function BrandSettingsDialog({
   onSelectResource: (asset: import('../../core').BrandAsset) => void;
   onReplaceResource: (asset: import('../../core').BrandAsset | undefined, language: BrandLanguage) => void;
   onRestoreResources: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onClose: () => void;
   onChange: (next: BrandSettingsV1) => void;
 }) {
@@ -115,6 +117,11 @@ export function BrandSettingsDialog({
   }
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
 
   return (
     <div

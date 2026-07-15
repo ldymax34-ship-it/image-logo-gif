@@ -1,40 +1,26 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
-  buildBrandRenderPlan,
-  buildBoardRenderPlan,
   DEFAULT_BRAND_ASSETS,
   DEFAULT_CPR_EFFECT,
   DEFAULT_LOGO_EFFECT,
   buildOutputFileName,
   classifyAspect,
-  clampCropState,
-  computeFitScale,
   createBrandAssetFromFile,
   createDefaultCprState,
-  createDefaultLogoGroup,
   normalizeLogoGroup,
   createInitialCropState,
   createMaterialAsset,
-  DEFAULT_MAX_SIZE_KB,
-  estimateExportBytes,
   formatFileSize,
-  formatMegabytes,
   getBoardPreviewKey,
-  getEffectiveMaxSizeKb,
-  getBrandLanguageLabel,
   loadBrandSettings,
   loadCustomPresetTemplates,
-  panCropState,
   parseSpecText,
-  resolveCprState,
   saveBrandSettings,
   saveCustomPresetTemplates,
   serializePresetSpecs,
-  snapLogoGroupPosition,
   toPresetSpecs,
-  zoomCropState,
   type BoardPreviewState,
   type BrandAsset,
   type BrandLanguage,
@@ -42,7 +28,6 @@ import {
   type BrandSettingsV1,
   type BoardBrandStateMap,
   type CprState,
-  type CropState,
   type FitMode,
   type LogoGroupState,
   type MaterialAsset,
@@ -51,33 +36,26 @@ import {
   type PresetTemplate,
   type WorkbenchState
 } from '../../core';
-import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../../services/export';
-import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import {
   AssetSidebar,
   BoardOverview,
-  CprControls,
-  BrandEffectControls,
-  BrandGuideControls,
-  BrandPanel,
   BrandSettingsDialog,
-  ExportDialog,
-  FocusEditor,
-  LogoGroupControls,
-  LogoStylePreview,
   MultiAssetBoardOverview,
   SpecPanel,
   WorkbenchHeader,
-  ModuleNav,
   type WorkbenchModule
 } from '../../components';
-import { BoardCanvas } from '../../components/canvas';
 import { AppShell } from '../../app/AppShell';
-import { IDLE_APP_ACTIVITY } from '../../app/appActivity';
+import { createAppActivity } from '../../app/appActivity';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
 import { GifCompressorPlaceholder } from '../../modules/gif-compressor';
 import { CustomWorkbench } from '../../modules/custom-workbench/CustomWorkbench';
 import { boardBrandReducer } from '../../modules/media-workbench';
+import { FocusEditorModal } from './FocusEditorModal';
+import { ConfirmationDialog } from './ConfirmationDialog';
+import { BrandControlsPanel } from './BrandControlsPanel';
+import { selectBoardBrandState, selectBoardKey, selectBoardPreviewState } from './mediaWorkbenchSelectors';
+import { updateBoardCrop } from './mediaWorkbenchActions';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -89,8 +67,7 @@ const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoSize: 'standard',
   cprSize: 'standard',
   logoEffect: DEFAULT_LOGO_EFFECT,
-  cprEffect: DEFAULT_CPR_EFFECT,
-  cprState: createDefaultCprState()
+  cprEffect: DEFAULT_CPR_EFFECT
 };
 
 type PresetApplyMode = 'replace' | 'append';
@@ -177,346 +154,6 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
   };
 }
 
-function FocusEditorModal({
-  asset,
-  spec,
-  previewState,
-  logoAsset,
-  cprAsset,
-  brandLayer,
-  brandSettings,
-  logoGroup,
-  cprState,
-  overlayCompanyLogo,
-  overlayGameLogo,
-  onCancel,
-  onSave,
-  onApplyToSameAspect
-}: {
-  asset: MaterialAsset | undefined;
-  spec: MaterialSpec;
-  previewState: BoardPreviewState | undefined;
-  logoAsset: BrandAsset | undefined;
-  cprAsset: BrandAsset | undefined;
-  brandLayer: BrandLayerState;
-  brandSettings: BrandSettingsV1;
-  logoGroup: LogoGroupState;
-  overlayCompanyLogo?: BrandAsset;
-  overlayGameLogo?: BrandAsset;
-  onCancel: () => void;
-  cprState: CprState;
-  onSave: (previewState: BoardPreviewState, logoGroup: LogoGroupState, cprState: CprState) => void;
-  onApplyToSameAspect: (logoGroup: LogoGroupState) => void;
-}) {
-  const dragRef = useRef<
-    | { kind: 'crop'; pointerId: number; x: number; y: number }
-    | { kind: 'brand' | 'cpr'; pointerId: number; x: number; y: number; originX: number; originY: number; width: number; height: number; startOffsetX?: number; startOffsetY?: number }
-    | null
-  >(null);
-  const dialogRef = useRef<HTMLElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const initialState = previewState ?? (asset ? createPreviewState(asset, spec, 'cover') : undefined);
-  const [draftState, setDraftState] = useState<BoardPreviewState | undefined>(initialState);
-  const [draftLogoGroup, setDraftLogoGroup] = useState<LogoGroupState>(logoGroup);
-  const [draftCprState, setDraftCprState] = useState<CprState>(cprState);
-  const [editMode, setEditMode] = useState<'crop' | 'brand' | 'cpr'>('crop');
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const crop = draftState?.crop;
-  const coverScale = asset ? computeFitScale(asset, spec, 'cover') : 1;
-  const containScale = asset ? computeFitScale(asset, spec, 'contain') : coverScale;
-  const sliderMinScale = draftState?.fitMode === 'contain' ? containScale : coverScale;
-  const maxScale = Math.max(coverScale, sliderMinScale) * 6;
-  const compactDialog = typeof window !== 'undefined' && window.innerWidth <= 900;
-  const stageMaxWidth = compactDialog ? Math.max(280, window.innerWidth - 100) : 820;
-  const stageMaxHeight = compactDialog ? Math.max(260, Math.min(420, window.innerHeight - 380)) : 560;
-  const stageScale = Math.min(stageMaxWidth / spec.width, stageMaxHeight / spec.height, 1.6);
-  const dirty = Boolean(initialState && draftState && (
-    initialState.fitMode !== draftState.fitMode ||
-    initialState.crop.scale !== draftState.crop.scale ||
-    initialState.crop.offsetX !== draftState.crop.offsetX ||
-    initialState.crop.offsetY !== draftState.crop.offsetY ||
-    JSON.stringify(logoGroup) !== JSON.stringify(draftLogoGroup) ||
-    JSON.stringify(cprState) !== JSON.stringify(draftCprState)
-  ));
-
-  function updateCrop(nextCrop: CropState) {
-    if (!asset || !draftState) return;
-    setDraftState({
-      ...draftState,
-      crop: clampCropState(asset, spec, nextCrop, draftState.fitMode)
-    });
-  }
-
-  function setFitMode(mode: FitMode) {
-    if (!asset) return;
-    setDraftState(createPreviewState(asset, spec, mode));
-  }
-
-  function requestClose() {
-    if (dirty) {
-      setConfirmDiscard(true);
-      return;
-    }
-    onCancel();
-  }
-
-  function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (!asset || !draftState) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    if (editMode === 'brand' || editMode === 'cpr') {
-      const plan = buildBrandRenderPlan({ width: spec.width, height: spec.height }, draftLogoGroup, {
-        companyLogo: overlayCompanyLogo,
-        gameLogo: overlayGameLogo,
-        cpr: draftCprState
-      });
-      const rect = editMode === 'brand' ? plan.logoGroupRect : plan.cpr?.rect;
-      if (!rect) return;
-      dragRef.current = {
-        kind: editMode,
-        pointerId: event.pointerId,
-        x: event.clientX,
-        y: event.clientY,
-        originX: rect.x,
-        originY: rect.y,
-        width: rect.width,
-        height: rect.height,
-        startOffsetX: editMode === 'cpr' ? draftCprState.transform.offsetX : undefined,
-        startOffsetY: editMode === 'cpr' ? draftCprState.transform.offsetY : undefined
-      };
-      return;
-    }
-    dragRef.current = { kind: 'crop', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-  }
-
-  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (!asset || !draftState || !dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
-    if (dragRef.current.kind === 'brand' || dragRef.current.kind === 'cpr') {
-      const raw = {
-        x: dragRef.current.originX + (event.clientX - dragRef.current.x) / stageScale,
-        y: dragRef.current.originY + (event.clientY - dragRef.current.y) / stageScale
-      };
-      const next = brandSettings.snapEnabled
-        ? snapLogoGroupPosition(
-            { width: spec.width, height: spec.height },
-            { width: dragRef.current.width, height: dragRef.current.height },
-            raw,
-            brandSettings.snapThreshold / stageScale
-          )
-        : raw;
-      const drag = dragRef.current;
-      if (drag.kind === 'brand') setDraftLogoGroup((previous) => ({ ...previous, placement: 'custom', manualOffset: { x: next.x, y: next.y } }));
-      else setDraftCprState((previous) => ({
-        ...previous,
-        transform: {
-          placement: 'custom',
-          offsetX: (drag.startOffsetX ?? 0) + next.x - drag.originX,
-          offsetY: (drag.startOffsetY ?? 0) + next.y - drag.originY
-        }
-      }));
-      return;
-    }
-    const deltaX = (event.clientX - dragRef.current.x) / stageScale;
-    const deltaY = (event.clientY - dragRef.current.y) / stageScale;
-    dragRef.current = { kind: 'crop', pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-    setDraftState({
-      ...draftState,
-      crop: panCropState(asset, spec, draftState.crop, deltaX, deltaY, draftState.fitMode)
-    });
-  }
-
-  function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
-    if (dragRef.current?.pointerId === event.pointerId) {
-      dragRef.current = null;
-    }
-  }
-
-  useEffect(() => {
-    function handleKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        requestClose();
-        return;
-      }
-      if (event.key !== 'Tab' || !dialogRef.current) return;
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
-      );
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    closeButtonRef.current?.focus();
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [dirty]);
-
-  return (
-    <FocusEditor onBackdropClose={requestClose} labelledBy="focus-dialog-title" describedBy="focus-dialog-help">
-      <section ref={dialogRef}>
-        <div className="dialog-header">
-          <div>
-            <span className="dialog-kicker">画板调整</span>
-            <h2 id="focus-dialog-title">{spec.name}</h2>
-            <small>{spec.width} x {spec.height} · {getAspectLabel(spec)}</small>
-          </div>
-          <button ref={closeButtonRef} type="button" className="icon-button" onClick={requestClose} aria-label="关闭画板调整" title="关闭">
-            ×
-          </button>
-        </div>
-
-        <div className="focus-dialog-body">
-          <div className="focus-stage-frame">
-            <BoardCanvas
-              asset={asset}
-              spec={spec}
-              previewState={draftState}
-              logoAsset={logoAsset}
-              cprAsset={cprAsset}
-              brandLayer={{ ...brandLayer, logoGroup: draftLogoGroup, cprState: draftCprState, cprEnabled: draftCprState.enabled }}
-              scale={stageScale}
-              draggable={Boolean(asset)}
-              brandSettings={brandSettings}
-              logoGroup={draftLogoGroup}
-              overlayCompanyLogo={overlayCompanyLogo}
-              overlayGameLogo={overlayGameLogo}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-            />
-          </div>
-
-          <div className="focus-side-controls">
-            <div>
-              <span className="control-label">调整对象</span>
-              <div className="segmented-control">
-                <button type="button" className={editMode === 'crop' ? 'active' : ''} onClick={() => setEditMode('crop')}>图片裁切</button>
-                <button type="button" className={editMode === 'brand' ? 'active' : ''} onClick={() => setEditMode('brand')}>品牌位置</button>
-                <button type="button" className={editMode === 'cpr' ? 'active' : ''} onClick={() => setEditMode('cpr')}>CPR 位置</button>
-              </div>
-            </div>
-            <div>
-              <span className="control-label">填充方式</span>
-              <div className="segmented-control">
-                <button type="button" className={draftState?.fitMode === 'cover' ? 'active' : ''} onClick={() => setFitMode('cover')} disabled={!asset}>
-                  填满画布
-                </button>
-                <button type="button" className={draftState?.fitMode === 'contain' ? 'active' : ''} onClick={() => setFitMode('contain')} disabled={!asset}>
-                  适应画布
-                </button>
-              </div>
-            </div>
-            <label className="focus-range-field">
-              <span className="control-label">缩放</span>
-              <input
-                type="range"
-                min={sliderMinScale}
-                max={maxScale}
-                step={Math.max(sliderMinScale / 100, 0.001)}
-                value={crop?.scale ?? sliderMinScale}
-                disabled={!asset || !crop || !draftState}
-                onChange={(event) => {
-                  if (!asset || !crop || !draftState) return;
-                  updateCrop(
-                    zoomCropState(
-                      asset,
-                      spec,
-                      crop,
-                      Number(event.target.value),
-                      { x: spec.width / 2, y: spec.height / 2 },
-                      draftState.fitMode
-                    )
-                  );
-                }}
-              />
-            </label>
-            {editMode === 'brand' ? <label className="focus-range-field"><span className="control-label">Logo 大小 {Math.round((draftLogoGroup.scale ?? 1) * 100)}%</span><input type="range" min="0.5" max="2" step="0.01" value={draftLogoGroup.scale ?? 1} onChange={(event) => setDraftLogoGroup((previous) => ({ ...previous, scale: Number(event.target.value) }))} /></label> : null}
-            <button type="button" onClick={() => setFitMode(draftState?.fitMode ?? 'cover')} disabled={!asset}>
-              重置当前裁切
-            </button>
-            <button type="button" onClick={() => onApplyToSameAspect(draftLogoGroup)} disabled={!asset}>应用品牌位置到同版型</button>
-            <p id="focus-dialog-help" className="dialog-help">切换调整对象后拖动画布。Logo 与 CPR 都会按网格和参考点吸附；CPR 会保存为当前画板的独立位置。</p>
-          </div>
-        </div>
-
-        {confirmDiscard ? (
-          <div className="discard-confirm" role="alert">
-            <span>当前调整尚未保存，确定放弃吗？</span>
-            <button type="button" onClick={() => setConfirmDiscard(false)}>继续调整</button>
-            <button type="button" className="danger-button" onClick={onCancel}>放弃修改</button>
-          </div>
-        ) : (
-          <div className="dialog-footer">
-            <span>{dirty ? '有未保存的调整' : '当前画板未修改'}</span>
-            <div className="dialog-actions">
-              <button type="button" onClick={requestClose}>取消</button>
-              <button type="button" className="primary-button" onClick={() => draftState && onSave(draftState, draftLogoGroup, draftCprState)} disabled={!draftState || !asset}>
-                保存并返回
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-    </FocusEditor>
-  );
-}
-
-function ConfirmationDialog({
-  title,
-  message,
-  confirmLabel,
-  destructive,
-  onCancel,
-  onConfirm
-}: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  destructive?: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  useEffect(() => {
-    function handleKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === 'Escape') onCancel();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onCancel]);
-
-  return (
-    <div className="dialog-backdrop confirm-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
-      <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
-        <div className="dialog-header">
-          <h2 id="confirm-dialog-title">{title}</h2>
-          <button type="button" className="icon-button" onClick={onCancel} aria-label="关闭确认弹窗" title="关闭">×</button>
-        </div>
-        <p id="confirm-dialog-message">{message}</p>
-        <div className="dialog-footer">
-          <span />
-          <div className="dialog-actions">
-            <button type="button" onClick={onCancel} autoFocus>取消</button>
-            <button type="button" className={destructive ? 'danger-button' : 'primary-button'} onClick={onConfirm}>{confirmLabel}</button>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-
-
 export function MediaWorkbench() {
   const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -533,19 +170,19 @@ export function MediaWorkbench() {
   const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
   const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
   const [brandSettings, setBrandSettings] = useState<BrandSettingsV1>(() => loadBrandSettings());
-  const [logoGroup, setLogoGroup] = useState<LogoGroupState>(() =>
-    createDefaultLogoGroup(loadBrandSettings().defaultLanguage)
-  );
   const [boardBrandStates, dispatchBoardBrand] = useReducer(boardBrandReducer, {} as BoardBrandStateMap);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
   const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
   const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
   const [focusAssetId, setFocusAssetId] = useState<string | undefined>();
   const [focusSpecId, setFocusSpecId] = useState<string | undefined>();
+  const [focusEditorDirty, setFocusEditorDirty] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | undefined>();
   const [newPresetName, setNewPresetName] = useState('');
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [customWorkbenchDirty, setCustomWorkbenchDirty] = useState(false);
   const [message, setMessage] = useState<string>('');
   const [importFailures, setImportFailures] = useState<string[]>([]);
   const [resourceUploadLanguage, setResourceUploadLanguage] = useState<BrandLanguage>('zh-CN');
@@ -555,18 +192,25 @@ export function MediaWorkbench() {
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const selectedSpec = specs.find((spec) => spec.id === selectedSpecId) ?? specs[0];
-  const selectedBoardKey = selectedAsset && selectedSpec ? getBoardPreviewKey(selectedAsset.id, selectedSpec.id) : undefined;
-  const selectedLogoGroup = normalizeLogoGroup(selectedBoardKey ? boardBrandStates[selectedBoardKey]?.logo ?? logoGroup : logoGroup);
+  const selectedBoardKey = selectBoardKey(selectedAsset, selectedSpec);
+  const defaultLogoGroup = useMemo(() => createLogoGroupFromSettings(brandSettings), [brandSettings]);
+  const defaultCprState = useMemo<CprState>(() => ({
+    ...createDefaultCprState(),
+    enabled: brandSettings.cprEnabled,
+    transform: { placement: brandSettings.defaultCprPlacement, offsetX: 0, offsetY: 0 },
+    colorMode: brandSettings.defaultCprColorMode,
+    effect: { ...brandLayer.cprEffect, colorEnabled: brandSettings.defaultCprColorMode !== 'original', color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff' }
+  }), [brandLayer.cprEffect, brandSettings]);
+  const selectedLogoGroup = normalizeLogoGroup(selectedBoardKey ? boardBrandStates[selectedBoardKey]?.logo ?? defaultLogoGroup : defaultLogoGroup);
   const focusAsset = assets.find((asset) => asset.id === focusAssetId);
   const focusSpec = specs.find((spec) => spec.id === focusSpecId);
-  const focusPreviewKey = focusAsset && focusSpec ? getBoardPreviewKey(focusAsset.id, focusSpec.id) : undefined;
-  const focusPreviewState = focusPreviewKey ? previewStates[focusPreviewKey] : undefined;
+  const focusPreviewKey = selectBoardKey(focusAsset, focusSpec);
+  const focusPreviewState = selectBoardPreviewState(previewStates, focusPreviewKey);
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
   const selectedLogo = logoAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
   const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
-  const cprState = resolveCprState(brandLayer);
-  const selectedCprState = selectedBoardKey ? boardBrandStates[selectedBoardKey]?.cpr ?? cprState : cprState;
+  const selectedCprState = selectBoardBrandState(boardBrandStates, selectedBoardKey)?.cpr ?? defaultCprState;
   const companyLogoAsset = useMemo(
     () => logoAssets.find((asset) => asset.language === 'custom'),
     [logoAssets]
@@ -600,8 +244,8 @@ export function MediaWorkbench() {
 
   useEffect(() => {
     const boardKeys = assets.flatMap((asset) => specs.map((spec) => getBoardPreviewKey(asset.id, spec.id)));
-    dispatchBoardBrand({ type: 'reconcile-boards', keys: boardKeys, defaults: { logo: createLogoGroupFromSettings(brandSettings), cpr: resolveCprState(brandLayer) } });
-  }, [assets, specs, brandSettings]);
+    dispatchBoardBrand({ type: 'reconcile-boards', keys: boardKeys, defaults: { logo: defaultLogoGroup, cpr: defaultCprState } });
+  }, [assets, specs, defaultLogoGroup, defaultCprState]);
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -611,17 +255,16 @@ export function MediaWorkbench() {
     setBrandLayer((previous) => {
       const nextLogoId = resolvePreferredBrandAssetId(brandAssets, 'logo', previous.logoLanguage, previous.selectedLogoId);
       const nextCprId = resolvePreferredBrandAssetId(brandAssets, 'cpr', previous.cprLanguage, previous.selectedCprId);
-      if (nextLogoId === previous.selectedLogoId && nextCprId === previous.selectedCprId && previous.logoGroup) {
+      if (nextLogoId === previous.selectedLogoId && nextCprId === previous.selectedCprId) {
         return previous;
       }
       return {
         ...previous,
         selectedLogoId: nextLogoId,
-        selectedCprId: nextCprId,
-        logoGroup: previous.logoGroup ?? logoGroup
+        selectedCprId: nextCprId
       };
     });
-  }, [brandAssets, logoGroup]);
+  }, [brandAssets]);
 
   useEffect(() => {
     assetsRef.current = assets;
@@ -677,23 +320,9 @@ export function MediaWorkbench() {
     if (!specs.length && nextSpecs.length) {
       const defaults = createLogoGroupFromSettings(brandSettings, nextSpecs[0]);
       const color = defaults.colorMode === 'black' ? '#000000' : '#ffffff';
-      setLogoGroup(defaults);
       setBrandLayer((previous) => ({
         ...previous,
-        cprEnabled: brandSettings.cprEnabled,
-        cprState: {
-          ...resolveCprState(previous),
-          enabled: brandSettings.cprEnabled,
-          transform: { placement: brandSettings.defaultCprPlacement, offsetX: 0, offsetY: 0 },
-          colorMode: brandSettings.defaultCprColorMode,
-          effect: {
-            ...resolveCprState(previous).effect,
-            colorEnabled: brandSettings.defaultCprColorMode !== 'original',
-            color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff'
-          }
-        },
         logoLanguage: brandSettings.defaultLanguage,
-        logoGroup: defaults,
         logoEffect: { ...previous.logoEffect, colorEnabled: true, color },
         cprEffect: { ...previous.cprEffect, colorEnabled: brandSettings.defaultCprColorMode !== 'original', color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff' }
       }));
@@ -797,10 +426,9 @@ export function MediaWorkbench() {
 
   function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
     const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
-    setPreviewStates((previous) => ({ ...previous, [key]: nextPreviewState }));
+    setPreviewStates((previous) => updateBoardCrop(previous, nextPreviewState));
     dispatchBoardBrand({ type: 'update-logo', key, logo: nextLogoGroup });
     dispatchBoardBrand({ type: 'update-cpr', key, cpr: nextCprState });
-    setLogoGroup(nextLogoGroup);
     setSelectedAssetId(nextPreviewState.assetId);
     setSelectedSpecId(nextPreviewState.specId);
     closeFocusEditor();
@@ -827,9 +455,8 @@ export function MediaWorkbench() {
       logoLanguage: language,
       selectedLogoId: selectedId
     }));
-    setLogoGroup((previous) => ({ ...normalizeLogoGroup(previous), gameLogoLanguage: language, gameLogoId: selectedId }));
     if (selectedBoardKey) {
-      dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: { ...normalizeLogoGroup(boardBrandStates[selectedBoardKey]?.logo ?? logoGroup), gameLogoLanguage: language, gameLogoId: selectedId } });
+      dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: { ...normalizeLogoGroup(boardBrandStates[selectedBoardKey]?.logo ?? defaultLogoGroup), gameLogoLanguage: language, gameLogoId: selectedId } });
     }
   }
 
@@ -850,7 +477,6 @@ export function MediaWorkbench() {
         selectedLogoId: language === 'custom' ? previous.selectedLogoId : nextAssets[0]?.id ?? previous.selectedLogoId
       }));
       if (language === 'custom' && nextAssets[0]) {
-        setLogoGroup((previous) => ({ ...previous, companyLogoId: nextAssets[0].id }));
         for (const [key, state] of Object.entries(boardBrandStates)) dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: nextAssets[0]!.id } });
       }
       setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
@@ -864,7 +490,7 @@ export function MediaWorkbench() {
 
   return (
     <>
-    <AppShell activeModule={activeModule} onModuleChange={setActiveModule} activity={{ ...IDLE_APP_ACTIVITY, exporting, focusEditorOpen: Boolean(focusAsset && focusSpec), settingsDialogOpen, confirmationDialogOpen: Boolean(pendingConfirmation) }} header={<WorkbenchHeader
+    <AppShell activeModule={activeModule} onModuleChange={setActiveModule} activity={createAppActivity({ exporting, focusEditorOpen: Boolean(focusAsset && focusSpec), focusEditorDirty, customWorkbenchDirty, settingsDialogOpen, settingsDirty, confirmationDialogOpen: Boolean(pendingConfirmation) })} header={<WorkbenchHeader
         assetCount={assets.length}
         boardCount={specs.length}
         previewCount={Object.keys(workbenchState.previewStates).length}
@@ -913,56 +539,18 @@ export function MediaWorkbench() {
           </div>
           {importFailures.length ? <div className="import-failures"><strong>失败文件</strong>{importFailures.map((failure) => <small key={failure}>{failure}</small>)}</div> : null}
 
-          <BrandPanel>
-          <section className="brand-control-group" aria-labelledby="logo-controls-title">
-          <div className="brand-control-heading"><div><h3 id="logo-controls-title">Logo</h3><small>组合与单项资源</small></div></div>
-          <LogoGroupControls
-            group={selectedLogoGroup}
-            language={brandLayer.logoLanguage}
+          <BrandControlsPanel
+            logoGroup={selectedLogoGroup}
+            cprState={selectedCprState}
+            brandLayer={brandLayer}
+            brandSettings={brandSettings}
+            gameLogoAsset={gameLogoAsset}
             onLanguageChange={changeBrandLanguage}
-            onChange={(next) => {
-              setLogoGroup(next);
-              if (selectedBoardKey) {
-                dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next });
-              }
-              const anchor = next.placement === 'corner-left' ? 'top-left' : next.placement === 'corner-right' ? 'top-right' : 'center';
-              const color = next.colorMode === 'black' ? '#000000' : '#ffffff';
-              setBrandLayer((previous) => ({
-                ...previous,
-                logoGroup: next,
-                logoAnchor: next.placement === 'custom' ? previous.logoAnchor : anchor,
-                logoSize: next.sizePreset,
-                logoEffect: { ...previous.logoEffect, colorEnabled: next.colorMode !== 'original', color }
-              }));
-            }}
+            onLogoChange={(next) => { if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next }); }}
+            onCprChange={(next) => { if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
+            onBrandLayerChange={setBrandLayer}
+            onSettingsChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }}
           />
-          <label className="toggle compact-toggle"><input type="checkbox" checked={brandLayer.logoEnabled} onChange={(event) => setBrandLayer((previous) => ({ ...previous, logoEnabled: event.target.checked }))} />显示 Logo</label>
-
-          <BrandEffectControls
-            title="Logo"
-            effect={brandLayer.logoEffect}
-            onChange={(logoEffect) => setBrandLayer((previous) => ({ ...previous, logoEffect }))}
-            preview={<LogoStylePreview asset={gameLogoAsset} effect={brandLayer.logoEffect} />}
-          />
-          </section>
-          <CprControls
-            state={selectedCprState}
-            onChange={(next) => {
-              if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next });
-              setBrandLayer((previous) => ({
-                ...previous,
-                cprEnabled: next.enabled,
-                cprState: next,
-                cprEffect: next.effect,
-                cprAnchor: next.transform.placement === 'bottom-left' ? 'top-left' : next.transform.placement === 'bottom-right' ? 'top-right' : 'center'
-              }));
-            }}
-          />
-          <section className="brand-control-group" aria-labelledby="guide-controls-title">
-            <div className="brand-control-heading"><div><h3 id="guide-controls-title">辅助工具</h3><small>画布显示与吸附</small></div></div>
-            <BrandGuideControls settings={brandSettings} onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }} />
-          </section>
-          </BrandPanel>
         </AssetSidebar>
 
         <BoardOverview disabled={!assets.length || !specs.length} onExport={() => setExportDialogOpen(true)} message={message}>
@@ -1104,7 +692,7 @@ export function MediaWorkbench() {
             </div>
           )}
         </SpecPanel>
-      </section> : activeModule === 'custom' ? <CustomWorkbench brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} /> : <GifCompressorPlaceholder />}
+      </section> : activeModule === 'custom' ? <CustomWorkbench brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} onDirtyChange={setCustomWorkbenchDirty} /> : <GifCompressorPlaceholder />}
       </AppShell>
       {focusAsset && focusSpec && (
         <FocusEditorModal
@@ -1116,13 +704,14 @@ export function MediaWorkbench() {
           cprAsset={selectedCpr}
           brandLayer={brandLayer}
           brandSettings={brandSettings}
-          logoGroup={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.logo ?? logoGroup : logoGroup}
-          cprState={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.cpr ?? cprState : cprState}
+          logoGroup={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.logo ?? defaultLogoGroup : defaultLogoGroup}
+          cprState={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.cpr ?? defaultCprState : defaultCprState}
           overlayCompanyLogo={companyLogoAsset}
           overlayGameLogo={gameLogoAsset}
           onCancel={closeFocusEditor}
           onSave={saveFocusPreview}
           onApplyToSameAspect={applyLogoGroupToSameAspect}
+          onDirtyChange={setFocusEditorDirty}
         />
       )}
       {pendingConfirmation && (
@@ -1161,15 +750,15 @@ export function MediaWorkbench() {
           selectedLogoId={brandLayer.selectedLogoId}
           selectedCompanyLogoId={selectedLogoGroup.companyLogoId}
           onSelectResource={(asset) => {
-            if (asset.language === 'custom') setLogoGroup((previous) => ({ ...previous, companyLogoId: asset.id }));
-            else setBrandLayer((previous) => ({ ...previous, logoLanguage: asset.language, selectedLogoId: asset.id }));
+            if (asset.language !== 'custom') setBrandLayer((previous) => ({ ...previous, logoLanguage: asset.language, selectedLogoId: asset.id }));
           }}
           onReplaceResource={(asset, language) => {
             setReplacingResourceId(asset?.id);
             setResourceUploadLanguage(language);
             logoInputRef.current?.click();
           }}
-          onRestoreResources={() => { setBrandAssets(DEFAULT_BRAND_ASSETS); setLogoGroup((previous) => ({ ...previous, companyLogoId: undefined })); setMessage('已恢复内置品牌资源'); }}
+          onRestoreResources={() => { setBrandAssets(DEFAULT_BRAND_ASSETS); setMessage('已恢复内置品牌资源'); }}
+          onDirtyChange={setSettingsDirty}
           onClose={() => setSettingsDialogOpen(false)}
           onChange={(next) => { setBrandSettings(next); saveBrandSettings(next); }}
         />
