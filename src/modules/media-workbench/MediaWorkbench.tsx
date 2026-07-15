@@ -57,7 +57,6 @@ import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileS
 import {
   AssetSidebar,
   BoardOverview,
-  BrandAssetWorkspace,
   CprControls,
   BrandEffectControls,
   BrandGuideControls,
@@ -77,6 +76,7 @@ import { BoardCanvas } from '../../components/canvas';
 import { AppShell } from '../../app/AppShell';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
 import { GifCompressorPlaceholder } from '../../modules/gif-compressor';
+import { CustomWorkbench } from '../../modules/custom-workbench/CustomWorkbench';
 import { boardBrandReducer } from '../../modules/media-workbench';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
@@ -1133,7 +1133,7 @@ export function MediaWorkbench() {
             </div>
           )}
         </SpecPanel>
-      </section> : activeModule === 'custom' ? <BrandAssetWorkspace brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} /> : <GifCompressorPlaceholder />}
+      </section> : activeModule === 'custom' ? <CustomWorkbench brandLayer={brandLayer} logoAsset={selectedLogo} cprAsset={selectedCpr} companyLogo={companyLogoAsset} gameLogo={gameLogoAsset} gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')} /> : <GifCompressorPlaceholder />}
       </AppShell>
       {focusAsset && focusSpec && (
         <FocusEditorModal

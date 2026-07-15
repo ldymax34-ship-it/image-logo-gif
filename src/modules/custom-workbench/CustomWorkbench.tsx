@@ -1,12 +1,12 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
-import { BrandEffectControls } from './brand/BrandEffectControls';
-import { buildBoardRenderPlan, canvasToBlob, createInitialCropState, createMaterialAsset, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, renderBoardToCanvas, snapLogoGroupPosition, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec } from '../core';
-import { chooseOutputTarget, saveBlobToOutputTarget } from '../platform/fileSystem';
-import { BoardCanvas } from './canvas';
+import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
+import { buildBoardRenderPlan, canvasToBlob, createInitialCropState, createMaterialAsset, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, renderBoardToCanvas, snapLogoGroupPosition, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec } from '../../core';
+import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
+import { BoardCanvas } from '../../components/canvas';
 
 const CUSTOM_SPEC: MaterialSpec = { id: 'custom-canvas', name: '自定义画板', width: 1920, height: 1080, format: 'png' };
 
-export function BrandAssetWorkspace({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos }: {
+export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos }: {
   brandLayer: BrandLayerState;
   logoAsset?: BrandAsset;
   cprAsset?: BrandAsset;
