@@ -545,8 +545,7 @@ function BatchExportDialog({
   previewStates,
   brandAssets,
   brandLayer,
-  logoGroupsByBoard,
-  cprStatesByBoard,
+  boardBrandStates,
   onClose,
   onComplete
 }: {
@@ -555,8 +554,7 @@ function BatchExportDialog({
   previewStates: Record<string, BoardPreviewState>;
   brandAssets: BrandAsset[];
   brandLayer: BrandLayerState;
-  logoGroupsByBoard: Record<string, LogoGroupState>;
-  cprStatesByBoard: Record<string, CprState>;
+  boardBrandStates: BoardBrandStateMap;
   onClose: () => void;
   onComplete: (message: string) => void;
 }) {
@@ -592,13 +590,13 @@ function BatchExportDialog({
   const exportLogo = brandAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
   const exportCpr = brandAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const activeBoardLogoGroup = activeAsset && activeSpec
-    ? logoGroupsByBoard[getBoardPreviewKey(activeAsset.id, activeSpec.id)] ?? brandLayer.logoGroup
+    ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.logo ?? brandLayer.logoGroup
     : brandLayer.logoGroup;
   const activeCompanyLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.companyLogoId)
     ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
   const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : brandLayer.logoLanguage) as BrandLanguage;
   const activeGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === activeLanguage);
-  const activeCprState = activeAsset && activeSpec ? cprStatesByBoard[getBoardPreviewKey(activeAsset.id, activeSpec.id)] ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
+  const activeCprState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.cpr ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
 
   const rows = items.map((item, index) => {
     const asset = assets.find((candidate) => candidate.id === item.assetId);
@@ -682,7 +680,8 @@ function BatchExportDialog({
         continue;
       }
       try {
-        const boardLogoGroup = logoGroupsByBoard[getBoardPreviewKey(row.asset.id, row.spec.id)] ?? brandLayer.logoGroup;
+        const boardBrandState = boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
+        const boardLogoGroup = boardBrandState?.logo ?? brandLayer.logoGroup;
         const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
           ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
         const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
@@ -693,7 +692,7 @@ function BatchExportDialog({
           asset: row.asset,
           spec: row.spec,
           previewState,
-          brandLayer: { ...brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: cprStatesByBoard[getBoardPreviewKey(row.asset.id, row.spec.id)] ?? resolveCprState(brandLayer) },
+          brandLayer: { ...brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState?.cpr ?? resolveCprState(brandLayer) },
           logoAsset: exportLogo,
           cprAsset: exportCpr,
           companyLogoAsset: boardCompanyLogo,
@@ -922,10 +921,6 @@ export function App() {
   const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const cprState = resolveCprState(brandLayer);
   const selectedCprState = selectedBoardKey ? boardBrandStates[selectedBoardKey]?.cpr ?? cprState : cprState;
-  // Legacy-shaped read models keep existing presentational components compatible;
-  // mutations below only write boardBrandStates.
-  const logoGroupsByBoard = useMemo(() => Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.logo])), [boardBrandStates]);
-  const cprStatesByBoard = useMemo(() => Object.fromEntries(Object.entries(boardBrandStates).map(([key, state]) => [key, state.cpr])), [boardBrandStates]);
   const companyLogoAsset = useMemo(
     () => logoAssets.find((asset) => asset.language === 'custom'),
     [logoAssets]
@@ -1340,9 +1335,7 @@ export function App() {
             cprAsset={selectedCpr}
             brandLayer={brandLayer}
             brandSettings={brandSettings}
-            logoGroup={logoGroup}
-            logoGroupsByBoard={logoGroupsByBoard}
-            cprStatesByBoard={cprStatesByBoard}
+            boardBrandStates={boardBrandStates}
             companyLogo={companyLogoAsset}
             gameLogo={gameLogoAsset}
             onSelect={selectBoard}
@@ -1482,8 +1475,8 @@ export function App() {
           cprAsset={selectedCpr}
           brandLayer={brandLayer}
           brandSettings={brandSettings}
-          logoGroup={focusPreviewKey ? logoGroupsByBoard[focusPreviewKey] ?? logoGroup : logoGroup}
-          cprState={focusPreviewKey ? cprStatesByBoard[focusPreviewKey] ?? cprState : cprState}
+          logoGroup={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.logo ?? logoGroup : logoGroup}
+          cprState={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.cpr ?? cprState : cprState}
           overlayCompanyLogo={companyLogoAsset}
           overlayGameLogo={gameLogoAsset}
           onCancel={closeFocusEditor}
@@ -1514,8 +1507,7 @@ export function App() {
           previewStates={previewStates}
           brandAssets={brandAssets}
           brandLayer={brandLayer}
-          logoGroupsByBoard={logoGroupsByBoard}
-          cprStatesByBoard={cprStatesByBoard}
+          boardBrandStates={boardBrandStates}
           onClose={() => setExportDialogOpen(false)}
           onComplete={setMessage}
         />

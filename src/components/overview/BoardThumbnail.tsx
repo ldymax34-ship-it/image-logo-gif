@@ -52,7 +52,7 @@ export function BoardThumbnail({
   cprAsset?: BrandAsset;
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
-  logoGroup: LogoGroupState;
+  logoGroup?: LogoGroupState;
   cprState?: CprState;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
@@ -91,7 +91,7 @@ export function BoardThumbnail({
       >
         <div className="board-card-title">
           <strong>{spec.name}</strong>
-          <small>{spec.width} x {spec.height} · {getPlacementLabel(logoGroup.placement)}</small>
+          <small>{spec.width} x {spec.height} · {getPlacementLabel(logoGroup?.placement ?? 'corner-right')}</small>
         </div>
         <div className="board-thumbnail-stage" style={{ width: stageWidth, height: stageHeight }}>
           <BoardCanvas
@@ -100,10 +100,10 @@ export function BoardThumbnail({
             previewState={previewState}
             logoAsset={logoAsset}
             cprAsset={cprAsset}
-            brandLayer={{ ...brandLayer, logoGroup, cprState: cprState ?? brandLayer.cprState, cprEnabled: (cprState ?? brandLayer.cprState)?.enabled ?? brandLayer.cprEnabled }}
+            brandLayer={{ ...brandLayer, logoGroup: logoGroup ?? brandLayer.logoGroup, cprState: cprState ?? brandLayer.cprState, cprEnabled: (cprState ?? brandLayer.cprState)?.enabled ?? brandLayer.cprEnabled }}
             scale={scale}
             brandSettings={thumbnailGuideSettings}
-            logoGroup={logoGroup}
+            logoGroup={logoGroup ?? brandLayer.logoGroup ?? { mode: 'game-only', gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white', sizePreset: 'standard', companyLogoScale: 'match', gapUnits: .5, placement: 'corner-right' }}
             overlayCompanyLogo={companyLogo}
             overlayGameLogo={gameLogo}
           />

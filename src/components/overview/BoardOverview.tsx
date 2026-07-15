@@ -4,8 +4,7 @@ import {
   type BrandAsset,
   type BrandLayerState,
   type BrandSettingsV1,
-  type CprState,
-  type LogoGroupState,
+  type BoardBrandStateMap,
   type MaterialAsset,
   type MaterialSpec
 } from '../../core';
@@ -22,9 +21,7 @@ export function MultiAssetBoardOverview({
   cprAsset,
   brandLayer,
   brandSettings,
-  logoGroup,
-  logoGroupsByBoard,
-  cprStatesByBoard,
+  boardBrandStates,
   companyLogo,
   gameLogo,
   onSelect,
@@ -40,9 +37,7 @@ export function MultiAssetBoardOverview({
   cprAsset?: BrandAsset;
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
-  logoGroup: LogoGroupState;
-  logoGroupsByBoard: Record<string, LogoGroupState>;
-  cprStatesByBoard: Record<string, CprState>;
+  boardBrandStates: BoardBrandStateMap;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
   onSelect: (assetId: string, specId: string) => void;
@@ -77,9 +72,7 @@ export function MultiAssetBoardOverview({
             cprAsset={cprAsset}
             brandLayer={brandLayer}
             brandSettings={brandSettings}
-            logoGroup={logoGroup}
-            logoGroupsByBoard={logoGroupsByBoard}
-            cprStatesByBoard={cprStatesByBoard}
+            boardBrandStates={boardBrandStates}
             companyLogo={companyLogo}
             gameLogo={gameLogo}
             thumbnailWidth={thumbnailWidth}

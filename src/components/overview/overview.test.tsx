@@ -4,6 +4,7 @@ import {
   DEFAULT_BRAND_ASSETS,
   DEFAULT_BRAND_SETTINGS,
   DEFAULT_CPR_EFFECT,
+  DEFAULT_CPR_STATE,
   DEFAULT_LOGO_EFFECT,
   createDefaultLogoGroup,
   createInitialCropState,
@@ -43,7 +44,7 @@ describe('multi asset overview', () => {
       ]))
     );
     const logoGroup = createDefaultLogoGroup('zh-CN');
-    const logoGroupsByBoard = Object.fromEntries(Object.keys(previewStates).map((key) => [key, logoGroup]));
+    const boardBrandStates = Object.fromEntries(Object.keys(previewStates).map((key) => [key, { logo: logoGroup, cpr: DEFAULT_CPR_STATE }]));
     const brandLayer: BrandLayerState = {
       logoEnabled: false,
       cprEnabled: false,
@@ -68,9 +69,7 @@ describe('multi asset overview', () => {
         cprAsset={DEFAULT_BRAND_ASSETS.find((asset) => asset.type === 'cpr')}
         brandLayer={brandLayer}
         brandSettings={DEFAULT_BRAND_SETTINGS}
-        logoGroup={logoGroup}
-        logoGroupsByBoard={logoGroupsByBoard}
-        cprStatesByBoard={{}}
+        boardBrandStates={boardBrandStates}
         onSelect={() => undefined}
         onEdit={() => undefined}
         onDelete={() => undefined}

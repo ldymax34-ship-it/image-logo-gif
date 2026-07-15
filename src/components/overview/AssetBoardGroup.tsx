@@ -6,8 +6,7 @@ import {
   type BrandAsset,
   type BrandLayerState,
   type BrandSettingsV1,
-  type CprState,
-  type LogoGroupState,
+  type BoardBrandStateMap,
   type MaterialAsset,
   type MaterialSpec
 } from '../../core';
@@ -23,9 +22,7 @@ export function AssetBoardGroup({
   cprAsset,
   brandLayer,
   brandSettings,
-  logoGroup,
-  logoGroupsByBoard,
-  cprStatesByBoard,
+  boardBrandStates,
   companyLogo,
   gameLogo,
   thumbnailWidth,
@@ -42,9 +39,7 @@ export function AssetBoardGroup({
   cprAsset?: BrandAsset;
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
-  logoGroup: LogoGroupState;
-  logoGroupsByBoard: Record<string, LogoGroupState>;
-  cprStatesByBoard: Record<string, CprState>;
+  boardBrandStates: BoardBrandStateMap;
   companyLogo?: BrandAsset;
   gameLogo?: BrandAsset;
   thumbnailWidth: number;
@@ -97,8 +92,8 @@ export function AssetBoardGroup({
               cprAsset={cprAsset}
               brandLayer={brandLayer}
               brandSettings={brandSettings}
-              logoGroup={logoGroupsByBoard[getBoardPreviewKey(asset.id, spec.id)] ?? logoGroup}
-              cprState={cprStatesByBoard[getBoardPreviewKey(asset.id, spec.id)]}
+              logoGroup={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]?.logo}
+              cprState={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]?.cpr}
               companyLogo={companyLogo}
               gameLogo={gameLogo}
               thumbnailWidth={thumbnailWidth}
