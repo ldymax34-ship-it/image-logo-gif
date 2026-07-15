@@ -52,6 +52,7 @@ import { updateBoardCrop } from './mediaWorkbenchActions';
 import { useMediaWorkbenchState } from './useMediaWorkbenchState';
 import { useMediaAssetActions } from './useMediaAssetActions';
 import { useMediaSpecActions } from './useMediaSpecActions';
+import { useMediaBrandActions } from './useMediaBrandActions';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -246,70 +247,7 @@ export function MediaWorkbench() {
 
   const { handleImageFiles, selectBoard, selectAssetAndScroll, requestDeleteAsset, deleteAsset, openFocusEditor, closeFocusEditor } = useMediaAssetActions({ assets, selectedAssetId, focusAssetId, imageInputRef, focusReturnRef, setAssets, setSelectedAssetId, setSelectedSpecId, setPreviewStates, setFocusAssetId, setFocusSpecId, setImportFailures, setMessage, setPendingConfirmation, dispatchBoardBrand });
   const { applyParsedSpecs, restoreAppliedText, applyPresetTemplate, saveCurrentAsPreset, removeCustomPreset, confirmPendingAction } = useMediaSpecActions({ result, draftText, appliedText, specs, previewStates, brandSettings, customPresets, newPresetName, pendingConfirmation, setDraftText, setAppliedText, setSpecs, setBrandLayer, setCustomPresets, setNewPresetName, setPendingConfirmation, setMessage, createLogoDefaults: (spec) => createLogoGroupFromSettings(brandSettings, spec), deleteAsset });
-
-  function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
-    const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
-    setPreviewStates((previous) => updateBoardCrop(previous, nextPreviewState));
-    dispatchBoardBrand({ type: 'update-logo', key, logo: nextLogoGroup });
-    dispatchBoardBrand({ type: 'update-cpr', key, cpr: nextCprState });
-    setSelectedAssetId(nextPreviewState.assetId);
-    setSelectedSpecId(nextPreviewState.specId);
-    closeFocusEditor();
-    setMessage('已保存当前画板调整');
-  }
-
-  function applyLogoGroupToSameAspect(nextLogoGroup: LogoGroupState) {
-    if (!focusSpec) return;
-    const family = classifyAspect({ width: focusSpec.width, height: focusSpec.height });
-    const matchingKeys = assets.flatMap((asset) =>
-      specs
-        .filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family)
-        .map((spec) => getBoardPreviewKey(asset.id, spec.id))
-    );
-    const source = boardBrandStates[focusPreviewKey ?? ''];
-    if (source) dispatchBoardBrand({ type: 'apply-brand', keys: matchingKeys, source: { ...source, logo: nextLogoGroup } });
-    setMessage(`已将品牌位置应用到 ${matchingKeys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
-  }
-
-  function changeBrandLanguage(language: BrandLanguage) {
-    const selectedId = resolvePreferredBrandAssetId(brandAssets, 'logo', language, brandLayer.selectedLogoId);
-    setBrandLayer((previous) => ({
-      ...previous,
-      logoLanguage: language,
-      selectedLogoId: selectedId
-    }));
-    if (selectedBoardKey) {
-      dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: { ...normalizeLogoGroup(boardBrandStates[selectedBoardKey]?.logo ?? defaultLogoGroup), gameLogoLanguage: language, gameLogoId: selectedId } });
-    }
-  }
-
-  async function handleLogoFiles(fileList: FileList | null, language = brandLayer.logoLanguage) {
-    const files = Array.from(fileList ?? []);
-    if (!files.length) return;
-    setMessage('正在读取 SVG 资源...');
-    try {
-      const nextAssets = await Promise.all(files.map((file) => createBrandAssetFromFile(file, 'logo', language)));
-      setBrandAssets((previous) => [
-        ...previous.filter((asset) => replacingResourceId
-          ? asset.id !== replacingResourceId
-          : !(asset.type === 'logo' && asset.language === language)),
-        ...nextAssets
-      ]);
-      setBrandLayer((previous) => ({
-        ...previous,
-        selectedLogoId: language === 'custom' ? previous.selectedLogoId : nextAssets[0]?.id ?? previous.selectedLogoId
-      }));
-      if (language === 'custom' && nextAssets[0]) {
-        for (const [key, state] of Object.entries(boardBrandStates)) dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: nextAssets[0]!.id } });
-      }
-      setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'SVG 导入失败');
-    } finally {
-      setReplacingResourceId(undefined);
-      if (logoInputRef.current) logoInputRef.current.value = '';
-    }
-  }
+  const { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, handleLogoFiles } = useMediaBrandActions({ assets, specs, boardBrandStates, brandAssets, brandLayer, selectedBoardKey, focusSpec, focusPreviewKey, replacingResourceId, logoInputRef, defaultLogoGroup, setPreviewStates, dispatchBoardBrand, setBrandLayer, setBrandAssets, setSelectedAssetId, setSelectedSpecId, setReplacingResourceId, setMessage, closeFocusEditor });
 
   return (
     <>
