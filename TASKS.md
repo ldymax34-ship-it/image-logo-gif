@@ -208,3 +208,16 @@
 ### 本轮验证记录
 
 - [x] 0.1.22 完成后验证：`npm run verify:core`、`npm test`、`npm run build`、`git diff --check` 通过；51 tests。
+
+## 0.1.23
+
+1. [重构-大] `boardBrandStates` 成为唯一画板品牌可写状态；移除 Logo / CPR 双 Map 组件传递。
+2. [重构-大] `BatchExportDialog` 与导出编排移出应用组合文件；导出循环不在 App UI 层。
+3. [重构-中] 建立媒体、自定义、GIF 模块边界与 app 组合入口。
+4. [重构-中] 新增 `AppActivity` 聚合导出与对话框活动状态；自动更新仍未接入。
+5. [维护-中] 版本统一为 0.1.23，记录纯重构发现，不修复产品行为。
+
+### 本轮验证记录
+
+- [x] 0.1.23 每个阶段均执行 `npm run verify:core`、`npm test -- --run`、`npx tsc --noEmit -p tsconfig.app.json`、`npm run build`、`git diff --check`。
+- [x] 最终验证：51 tests 通过。

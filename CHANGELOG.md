@@ -636,3 +636,19 @@
 - `git diff --check`：通过
 
 自动更新保持未接入；后续 0.1.23 将基于已冻结的导出服务、画板品牌状态和公开二进制分发仓库实现。
+
+## 0.1.23
+
+1. [重构-大] 新增 `modules/media-workbench/boardBrandReducer.ts`；`boardBrandStates` 成为画板 Logo / CPR 状态的唯一可写入口，删除拆分 Map 的组件传递。
+2. [重构-大] 将批量导出对话框移入 `modules/media-workbench/BatchExportDialog.tsx`，UI 不再包含导出循环；既有 `services/export` 边界保持不变。
+3. [重构-中] 将设媒与自定义工作台迁移至 `modules/media-workbench`、`modules/custom-workbench`，`app/App.tsx` 缩减为模块组合入口。
+4. [重构-中] 新增 `AppActivity`，汇总导出、聚焦编辑、设置和确认弹窗活动状态，作为后续 updater 安装守卫的只读基础。
+5. [维护-中] 删除未调用的拆分 Map 初始化兼容代码，新增 `REFACTOR_FINDINGS.md`，并统一 package、Cargo、Tauri 版本为 0.1.23。
+
+验证方式：
+
+- `npm run verify:core`：通过
+- `npm test -- --run`：通过，51 tests
+- `npx tsc --noEmit -p tsconfig.app.json`：通过
+- `npm run build`：通过
+- `git diff --check`：通过

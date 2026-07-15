@@ -178,31 +178,6 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
   };
 }
 
-function ensureLogoGroups(
-  previous: Record<string, LogoGroupState>,
-  assets: MaterialAsset[],
-  specs: MaterialSpec[],
-  settings: BrandSettingsV1
-): Record<string, LogoGroupState> {
-  const next: Record<string, LogoGroupState> = {};
-  for (const asset of assets) {
-    for (const spec of specs) {
-      const key = getBoardPreviewKey(asset.id, spec.id);
-      next[key] = normalizeLogoGroup(previous[key] ?? createLogoGroupFromSettings(settings, spec));
-    }
-  }
-  return next;
-}
-
-function ensureCprStates(previous: Record<string, CprState>, assets: MaterialAsset[], specs: MaterialSpec[], fallback: CprState): Record<string, CprState> {
-  const next: Record<string, CprState> = {};
-  for (const asset of assets) for (const spec of specs) {
-    const key = getBoardPreviewKey(asset.id, spec.id);
-    next[key] = previous[key] ?? { ...fallback, transform: { ...fallback.transform }, effect: { ...fallback.effect } };
-  }
-  return next;
-}
-
 function FocusEditorModal({
   asset,
   spec,
