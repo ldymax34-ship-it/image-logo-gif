@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
@@ -11,29 +11,23 @@ import {
   createDefaultCprState,
   normalizeLogoGroup,
   createInitialCropState,
-  createMaterialAsset,
   formatFileSize,
   getBoardPreviewKey,
   loadBrandSettings,
-  loadCustomPresetTemplates,
   parseSpecText,
   saveBrandSettings,
   saveCustomPresetTemplates,
-  serializePresetSpecs,
-  toPresetSpecs,
   type BoardPreviewState,
   type BrandAsset,
   type BrandLanguage,
   type BrandLayerState,
   type BrandSettingsV1,
-  type BoardBrandStateMap,
   type CprState,
   type FitMode,
   type LogoGroupState,
   type MaterialAsset,
   type MaterialSpec,
   type MaterialFormat,
-  type PresetTemplate,
   type WorkbenchState
 } from '../../core';
 import {
@@ -50,12 +44,14 @@ import { createAppActivity } from '../../app/appActivity';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
 import { GifCompressorPlaceholder } from '../../modules/gif-compressor';
 import { CustomWorkbench } from '../../modules/custom-workbench/CustomWorkbench';
-import { boardBrandReducer } from '../../modules/media-workbench';
 import { FocusEditorModal } from './FocusEditorModal';
 import { ConfirmationDialog } from './ConfirmationDialog';
 import { BrandControlsPanel } from './BrandControlsPanel';
 import { selectBoardBrandState, selectBoardKey, selectBoardPreviewState } from './mediaWorkbenchSelectors';
 import { updateBoardCrop } from './mediaWorkbenchActions';
+import { useMediaWorkbenchState } from './useMediaWorkbenchState';
+import { useMediaAssetActions } from './useMediaAssetActions';
+import { useMediaSpecActions } from './useMediaSpecActions';
 
 const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEnabled: true,
@@ -69,13 +65,6 @@ const DEFAULT_BRAND_LAYER: BrandLayerState = {
   logoEffect: DEFAULT_LOGO_EFFECT,
   cprEffect: DEFAULT_CPR_EFFECT
 };
-
-type PresetApplyMode = 'replace' | 'append';
-
-type PendingConfirmation =
-  | { type: 'apply-specs'; count: number }
-  | { type: 'delete-preset'; presetId: string; presetName: string }
-  | { type: 'delete-asset'; assetId: string; fileName: string };
 
 function getAspectLabel(spec: MaterialSpec): string {
   const family = classifyAspect({ width: spec.width, height: spec.height });
@@ -155,38 +144,11 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
 }
 
 export function MediaWorkbench() {
-  const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
-  const [draftText, setDraftText] = useState('');
-  const [appliedText, setAppliedText] = useState('');
-  const [specs, setSpecs] = useState<MaterialSpec[]>([]);
-  const [assets, setAssets] = useState<MaterialAsset[]>([]);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>();
-  const [selectedSpecId, setSelectedSpecId] = useState<string | undefined>();
-  const [previewStates, setPreviewStates] = useState<Record<string, BoardPreviewState>>({});
-  const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
-  const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
-  const [brandSettings, setBrandSettings] = useState<BrandSettingsV1>(() => loadBrandSettings());
-  const [boardBrandStates, dispatchBoardBrand] = useReducer(boardBrandReducer, {} as BoardBrandStateMap);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [settingsDirty, setSettingsDirty] = useState(false);
-  const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
-  const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
-  const [focusAssetId, setFocusAssetId] = useState<string | undefined>();
-  const [focusSpecId, setFocusSpecId] = useState<string | undefined>();
-  const [focusEditorDirty, setFocusEditorDirty] = useState(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | undefined>();
-  const [newPresetName, setNewPresetName] = useState('');
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [customWorkbenchDirty, setCustomWorkbenchDirty] = useState(false);
-  const [message, setMessage] = useState<string>('');
-  const [importFailures, setImportFailures] = useState<string[]>([]);
-  const [resourceUploadLanguage, setResourceUploadLanguage] = useState<BrandLanguage>('zh-CN');
-  const [replacingResourceId, setReplacingResourceId] = useState<string | undefined>();
+  const { activeModule, setActiveModule, draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, brandAssets, setBrandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, boardBrandStates, dispatchBoardBrand, settingsDialogOpen, setSettingsDialogOpen, settingsDirty, setSettingsDirty, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, customWorkbenchDirty, setCustomWorkbenchDirty, message, setMessage, importFailures, setImportFailures, resourceUploadLanguage, setResourceUploadLanguage, replacingResourceId, setReplacingResourceId } = useMediaWorkbenchState(DEFAULT_BRAND_LAYER);
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
@@ -282,147 +244,8 @@ export function MediaWorkbench() {
     };
   }, []);
 
-  async function handleImageFiles(fileList: FileList | null) {
-    const files = Array.from(fileList ?? []);
-    if (!files.length) return;
-    setMessage('正在读取图片尺寸...');
-    const results = await Promise.allSettled(files.map((file) => createMaterialAsset(file)));
-    const nextAssets = results
-      .filter((result): result is PromiseFulfilledResult<MaterialAsset> => result.status === 'fulfilled')
-      .map((result) => result.value);
-    const failures = results.flatMap((result, index) =>
-      result.status === 'rejected'
-        ? [`${files[index]?.name ?? '未知文件'}：${result.reason instanceof Error ? result.reason.message : '导入失败'}`]
-        : []
-    );
-    if (nextAssets.length) {
-      setAssets((previous) => [...previous, ...nextAssets]);
-      setSelectedAssetId((current) => current ?? nextAssets[0]?.id);
-    }
-    setImportFailures(failures);
-    setMessage(failures.length ? `已导入 ${nextAssets.length} 张图片，${failures.length} 个文件失败` : `已导入 ${nextAssets.length} 张图片`);
-    if (imageInputRef.current) imageInputRef.current.value = '';
-  }
-
-  function applyParsedSpecs() {
-    const nextSpecs = result.specs;
-    const hasExistingBoards = specs.length > 0 || Object.keys(previewStates).length > 0;
-    if (hasExistingBoards && hasPendingSpecChanges) {
-      setPendingConfirmation({ type: 'apply-specs', count: nextSpecs.length });
-      return;
-    }
-    commitParsedSpecs();
-  }
-
-  function commitParsedSpecs() {
-    const nextSpecs = result.specs;
-    const nextAppliedText = draftText.trim();
-    if (!specs.length && nextSpecs.length) {
-      const defaults = createLogoGroupFromSettings(brandSettings, nextSpecs[0]);
-      const color = defaults.colorMode === 'black' ? '#000000' : '#ffffff';
-      setBrandLayer((previous) => ({
-        ...previous,
-        logoLanguage: brandSettings.defaultLanguage,
-        logoEffect: { ...previous.logoEffect, colorEnabled: true, color },
-        cprEffect: { ...previous.cprEffect, colorEnabled: brandSettings.defaultCprColorMode !== 'original', color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff' }
-      }));
-    }
-    setSpecs(nextSpecs);
-    setAppliedText(nextAppliedText);
-    setMessage(nextSpecs.length ? `已应用 ${nextSpecs.length} 个画板` : '已清空画板');
-  }
-
-  function restoreAppliedText() {
-    setDraftText(appliedText);
-    setMessage('已恢复到上一次应用的尺寸矩阵');
-  }
-
-  function applyPresetTemplate(template: PresetTemplate, mode: PresetApplyMode) {
-    const presetText = serializePresetSpecs(template.specs);
-    setDraftText((current) => (mode === 'replace' ? presetText : mergeSpecText(current, presetText)));
-    setMessage(`已${mode === 'replace' ? '填入' : '追加'}套组：${template.name}`);
-  }
-
-  function saveCurrentAsPreset() {
-    if (!specs.length) {
-      setMessage('当前没有可保存的尺寸套组');
-      return;
-    }
-    const name = newPresetName.trim() || `我的套组 ${customPresets.length + 1}`;
-    const nextPreset: PresetTemplate = {
-      id: `custom_${crypto.randomUUID()}`,
-      name,
-      description: `保存于 ${new Date().toLocaleDateString('zh-CN')}`,
-      specs: toPresetSpecs(specs)
-    };
-    setCustomPresets((previous) => [nextPreset, ...previous]);
-    setNewPresetName('');
-    setMessage(`已保存套组：${name}`);
-  }
-
-  function removeCustomPreset(id: string) {
-    const preset = customPresets.find((item) => item.id === id);
-    if (!preset) return;
-    setPendingConfirmation({ type: 'delete-preset', presetId: id, presetName: preset.name });
-  }
-
-  function confirmPendingAction() {
-    if (!pendingConfirmation) return;
-    if (pendingConfirmation.type === 'apply-specs') {
-      commitParsedSpecs();
-    } else if (pendingConfirmation.type === 'delete-preset') {
-      setCustomPresets((previous) => previous.filter((preset) => preset.id !== pendingConfirmation.presetId));
-      setMessage(`已删除套组：${pendingConfirmation.presetName}`);
-    } else {
-      deleteAsset(pendingConfirmation.assetId);
-    }
-    setPendingConfirmation(undefined);
-  }
-
-  function selectBoard(assetId: string, specId: string) {
-    setSelectedAssetId(assetId);
-    setSelectedSpecId(specId);
-  }
-
-  function selectAssetAndScroll(assetId: string) {
-    setSelectedAssetId(assetId);
-    requestAnimationFrame(() => {
-      document.getElementById(`asset-board-group-${assetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
-
-  function requestDeleteAsset(assetId: string) {
-    const asset = assets.find((item) => item.id === assetId);
-    if (asset) setPendingConfirmation({ type: 'delete-asset', assetId, fileName: asset.fileName });
-  }
-
-  function deleteAsset(assetId: string) {
-    const index = assets.findIndex((asset) => asset.id === assetId);
-    if (index < 0) return;
-    const removed = assets[index];
-    const replacement = assets[index + 1] ?? assets[index - 1];
-    URL.revokeObjectURL(removed.objectUrl);
-    setAssets((previous) => previous.filter((asset) => asset.id !== assetId));
-    setPreviewStates((previous) => Object.fromEntries(Object.entries(previous).filter(([, state]) => state.assetId !== assetId)));
-    dispatchBoardBrand({ type: 'remove-asset', assetId });
-    if (focusAssetId === assetId) closeFocusEditor();
-    if (selectedAssetId === assetId) setSelectedAssetId(replacement?.id);
-    setMessage(`已删除素材：${removed.fileName}`);
-  }
-
-  function openFocusEditor(assetId: string, specId: string) {
-    focusReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSelectedAssetId(assetId);
-    setSelectedSpecId(specId);
-    setFocusAssetId(assetId);
-    setFocusSpecId(specId);
-  }
-
-  function closeFocusEditor() {
-    setFocusAssetId(undefined);
-    setFocusSpecId(undefined);
-    requestAnimationFrame(() => focusReturnRef.current?.focus());
-  }
+  const { handleImageFiles, selectBoard, selectAssetAndScroll, requestDeleteAsset, deleteAsset, openFocusEditor, closeFocusEditor } = useMediaAssetActions({ assets, selectedAssetId, focusAssetId, imageInputRef, focusReturnRef, setAssets, setSelectedAssetId, setSelectedSpecId, setPreviewStates, setFocusAssetId, setFocusSpecId, setImportFailures, setMessage, setPendingConfirmation, dispatchBoardBrand });
+  const { applyParsedSpecs, restoreAppliedText, applyPresetTemplate, saveCurrentAsPreset, removeCustomPreset, confirmPendingAction } = useMediaSpecActions({ result, draftText, appliedText, specs, previewStates, brandSettings, customPresets, newPresetName, pendingConfirmation, setDraftText, setAppliedText, setSpecs, setBrandLayer, setCustomPresets, setNewPresetName, setPendingConfirmation, setMessage, createLogoDefaults: (spec) => createLogoGroupFromSettings(brandSettings, spec), deleteAsset });
 
   function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
     const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);

@@ -1,6 +1,8 @@
 import { type KeyboardEvent } from 'react';
 import {
   classifyAspect,
+  createDefaultCprState,
+  createDefaultLogoGroup,
   getBoardPreviewKey,
   type BoardPreviewState,
   type BrandAsset,
@@ -71,6 +73,8 @@ export function BoardThumbnail({
   const thumbnailGuideSettings = isExtremeAspect
     ? { ...brandSettings, gridVisible: false, safeAreaVisible: false, guidesVisible: false }
     : brandSettings;
+  const effectiveLogoGroup = logoGroup ?? createDefaultLogoGroup(brandLayer.logoLanguage);
+  const effectiveCprState = cprState ?? createDefaultCprState();
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key !== 'Enter') return;
@@ -91,7 +95,7 @@ export function BoardThumbnail({
       >
         <div className="board-card-title">
           <strong>{spec.name}</strong>
-          <small>{spec.width} x {spec.height} · {getPlacementLabel(logoGroup?.placement ?? 'corner-right')}</small>
+          <small>{spec.width} x {spec.height} · {getPlacementLabel(effectiveLogoGroup.placement)}</small>
         </div>
         <div className="board-thumbnail-stage" style={{ width: stageWidth, height: stageHeight }}>
           <BoardCanvas
@@ -100,10 +104,10 @@ export function BoardThumbnail({
             previewState={previewState}
             logoAsset={logoAsset}
             cprAsset={cprAsset}
-            brandLayer={{ ...brandLayer, logoGroup: logoGroup ?? brandLayer.logoGroup, cprState: cprState ?? brandLayer.cprState, cprEnabled: (cprState ?? brandLayer.cprState)?.enabled ?? brandLayer.cprEnabled }}
+            brandLayer={{ ...brandLayer, logoGroup: effectiveLogoGroup, cprState: effectiveCprState, cprEnabled: effectiveCprState.enabled }}
             scale={scale}
             brandSettings={thumbnailGuideSettings}
-            logoGroup={logoGroup ?? brandLayer.logoGroup ?? { mode: 'game-only', gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white', sizePreset: 'standard', companyLogoScale: 'match', gapUnits: .5, placement: 'corner-right' }}
+            logoGroup={effectiveLogoGroup}
             overlayCompanyLogo={companyLogo}
             overlayGameLogo={gameLogo}
           />

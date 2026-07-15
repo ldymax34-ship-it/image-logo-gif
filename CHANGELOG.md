@@ -660,3 +660,5 @@
 3. [重构-大] 批量导出循环、逐项失败继续执行、进度和结构化信息结果进入 `services/export/exportBatch.ts`；对话框只保留导出 UI 与触发逻辑。
 4. [重构-中] 新增媒体工作台 actions/selectors，继续按状态所有权拆分；AppActivity 聚合真实 exporting、编辑器和弹窗活动状态。
 5. [维护-中] Cargo.lock 应用版本与 package、Cargo、Tauri 配置统一为 0.1.24；未接入更新器、未改变产品行为。
+6. [重构-大] 完成收尾验收：移除运行期 `logoGroup` / `brandLayer.cprState` 双写，拆出 FocusEditor、确认弹窗、品牌控制、素材事件、规格事件和工作台状态 hook；MediaWorkbench 收敛为工作区组合层。
+7. [重构-中] `useBatchExportController` 成为批量导出的唯一 UI 入口；新增 reducer、导出顺序/失败继续/结构化结果、单语/五语言矩阵、状态隔离与真实 activity 来源测试。

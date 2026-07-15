@@ -19,6 +19,10 @@ function createPreviewState(asset: MaterialAsset, spec: MaterialSpec, fitMode: F
   return { assetId: asset.id, specId: spec.id, crop: createInitialCropState(asset, spec, fitMode), fitMode };
 }
 
+export function isFocusEditorDirty(initialState: BoardPreviewState | undefined, draftState: BoardPreviewState | undefined, logoGroup: LogoGroupState, draftLogoGroup: LogoGroupState, cprState: CprState, draftCprState: CprState): boolean {
+  return Boolean(initialState && draftState && (initialState.fitMode !== draftState.fitMode || initialState.crop.scale !== draftState.crop.scale || initialState.crop.offsetX !== draftState.crop.offsetX || initialState.crop.offsetY !== draftState.crop.offsetY || JSON.stringify(logoGroup) !== JSON.stringify(draftLogoGroup) || JSON.stringify(cprState) !== JSON.stringify(draftCprState)));
+}
+
 export function FocusEditorModal({ asset, spec, previewState, logoAsset, cprAsset, brandLayer, brandSettings, logoGroup, cprState, overlayCompanyLogo, overlayGameLogo, onCancel, onSave, onApplyToSameAspect, onDirtyChange }: {
   asset: MaterialAsset | undefined; spec: MaterialSpec; previewState: BoardPreviewState | undefined;
   logoAsset: BrandAsset | undefined; cprAsset: BrandAsset | undefined; brandLayer: BrandLayerState;
@@ -49,11 +53,7 @@ export function FocusEditorModal({ asset, spec, previewState, logoAsset, cprAsse
   const stageMaxWidth = compactDialog ? Math.max(280, window.innerWidth - 100) : 820;
   const stageMaxHeight = compactDialog ? Math.max(260, Math.min(420, window.innerHeight - 380)) : 560;
   const stageScale = Math.min(stageMaxWidth / spec.width, stageMaxHeight / spec.height, 1.6);
-  const dirty = Boolean(initialState && draftState && (
-    initialState.fitMode !== draftState.fitMode || initialState.crop.scale !== draftState.crop.scale ||
-    initialState.crop.offsetX !== draftState.crop.offsetX || initialState.crop.offsetY !== draftState.crop.offsetY ||
-    JSON.stringify(logoGroup) !== JSON.stringify(draftLogoGroup) || JSON.stringify(cprState) !== JSON.stringify(draftCprState)
-  ));
+  const dirty = isFocusEditorDirty(initialState, draftState, logoGroup, draftLogoGroup, cprState, draftCprState);
 
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
 

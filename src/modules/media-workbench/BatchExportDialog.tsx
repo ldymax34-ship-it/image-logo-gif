@@ -59,8 +59,8 @@ export function BatchExportDialog({
   const exportLogo = brandAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
   const exportCpr = brandAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const activeBoardLogoGroup = activeAsset && activeSpec
-    ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.logo ?? brandLayer.logoGroup
-    : brandLayer.logoGroup;
+    ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.logo
+    : undefined;
   const activeCompanyLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.companyLogoId)
     ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
   const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : brandLayer.logoLanguage) as BrandLanguage;
@@ -143,7 +143,8 @@ export function BatchExportDialog({
         throw new Error(`${row.fileName}：缺少画板预览状态`);
       }
       const boardBrandState = boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
-      const boardLogoGroup = boardBrandState?.logo ?? brandLayer.logoGroup;
+      if (!boardBrandState) throw new Error(`${row.fileName}：缺少画板品牌状态`);
+      const boardLogoGroup = boardBrandState.logo;
       const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
         ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
       const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
@@ -154,7 +155,7 @@ export function BatchExportDialog({
           asset: row.asset,
           spec: row.spec,
           previewState,
-          brandLayer: { ...brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState?.cpr ?? resolveCprState(brandLayer) },
+          brandLayer: { ...brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState.cpr },
           logoAsset: exportLogo,
           cprAsset: exportCpr,
           companyLogoAsset: boardCompanyLogo,

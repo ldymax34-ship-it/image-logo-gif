@@ -228,3 +228,6 @@
 2. [重构-大] 批量导出编排移入导出服务，进度、失败与压缩信息结构化返回。
 3. [重构-中] 建立媒体 actions/selectors，AppActivity 接入真实模块活动状态。
 4. [维护-中] package、Cargo、Cargo.lock、Tauri 版本统一为 0.1.24；不接入 updater，不修改产品行为。
+5. [重构-大] [x] MediaWorkbench 已拆出状态、素材事件、规格事件、FocusEditor、确认弹窗和品牌控制边界，不再是旧 App 的文件替代。
+6. [重构-大] [x] 画板 Logo / CPR 只写 `boardBrandStates`；导出只通过 controller 调用结构化批处理服务。
+7. [验证-中] [x] AppActivity 已接入 exporting、编辑器 dirty、自定义工作台 dirty、设置 dirty 与弹窗状态；专项测试共 61 项通过。

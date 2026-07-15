@@ -25,3 +25,7 @@ export function createAppActivity(activity: Partial<AppActivity>): AppActivity {
 export function hasUnsavedActivity(activity: AppActivity): boolean {
   return activity.focusEditorDirty || activity.customWorkbenchDirty || activity.settingsDirty;
 }
+
+export const AppActivityContext = createContext<AppActivity>(IDLE_APP_ACTIVITY);
+export function useAppActivity(): AppActivity { return useContext(AppActivityContext); }
+import { createContext, useContext } from 'react';

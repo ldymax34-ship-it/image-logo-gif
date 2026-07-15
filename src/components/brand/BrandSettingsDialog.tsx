@@ -37,6 +37,8 @@ const GROUP_MODE_OPTIONS: Array<{ value: BrandSettingsV1['defaultLogoGroupMode']
   { value: 'company-and-game', label: '公司 + 游戏' }
 ];
 
+export function isBrandSettingsDirty(settings: BrandSettingsV1, draft: BrandSettingsV1): boolean { return JSON.stringify(draft) !== JSON.stringify(settings); }
+
 export function BrandSettingsDialog({
   settings,
   assets,
@@ -116,7 +118,7 @@ export function BrandSettingsDialog({
     setDraft(DEFAULT_BRAND_SETTINGS);
   }
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
+  const dirty = isBrandSettingsDirty(settings, draft);
 
   useEffect(() => {
     onDirtyChange?.(dirty);

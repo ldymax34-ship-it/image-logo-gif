@@ -5,6 +5,8 @@ import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileS
 import { BoardCanvas } from '../../components/canvas';
 
 const CUSTOM_SPEC: MaterialSpec = { id: 'custom-canvas', name: '自定义画板', width: 1920, height: 1080, format: 'png' };
+export type CustomWorkbenchDirtySnapshot = { gameEnabled: boolean; companyEnabled: boolean; gameScale: number; companyScale: number; gameOffset: { x: number; y: number }; companyOffset: { x: number; y: number }; cprEnabled: boolean; gameEffect: BrandEffectState; companyEffect: BrandEffectState; cprEffect: BrandEffectState; format: MaterialFormat; gameLanguage: BrandLanguage; guidesVisible: boolean; snapEnabled: boolean };
+export function isCustomWorkbenchDirty(asset?: MaterialAsset, initial?: CustomWorkbenchDirtySnapshot, current?: CustomWorkbenchDirtySnapshot): boolean { return Boolean(asset) || Boolean(initial && current && JSON.stringify(initial) !== JSON.stringify(current)); }
 
 export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos, onDirtyChange }: {
   brandLayer: BrandLayerState;
@@ -34,14 +36,16 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const [guidesVisible, setGuidesVisible] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const dragRef = useRef<{ target: 'game' | 'company'; pointerId: number; startX: number; startY: number; origin: { x: number; y: number } }>();
+  const initialDirtySnapshot = useRef<CustomWorkbenchDirtySnapshot>({ gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, gameOffset: { x: CUSTOM_SPEC.width * .24, y: CUSTOM_SPEC.height * .2 }, companyOffset: { x: CUSTOM_SPEC.width * .54, y: CUSTOM_SPEC.height * .2 }, cprEnabled: true, gameEffect: brandLayer.logoEffect, companyEffect: brandLayer.logoEffect, cprEffect: brandLayer.cprEffect, format: 'png', gameLanguage: gameLogo?.language ?? 'zh-CN', guidesVisible: true, snapEnabled: true });
 
   useEffect(() => {
-    const dirty = Boolean(asset);
+    const dirty = isCustomWorkbenchDirty(asset, initialDirtySnapshot.current, { gameEnabled, companyEnabled, gameScale, companyScale, gameOffset, companyOffset, cprEnabled, gameEffect, companyEffect, cprEffect, format, gameLanguage, guidesVisible, snapEnabled });
     onDirtyChange?.(dirty);
     return () => onDirtyChange?.(false);
-  }, [asset, onDirtyChange]);
+  }, [asset, companyEffect, companyEnabled, companyOffset, companyScale, cprEffect, cprEnabled, format, gameEffect, gameEnabled, gameLanguage, gameOffset, gameScale, guidesVisible, onDirtyChange, snapEnabled]);
 
-  const group = brandLayer.logoGroup ?? { mode: 'game-only' as const, gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white' as const, sizePreset: 'xl' as const, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'center' as const, lastExplicitPlacement: 'center' as const };
+  const group = { mode: 'game-only' as const, gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white' as const, sizePreset: 'xl' as const, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'center' as const, lastExplicitPlacement: 'center' as const };
+  const customCprState = { enabled: cprEnabled, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect };
   const gameGroup = {
     ...group,
     mode: 'game-only' as const,
@@ -118,7 +122,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
         asset,
         spec: { ...CUSTOM_SPEC, format },
         previewState,
-        brandLayer: { ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: { ...(brandLayer.cprState ?? { enabled: cprEnabled, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect }), enabled: cprEnabled, effect: cprEffect }, logoGroup: gameGroup },
+        brandLayer: { ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: customCprState, logoGroup: gameGroup },
         logoAsset,
         cprAsset,
         companyLogoAsset: undefined,
@@ -131,7 +135,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       if (!result.ok) throw new Error('当前尺寸无法满足 8MB 限制');
       if (companyEnabled && companyLogo) {
         const canvas = await renderBoardToCanvas({ asset, spec: { ...CUSTOM_SPEC, format }, previewState, brandLayer: { ...brandLayer, logoEnabled: false, cprEnabled: false, logoGroup: gameGroup }, format });
-        const gamePlan = buildBoardRenderPlan({ asset, spec: { ...CUSTOM_SPEC, format }, previewState, brandLayer: { ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: { ...(brandLayer.cprState ?? { enabled: cprEnabled, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect }), enabled: cprEnabled, effect: cprEffect }, logoGroup: gameGroup }, cprAsset, gameLogoAsset: selectedGameLogo });
+        const gamePlan = buildBoardRenderPlan({ asset, spec: { ...CUSTOM_SPEC, format }, previewState, brandLayer: { ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: customCprState, logoGroup: gameGroup }, cprAsset, gameLogoAsset: selectedGameLogo });
         const companyPlan = buildBoardRenderPlan({ asset, spec: { ...CUSTOM_SPEC, format }, previewState, brandLayer: { ...brandLayer, logoEnabled: true, cprEnabled: false, logoEffect: companyEffect, logoGroup: companyGroup }, companyLogoAsset: companyLogo });
         await drawBrandLayersToCanvas(canvas, [...gamePlan.layers, ...companyPlan.layers]);
         const maxBytes = 8 * 1024 * 1024;
@@ -183,6 +187,6 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       <button type="button" onClick={() => void exportCurrent()} disabled={!asset}>导出当前画板</button>
       <small>{status}</small>
     </aside>
-    <div className="custom-stage">{asset && previewState ? <div className="custom-canvas-stack">{guidesVisible ? <div className="custom-guides"><span /><span /></div> : null}<BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={cprAsset} brandLayer={{ ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: { ...(brandLayer.cprState ?? { enabled: cprEnabled, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect }), enabled: cprEnabled, effect: cprEffect }, logoGroup: gameGroup }} scale={previewScale} overlayGameLogo={gameEnabled ? selectedGameLogo : undefined} />{gameEnabled ? <div className="custom-drag-layer" style={{ left: gameOffset.x * previewScale, top: gameOffset.y * previewScale }} onPointerDown={(event) => beginDrag('game', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /> : null}{companyEnabled ? <><BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={undefined} brandLayer={{ ...brandLayer, logoEnabled: true, cprEnabled: false, logoEffect: companyEffect, logoGroup: companyGroup }} scale={previewScale} showImage={false} transparent overlayCompanyLogo={companyLogo} /> <div className="custom-drag-layer" style={{ left: companyOffset.x * previewScale, top: companyOffset.y * previewScale }} onPointerDown={(event) => beginDrag('company', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /></> : null}</div> : <div className="empty-state">导入一张图片开始自定义构图</div>}</div>
+    <div className="custom-stage">{asset && previewState ? <div className="custom-canvas-stack">{guidesVisible ? <div className="custom-guides"><span /><span /></div> : null}<BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={cprAsset} brandLayer={{ ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: customCprState, logoGroup: gameGroup }} scale={previewScale} overlayGameLogo={gameEnabled ? selectedGameLogo : undefined} />{gameEnabled ? <div className="custom-drag-layer" style={{ left: gameOffset.x * previewScale, top: gameOffset.y * previewScale }} onPointerDown={(event) => beginDrag('game', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /> : null}{companyEnabled ? <><BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={undefined} brandLayer={{ ...brandLayer, logoEnabled: true, cprEnabled: false, logoEffect: companyEffect, logoGroup: companyGroup }} scale={previewScale} showImage={false} transparent overlayCompanyLogo={companyLogo} /> <div className="custom-drag-layer" style={{ left: companyOffset.x * previewScale, top: companyOffset.y * previewScale }} onPointerDown={(event) => beginDrag('company', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /></> : null}</div> : <div className="empty-state">导入一张图片开始自定义构图</div>}</div>
   </section>;
 }
