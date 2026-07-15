@@ -1,3 +1,5 @@
+import { createContext, useContext } from 'react';
+
 export type AppActivity = {
   exporting: boolean;
   focusEditorOpen: boolean;
@@ -28,4 +30,3 @@ export function hasUnsavedActivity(activity: AppActivity): boolean {
 
 export const AppActivityContext = createContext<AppActivity>(IDLE_APP_ACTIVITY);
 export function useAppActivity(): AppActivity { return useContext(AppActivityContext); }
-import { createContext, useContext } from 'react';

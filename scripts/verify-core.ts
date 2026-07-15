@@ -1,4 +1,6 @@
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   buildOutputFileName,
   classifyAspect,
@@ -11,6 +13,24 @@ import {
   renderBrandLayer,
   sanitizeFileNamePart
 } from '../src/core';
+
+const appActivitySource = readFileSync(fileURLToPath(new URL('../src/app/appActivity.ts', import.meta.url)), 'utf8');
+const appActivityLines = appActivitySource.split(/\r?\n/);
+const firstRuntimeLine = appActivityLines.findIndex((line) => {
+  const trimmed = line.trim();
+  return trimmed !== '' && !trimmed.startsWith('import ');
+});
+assert.ok(firstRuntimeLine >= 0, 'appActivity should contain runtime declarations');
+assert.equal(
+  appActivityLines.findIndex((line) => line.includes("from 'react'")),
+  0,
+  'React imports must be initialized before appActivity runtime declarations'
+);
+assert.equal(
+  appActivityLines.slice(firstRuntimeLine).some((line) => line.trim().startsWith('import ')),
+  false,
+  'appActivity must not declare imports after runtime declarations'
+);
 
 const parsed = parseSpecText(`
 1080x1920 jpg 1200KB
