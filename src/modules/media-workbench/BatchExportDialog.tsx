@@ -3,7 +3,7 @@ import {
   DEFAULT_MAX_SIZE_KB, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveCprState,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
 } from '../../core';
-import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../../services/export';
+import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard, exportSequentially } from '../../services/export';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { ExportDialog } from '../../components/ExportDialog';
 import { BoardCanvas } from '../../components/canvas';
@@ -140,28 +140,20 @@ export function BatchExportDialog({
 
     setExporting(true);
     setProgress({ current: 0, total: selectedRows.length });
-    const failures: string[] = [];
-    let completed = 0;
-    let processed = 0;
-
-    for (const row of selectedRows) {
+    const batchResult = await exportSequentially(selectedRows, async (row) => {
       const previewState = previewStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
       if (!previewState) {
-        failures.push(`${row.fileName}：缺少画板预览状态`);
-        processed += 1;
-        setProgress({ current: processed, total: selectedRows.length });
-        continue;
+        throw new Error(`${row.fileName}：缺少画板预览状态`);
       }
-      try {
-        const boardBrandState = boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
-        const boardLogoGroup = boardBrandState?.logo ?? brandLayer.logoGroup;
-        const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
-          ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
-        const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
-        const boardGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === exportLanguage);
-        if (brandLayer.logoEnabled && !boardGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
-        const languageGroup = { ...boardLogoGroup, gameLogoLanguage: exportLanguage, gameLogoId: boardGameLogo?.id };
-        const result = await exportBoard({
+      const boardBrandState = boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
+      const boardLogoGroup = boardBrandState?.logo ?? brandLayer.logoGroup;
+      const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
+        ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
+      const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
+      const boardGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === exportLanguage);
+      if (brandLayer.logoEnabled && !boardGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
+      const languageGroup = { ...boardLogoGroup, gameLogoLanguage: exportLanguage, gameLogoId: boardGameLogo?.id };
+      const result = await exportBoard({
           asset: row.asset,
           spec: row.spec,
           previewState,
@@ -175,38 +167,22 @@ export function BatchExportDialog({
           maxBytes: row.effectiveMaxSizeKb * 1024,
           autoCompressJpeg,
           minJpegQuality: 0.4
-        });
-        if (!result.ok) {
-          const maxLabel = `${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB`;
-          throw new Error(
-            result.reason === 'png-over-limit'
-              ? `PNG 实际为 ${formatMegabytes(result.size)}，超过 ${maxLabel}；请改用 JPG 或调整尺寸`
-              : `在保持当前尺寸时无法压缩到 ${maxLabel} 以下，请降低尺寸或调整内容`
-          );
-        }
-        await saveBlobToOutputTarget(outputTarget, row.fileName, result.blob);
-        if (outputTarget.kind === 'downloads') {
-          await new Promise((resolve) => setTimeout(resolve, 180));
-        }
-        completed += 1;
-        if (result.compressed && result.quality) {
-          failures.push(`__info__${row.fileName}：已自动压缩至 ${formatMegabytes(result.blob.size)}（${Math.round(result.quality * 100)}%）`);
-        }
-      } catch (error) {
-        failures.push(`${row.fileName}：${error instanceof Error ? error.message : '导出失败'}`);
+      });
+      if (!result.ok) {
+        const maxLabel = `${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB`;
+        throw new Error(result.reason === 'png-over-limit' ? `PNG 实际为 ${formatMegabytes(result.size)}，超过 ${maxLabel}；请改用 JPG 或调整尺寸` : `在保持当前尺寸时无法压缩到 ${maxLabel} 以下，请降低尺寸或调整内容`);
       }
-      processed += 1;
-      setProgress({ current: processed, total: selectedRows.length });
-    }
+      await saveBlobToOutputTarget(outputTarget, row.fileName, result.blob);
+      if (outputTarget.kind === 'downloads') await new Promise((resolve) => setTimeout(resolve, 180));
+      return { info: result.compressed && result.quality ? `${row.fileName}：已自动压缩至 ${formatMegabytes(result.blob.size)}（${Math.round(result.quality * 100)}%）` : undefined };
+    }, setProgress);
 
     setExporting(false);
-    const actualFailures = failures.filter((item) => !item.startsWith('__info__'));
-    const compressionInfo = failures.find((item) => item.startsWith('__info__'))?.replace('__info__', '');
-    if (actualFailures.length) {
-      setErrorMessage(`已导出 ${completed} 个文件，${actualFailures.length} 个失败。${actualFailures[0]}`);
+    if (batchResult.failures.length) {
+      setErrorMessage(`已导出 ${batchResult.completed} 个文件，${batchResult.failures.length} 个失败。${batchResult.failures[0].message}`);
       return;
     }
-    onComplete(compressionInfo ?? `已导出 ${completed} 个文件`);
+    onComplete(batchResult.info[0]?.message ?? `已导出 ${batchResult.completed} 个文件`);
     onClose();
   }
 
