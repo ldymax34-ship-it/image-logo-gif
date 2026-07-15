@@ -74,6 +74,7 @@ import {
 } from '../../components';
 import { BoardCanvas } from '../../components/canvas';
 import { AppShell } from '../../app/AppShell';
+import { IDLE_APP_ACTIVITY } from '../../app/appActivity';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
 import { GifCompressorPlaceholder } from '../../modules/gif-compressor';
 import { CustomWorkbench } from '../../modules/custom-workbench/CustomWorkbench';
@@ -570,6 +571,7 @@ export function MediaWorkbench() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | undefined>();
   const [newPresetName, setNewPresetName] = useState('');
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState<string>('');
   const [importFailures, setImportFailures] = useState<string[]>([]);
   const [resourceUploadLanguage, setResourceUploadLanguage] = useState<BrandLanguage>('zh-CN');
@@ -893,7 +895,7 @@ export function MediaWorkbench() {
 
   return (
     <>
-    <AppShell activeModule={activeModule} onModuleChange={setActiveModule} header={<WorkbenchHeader
+    <AppShell activeModule={activeModule} onModuleChange={setActiveModule} activity={{ ...IDLE_APP_ACTIVITY, exporting, focusEditorOpen: Boolean(focusAsset && focusSpec), settingsDialogOpen, confirmationDialogOpen: Boolean(pendingConfirmation) }} header={<WorkbenchHeader
         assetCount={assets.length}
         boardCount={specs.length}
         previewCount={Object.keys(workbenchState.previewStates).length}
@@ -1180,6 +1182,7 @@ export function MediaWorkbench() {
           boardBrandStates={boardBrandStates}
           onClose={() => setExportDialogOpen(false)}
           onComplete={setMessage}
+          onExportingChange={setExporting}
         />
       )}
       {settingsDialogOpen && (

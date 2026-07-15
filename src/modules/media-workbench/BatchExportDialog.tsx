@@ -16,7 +16,8 @@ export function BatchExportDialog({
   brandLayer,
   boardBrandStates,
   onClose,
-  onComplete
+  onComplete,
+  onExportingChange
 }: {
   assets: MaterialAsset[];
   specs: MaterialSpec[];
@@ -26,6 +27,7 @@ export function BatchExportDialog({
   boardBrandStates: BoardBrandStateMap;
   onClose: () => void;
   onComplete: (message: string) => void;
+  onExportingChange?: (exporting: boolean) => void;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const [exportAllLanguages, setExportAllLanguages] = useState(false);
@@ -42,6 +44,8 @@ export function BatchExportDialog({
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => { onExportingChange?.(exporting); }, [exporting, onExportingChange]);
 
   useEffect(() => {
     setSelectedIds(new Set(items.map((item) => item.id)));
