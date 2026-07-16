@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_MAX_SIZE_KB, EXPORT_LANGUAGES, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
-  type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
+  DEFAULT_MAX_SIZE_KB, EXPORT_LANGUAGES, applyLanguageLogoScale, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
+  type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type BrandSettingsV1, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
 } from '../../core';
 import { buildExportMatrixForLanguages, getSelectedExportLanguages, resolveExportLanguages, type ExportLanguageSelection, type ExportSizePolicy, type MediaExportRow } from '../../services/export';
 import { ExportDialog } from '../../components/ExportDialog';
@@ -14,6 +14,7 @@ export function BatchExportDialog({
   previewStates,
   brandAssets,
   brandLayer,
+  brandSettings,
   boardBrandStates,
   baseLanguage,
   onClose,
@@ -25,6 +26,7 @@ export function BatchExportDialog({
   previewStates: Record<string, BoardPreviewState>;
   brandAssets: BrandAsset[];
   brandLayer: BrandLayerState;
+  brandSettings: BrandSettingsV1;
   boardBrandStates: BoardBrandStateMap;
   baseLanguage: BrandLanguage;
   onClose: () => void;
@@ -69,6 +71,9 @@ export function BatchExportDialog({
   const activeLayer = activeBoardState ? { ...brandLayer, logoEnabled: activeBoardState.logoEnabled ?? brandLayer.logoEnabled, logoEffect: activeBoardState.logoEffect ?? brandLayer.logoEffect } : brandLayer;
   const activeAssets = activeBoardLogoGroup
     ? resolveBoardBrandAssets({ boardBrandState: { logo: activeBoardLogoGroup, cpr: activeCprState, logoEnabled: activeBoardState?.logoEnabled, logoEffect: activeBoardState?.logoEffect }, brandCatalog: brandAssets, brandLayer: activeLayer, languageOverride: activeLanguage })
+    : undefined;
+  const activeLanguageLogoGroup = activeBoardLogoGroup
+    ? { ...applyLanguageLogoScale(activeBoardLogoGroup, activeLanguage, brandSettings), gameLogoId: activeAssets?.gameLogo?.id }
     : undefined;
 
   const rows = items.map((item, index) => {
@@ -147,6 +152,7 @@ export function BatchExportDialog({
       boardBrandStates,
       brandAssets,
       brandLayer,
+      brandSettings,
       format,
       quality,
       autoCompressJpeg
@@ -218,7 +224,7 @@ export function BatchExportDialog({
                   cprAsset={activeAssets?.cpr}
                   brandLayer={{
                     ...activeLayer,
-                    logoGroup: activeBoardLogoGroup,
+                    logoGroup: activeLanguageLogoGroup,
                     cprState: activeCprState,
                     cprEnabled: activeCprState.enabled
                   }}

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
   DEFAULT_BRAND_SETTINGS,
+  EXPORT_LANGUAGES,
+  getBrandLanguageLabel,
   type AspectFamily,
   type BrandLanguage,
   type BrandPlacement,
@@ -109,6 +111,14 @@ export function BrandSettingsDialog({
     }));
   }
 
+  function patchLanguageScale(language: BrandLanguage, value: number) {
+    const scale = Math.min(2, Math.max(0.5, Number.isFinite(value) ? value : 1));
+    setDraft((previous) => ({
+      ...previous,
+      logoScaleByLanguage: { ...previous.logoScaleByLanguage, [language]: scale }
+    }));
+  }
+
   function commit() {
     onChange(draft);
     onClose();
@@ -142,7 +152,7 @@ export function BrandSettingsDialog({
           <div>
             <span className="dialog-kicker">品牌设置</span>
             <h2 id="brand-settings-title">默认配置</h2>
-            <small>仅影响新工作区默认值；品牌资源仅保存在当前打开的工作区</small>
+            <small>默认组合影响新画板；语种大小会用于语种切换和多语言导出</small>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭设置" title="关闭">×</button>
         </div>
@@ -202,6 +212,21 @@ export function BrandSettingsDialog({
                 ))}
               </select>
             </label>
+          </div>
+
+          <div className="settings-group">
+            <h3>各语种 Logo 视觉大小</h3>
+            <small className="inline-note">以 1.00 为基准，用于修正不同语种 Logo 的视觉体量。</small>
+            <div className="language-logo-scale-grid">
+              {EXPORT_LANGUAGES.map((language) => {
+                const value = draft.logoScaleByLanguage[language] ?? 1;
+                return <label key={language} className="language-logo-scale-field">
+                  <span>{getBrandLanguageLabel(language)}</span>
+                  <input type="range" min="0.5" max="2" step="0.01" value={value} onChange={(event) => patchLanguageScale(language, Number(event.target.value))} />
+                  <input aria-label={`${getBrandLanguageLabel(language)} Logo 大小`} type="number" min="0.5" max="2" step="0.01" value={Number(value.toFixed(2))} onChange={(event) => patchLanguageScale(language, Number(event.target.value))} />
+                </label>;
+              })}
+            </div>
           </div>
 
           <div className="settings-group">

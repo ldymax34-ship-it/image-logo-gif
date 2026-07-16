@@ -29,6 +29,8 @@
 - Logo 高级样式提供独立单项实时预览
 - 尺寸草稿与确认应用流程，避免实时改文本破坏画板状态
 - Logo / CPR 真实语种切换与位置 / 大小基础控制
+- 各语种 Logo 独立视觉倍率，多语种预览与导出自动应用语种校正
+- 导出文件名使用 `zh / tw / en / ja / ko / de / fr / es / th / PT` 语言缩写
 - 内置尺寸套组与本地自定义常用套组
 - 总览单击选择，双击画板进入工作区内聚焦调整
 - 聚焦调整使用 `FocusSession` 草稿状态，支持取消、放弃修改与保存并返回
@@ -54,6 +56,7 @@ macOS 用户可以直接双击：
 
 Windows 用户可以直接双击：
 
+- `start-windows-preview.bat`（共享盘测试推荐，会先同步到 Windows 本机缓存）
 - `start-workbench.cmd`
 - `stop-workbench.cmd`
 
@@ -65,6 +68,8 @@ npm stop
 ```
 
 首次启动如果缺少依赖，启动脚本会自动执行本地安装。服务固定运行在 `http://127.0.0.1:5173/`。
+
+`start-windows-preview.bat` 需要 Windows 电脑预先安装 Node.js LTS。它不会直接使用共享盘里可能由 macOS 产生的 `node_modules`，而是将源码同步到 `%LOCALAPPDATA%\BrandMaterialWorkbench\preview` 后再启动。
 
 ## 新工具目标
 

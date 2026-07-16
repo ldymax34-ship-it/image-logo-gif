@@ -29,10 +29,10 @@ export function useMediaBrandActions(input: {
     const source = input.boardBrandStates[input.focusPreviewKey ?? '']; if (source) input.dispatchBoardBrand({ type: 'apply-brand', keys, source: { ...source, logo: nextLogoGroup } });
     input.setMessage(`已将品牌位置应用到 ${keys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
   }
-  function changeBrandLanguage(language: BrandLanguage) {
+  function changeBrandLanguage(language: BrandLanguage, scale?: number) {
     const selectedId = resolvePreferredBrandAssetId(input.brandAssets, 'logo', language, input.brandLayer.selectedLogoId);
     input.setBrandLayer((previous) => ({ ...previous, logoLanguage: language, selectedLogoId: selectedId }));
-    if (input.selectedBoardKey) input.dispatchBoardBrand({ type: 'update-logo', key: input.selectedBoardKey, logo: { ...normalizeLogoGroup(input.boardBrandStates[input.selectedBoardKey]?.logo ?? input.defaultLogoGroup), gameLogoLanguage: language, gameLogoId: selectedId } });
+    if (input.selectedBoardKey) input.dispatchBoardBrand({ type: 'update-logo', key: input.selectedBoardKey, logo: { ...normalizeLogoGroup(input.boardBrandStates[input.selectedBoardKey]?.logo ?? input.defaultLogoGroup), gameLogoLanguage: language, gameLogoId: selectedId, scale } });
   }
   function applyCompanyLogoReplacement(assetId: string) {
     for (const [key, state] of Object.entries(input.boardBrandStates)) {

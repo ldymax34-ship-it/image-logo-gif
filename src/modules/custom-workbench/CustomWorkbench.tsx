@@ -5,6 +5,7 @@ import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileS
 import { BoardCanvas } from '../../components/canvas';
 
 const CUSTOM_SPEC: MaterialSpec = { id: 'custom-canvas', name: '自定义画板', width: 1920, height: 1080, format: 'png' };
+export const CUSTOM_LOGO_MAX_SCALE = 3;
 export type CustomWorkbenchDirtySnapshot = { gameEnabled: boolean; companyEnabled: boolean; gameScale: number; companyScale: number; gameOffset: { x: number; y: number }; companyOffset: { x: number; y: number }; cprEnabled: boolean; gameEffect: BrandEffectState; companyEffect: BrandEffectState; cprEffect: BrandEffectState; format: MaterialFormat; gameLanguage: BrandLanguage; guidesVisible: boolean; snapEnabled: boolean };
 export function isCustomWorkbenchDirty(asset?: MaterialAsset, initial?: CustomWorkbenchDirtySnapshot, current?: CustomWorkbenchDirtySnapshot): boolean { return Boolean(asset) || Boolean(initial && current && JSON.stringify(initial) !== JSON.stringify(current)); }
 
@@ -170,12 +171,12 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       <button type="button" className="primary-button" onClick={() => inputRef.current?.click()}>导入图片</button>
       <label className="toggle"><input type="checkbox" checked={gameEnabled} onChange={(event) => setGameEnabled(event.target.checked)} />游戏 Logo</label>
       <label className="control-row"><span>游戏语种</span><select value={gameLanguage} onChange={(event) => setGameLanguage(event.target.value as BrandLanguage)}>{gameLogos.map((item) => <option key={item.id} value={item.language}>{getBrandLanguageLabel(item.language)}</option>)}</select></label>
-      {numberControl('游戏大小', gameScale, .6, 1.7, .01, setGameScale)}
+      {numberControl('游戏大小', gameScale, .6, CUSTOM_LOGO_MAX_SCALE, .01, setGameScale)}
       {numberControl('游戏横移', gameOffset.x, 0, 1500, 1, (x) => setGameOffset((previous) => ({ ...previous, x })))}
       {numberControl('游戏纵移', gameOffset.y, 0, 900, 1, (y) => setGameOffset((previous) => ({ ...previous, y })))}
       <BrandEffectControls title="游戏 Logo" effect={gameEffect} onChange={setGameEffect} />
       <label className="toggle"><input type="checkbox" checked={companyEnabled} onChange={(event) => setCompanyEnabled(event.target.checked)} />公司 Logo</label>
-      {numberControl('公司大小', companyScale, .6, 1.7, .01, setCompanyScale)}
+      {numberControl('公司大小', companyScale, .6, CUSTOM_LOGO_MAX_SCALE, .01, setCompanyScale)}
       {numberControl('公司横移', companyOffset.x, 0, 1500, 1, (x) => setCompanyOffset((previous) => ({ ...previous, x })))}
       {numberControl('公司纵移', companyOffset.y, 0, 900, 1, (y) => setCompanyOffset((previous) => ({ ...previous, y })))}
       <BrandEffectControls title="公司 Logo" effect={companyEffect} onChange={setCompanyEffect} />

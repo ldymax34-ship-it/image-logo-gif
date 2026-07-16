@@ -25,6 +25,37 @@ const WINDOWS_RESERVED_NAMES = new Set([
   'LPT9'
 ]);
 
+export const OUTPUT_LANGUAGE_CODES: Readonly<Record<string, string>> = {
+  '中文': 'zh',
+  '简中': 'zh',
+  'zh-CN': 'zh',
+  '繁中': 'tw',
+  'zh-TW': 'tw',
+  '英语': 'en',
+  '英文': 'en',
+  'en-US': 'en',
+  '日语': 'ja',
+  '日文': 'ja',
+  'ja-JP': 'ja',
+  '韩语': 'ko',
+  '韩文': 'ko',
+  'ko-KR': 'ko',
+  '德语': 'de',
+  'de-DE': 'de',
+  '法语': 'fr',
+  'fr-FR': 'fr',
+  '西班牙语': 'es',
+  'es-ES': 'es',
+  '泰语': 'th',
+  'th-TH': 'th',
+  '葡语': 'PT',
+  'pt-PT': 'PT'
+};
+
+export function getOutputLanguageCode(language: string): string {
+  return OUTPUT_LANGUAGE_CODES[language] ?? language;
+}
+
 export type FileNameOptions = {
   batchName?: string;
   sourceName?: string;
@@ -53,7 +84,7 @@ export function buildOutputFileName(spec: MaterialSpec, options: FileNameOptions
     index,
     options.batchName,
     options.sourceName,
-    options.language,
+    options.language ? getOutputLanguageCode(options.language) : undefined,
     spec.name || `${spec.width}x${spec.height}`,
     `${spec.width}x${spec.height}`
   ].filter(Boolean);

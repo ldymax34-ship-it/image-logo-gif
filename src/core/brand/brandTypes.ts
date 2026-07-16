@@ -70,6 +70,8 @@ export type BrandSettingsV1 = {
   version: 1;
   defaultLogoGroupMode: LogoGroupMode;
   defaultLanguage: BrandLanguage;
+  /** Per-language visual correction applied when switching or exporting Logo resources. */
+  logoScaleByLanguage: Record<BrandLanguage, number>;
   defaultColorMode: Exclude<BrandColorMode, 'original'>;
   defaultSize: BrandSize;
   defaultPlacementByAspect: Record<AspectFamily, Exclude<BrandPlacement, 'custom'>>;

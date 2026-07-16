@@ -3,6 +3,7 @@ import type { BrandColorMode, BrandSettingsV1, CprPlacement, CprState, LogoGroup
 
 export const DEFAULT_BRAND_SETTINGS: BrandSettingsV1 = {
   version: 1, defaultLogoGroupMode: 'game-only', defaultLanguage: 'zh-CN', defaultColorMode: 'white', defaultSize: 'standard',
+  logoScaleByLanguage: { 'zh-CN': 1, 'zh-TW': 1, 'ja-JP': 1, 'ko-KR': 1, 'en-US': 1, custom: 1 },
   defaultPlacementByAspect: { landscape: 'corner-right', square: 'corner-right', portrait: 'corner-right' },
   cprEnabled: true, defaultCprPlacement: 'bottom-right', defaultCprColorMode: 'white',
   gridVisible: false, safeAreaVisible: true, guidesVisible: true, snapEnabled: true, snapThreshold: 8
@@ -69,6 +70,22 @@ export function resolveCprState(layer: BrandLayerState): CprState {
 
 export function normalizeLogoGroup(group: LogoGroupState): LogoGroupState {
   return { ...group, scale: group.scale ?? 1, companyLogoScale: group.companyLogoScale ?? 'match' };
+}
+
+export function getLanguageLogoScale(settings: BrandSettingsV1, language: BrandLanguage): number {
+  const value = settings.logoScaleByLanguage[language];
+  return Number.isFinite(value) ? Math.min(3, Math.max(0.5, value)) : 1;
+}
+
+/** Keeps the board's manual adjustment while replacing the language-specific visual correction. */
+export function applyLanguageLogoScale(group: LogoGroupState, language: BrandLanguage, settings: BrandSettingsV1): LogoGroupState {
+  const sourceScale = getLanguageLogoScale(settings, group.gameLogoLanguage);
+  const targetScale = getLanguageLogoScale(settings, language);
+  return {
+    ...group,
+    gameLogoLanguage: language,
+    scale: ((group.scale ?? 1) / sourceScale) * targetScale
+  };
 }
 
 /** 把当前 CPR 配色档位转成渲染用的纯色（original 返回 undefined 表示保留原色）。 */

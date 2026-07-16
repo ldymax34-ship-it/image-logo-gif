@@ -1,5 +1,6 @@
 import {
   formatMegabytes,
+  applyLanguageLogoScale,
   getBoardPreviewKey,
   getBrandLanguageLabel,
   resolveBoardBrandAssets,
@@ -7,6 +8,7 @@ import {
   type BoardPreviewState,
   type BrandAsset,
   type BrandLanguage,
+  type BrandSettingsV1,
   type BrandLayerState,
   type MaterialAsset,
   type MaterialFormat,
@@ -60,6 +62,7 @@ export type MediaExportRequest = {
   boardBrandStates: BoardBrandStateMap;
   brandAssets: BrandAsset[];
   brandLayer: BrandLayerState;
+  brandSettings: BrandSettingsV1;
   format: MaterialFormat;
   quality: number;
   autoCompressJpeg: boolean;
@@ -78,7 +81,7 @@ export async function exportMediaBatch(request: MediaExportRequest): Promise<Bat
     const boardAssets = resolveBoardBrandAssets({ boardBrandState, brandCatalog: request.brandAssets, brandLayer: boardLayer, languageOverride: exportLanguage });
     if (boardAssets.missingGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
     if (boardAssets.missingCpr) throw new Error('缺少 CPR 资源');
-    const languageGroup = { ...boardBrandState.logo, gameLogoLanguage: exportLanguage, gameLogoId: boardAssets.gameLogo?.id };
+    const languageGroup = { ...applyLanguageLogoScale(boardBrandState.logo, exportLanguage, request.brandSettings), gameLogoId: boardAssets.gameLogo?.id };
     const result = await exportBoard({
       asset: row.asset,
       spec: row.spec,

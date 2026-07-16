@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect, EXPORT_LANGUAGES, migrateBoardBrandStates
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect, EXPORT_LANGUAGES, migrateBoardBrandStates, applyLanguageLogoScale, getOutputLanguageCode
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -291,6 +291,19 @@ describe('core 0.1.x foundation', () => {
       { batchName: '批次:A', index: 0 }
     );
     expect(fileName).toBe('01_批次_A_CON_测试_900x383.jpg');
+  });
+
+  it('uses the production language codes in exported file names', () => {
+    expect(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR', 'de-DE', 'fr-FR', 'es-ES', 'th-TH', 'pt-PT'].map(getOutputLanguageCode)).toEqual(['zh', 'tw', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'th', 'PT']);
+    expect(buildOutputFileName({ id: '1', name: '横版', width: 1920, height: 1080, format: 'png' }, { language: 'zh-CN' })).toBe('zh_横版_1920x1080.png');
+  });
+
+  it('keeps manual Logo scaling while applying per-language visual correction', () => {
+    const settings = { ...DEFAULT_BRAND_SETTINGS, logoScaleByLanguage: { ...DEFAULT_BRAND_SETTINGS.logoScaleByLanguage, 'zh-CN': 1, 'en-US': 1.4 } };
+    const chinese = { ...createDefaultLogoGroup('zh-CN'), scale: 1.2 };
+    const english = applyLanguageLogoScale(chinese, 'en-US', settings);
+    expect(english.scale).toBeCloseTo(1.68);
+    expect(applyLanguageLogoScale(english, 'zh-CN', settings).scale).toBeCloseTo(1.2);
   });
 
   it('removes path traversal and windows-illegal filename characters', () => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
+  applyLanguageLogoScale,
   buildOutputFileName,
   classifyAspect,
   createDefaultCprState,
@@ -9,6 +10,7 @@ import {
   createInitialCropState,
   formatFileSize,
   getBoardPreviewKey,
+  getLanguageLogoScale,
   parseSpecText,
   resolveBoardBrandAssets,
   saveCustomPresetTemplates,
@@ -115,6 +117,7 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
     gameLogoLanguage: settings.defaultLanguage,
     colorMode: settings.defaultColorMode,
     sizePreset: settings.defaultSize,
+    scale: getLanguageLogoScale(settings, settings.defaultLanguage),
     companyLogoScale: 'match',
     gapUnits: 0.5,
     placement,
@@ -122,8 +125,18 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
   };
 }
 
+type BrandScopeLayer = 'logo' | 'cpr';
+type BrandScopeKind = 'same-spec' | 'same-asset';
+type PendingBrandScope = {
+  layer: BrandScopeLayer;
+  scope: BrandScopeKind;
+  keys: string[];
+  targetDescription: string;
+};
+
 export function MediaWorkbench({ active }: { active: boolean }) {
   const [pendingModuleChange, setPendingModuleChange] = useState<WorkbenchModule>();
+  const [pendingBrandScope, setPendingBrandScope] = useState<PendingBrandScope>();
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
@@ -211,10 +224,10 @@ export function MediaWorkbench({ active }: { active: boolean }) {
       exporting,
       focusEditorOpen: Boolean(focusAsset && focusSpec),
       focusEditorDirty,
-      confirmationDialogOpen: Boolean(pendingConfirmation)
+      confirmationDialogOpen: Boolean(pendingConfirmation || pendingBrandScope)
     });
     return () => updateActivity({ exporting: false, focusEditorOpen: false, focusEditorDirty: false, confirmationDialogOpen: false });
-  }, [exporting, focusAsset, focusSpec, focusEditorDirty, pendingConfirmation, updateActivity]);
+  }, [exporting, focusAsset, focusSpec, focusEditorDirty, pendingBrandScope, pendingConfirmation, updateActivity]);
 
   useEffect(() => {
     setBrandLayer((previous) => {
@@ -279,45 +292,79 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   }
 
   function updateFocusedLanguage(language: BrandLanguage) {
-    if (!focusSession) return changeBrandLanguage(language);
+    if (!focusSession) {
+      const next = applyLanguageLogoScale(selectedLogoGroup, language, brandSettings);
+      return changeBrandLanguage(language, next.scale);
+    }
     const gameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === language);
-    setFocusSession(updateFocusLogo(focusSession, { ...focusSession.draft.brand.logo, gameLogoLanguage: language, gameLogoId: gameLogo?.id }));
+    const next = applyLanguageLogoScale(focusSession.draft.brand.logo, language, brandSettings);
+    setFocusSession(updateFocusLogo(focusSession, { ...next, gameLogoId: gameLogo?.id }));
   }
 
-  function sameSpecKeys() {
-    const sourceSpecId = selectedSpec?.id;
-    return sourceSpecId ? assets.map((asset) => getBoardPreviewKey(asset.id, sourceSpecId)) : [];
+  function sameSpecTargetKeys() {
+    const sourceSpecId = focusSession?.specId ?? selectedSpec?.id;
+    const sourceAssetId = focusSession?.assetId ?? selectedAsset?.id;
+    return sourceSpecId && sourceAssetId ? assets.filter((asset) => asset.id !== sourceAssetId).map((asset) => getBoardPreviewKey(asset.id, sourceSpecId)) : [];
   }
 
-  function sameAssetKeys() {
-    return selectedAsset ? specs.map((spec) => getBoardPreviewKey(selectedAsset.id, spec.id)) : [];
+  function sameAssetTargetKeys() {
+    const sourceAssetId = focusSession?.assetId ?? selectedAsset?.id;
+    const sourceSpecId = focusSession?.specId ?? selectedSpec?.id;
+    return sourceAssetId && sourceSpecId ? specs.filter((spec) => spec.id !== sourceSpecId).map((spec) => getBoardPreviewKey(sourceAssetId, spec.id)) : [];
   }
 
   function applyFocusLogo(keys: string[]) {
     const source = focusSession?.draft.brand.logo ?? selectedLogoGroup;
     const visual = focusSession?.draft.brandLayer ?? { logoEnabled: selectedBoardLayer.logoEnabled, logoEffect: selectedBoardLayer.logoEffect };
-    if (selectedBoardKey) {
-      dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: source });
-      dispatchBoardBrand({ type: 'update-logo-visual', key: selectedBoardKey, logoEnabled: visual.logoEnabled, logoEffect: visual.logoEffect });
+    const sourceBoardKey = focusSession?.boardKey ?? selectedBoardKey;
+    if (sourceBoardKey) {
+      dispatchBoardBrand({ type: 'update-logo', key: sourceBoardKey, logo: source });
+      dispatchBoardBrand({ type: 'update-logo-visual', key: sourceBoardKey, logoEnabled: visual.logoEnabled, logoEffect: visual.logoEffect });
     }
     dispatchBoardBrand({ type: 'apply-logo-to-scope', keys, logo: source });
     dispatchBoardBrand({ type: 'apply-logo-visual-to-scope', keys, logoEnabled: visual.logoEnabled, logoEffect: visual.logoEffect });
     if (focusSession) setFocusSession(rebaseFocusLogo(focusSession));
-    setMessage(`已应用到另外 ${Math.max(0, keys.length - 1)} 个画板`);
+    setMessage(`已同步 Logo 到 ${keys.length} 个画板`);
   }
 
   function applyFocusCpr(keys: string[]) {
     const source = focusSession?.draft.brand.cpr ?? selectedCprState;
-    if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: source });
+    const sourceBoardKey = focusSession?.boardKey ?? selectedBoardKey;
+    if (sourceBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: sourceBoardKey, cpr: source });
     dispatchBoardBrand({ type: 'apply-cpr-to-scope', keys, cpr: source });
     if (focusSession) setFocusSession(rebaseFocusCpr(focusSession));
-    setMessage(`已应用到另外 ${Math.max(0, keys.length - 1)} 个画板`);
+    setMessage(`已同步 CPR 到 ${keys.length} 个画板`);
   }
 
-  function applyLogoToSameSpec() { applyFocusLogo(sameSpecKeys()); }
-  function applyCprToSameSpec() { applyFocusCpr(sameSpecKeys()); }
-  function applyLogoToSameAsset() { applyFocusLogo(sameAssetKeys()); }
-  function applyCprToSameAsset() { applyFocusCpr(sameAssetKeys()); }
+  function requestBrandScope(layer: BrandScopeLayer, scope: BrandScopeKind) {
+    const keys = scope === 'same-spec' ? sameSpecTargetKeys() : sameAssetTargetKeys();
+    if (!keys.length) {
+      setMessage(scope === 'same-spec' ? '没有其他素材包含当前尺寸' : '当前素材没有其他尺寸画板');
+      return;
+    }
+    const sourceSpec = focusSpec ?? selectedSpec;
+    const sourceAsset = focusAsset ?? selectedAsset;
+    setPendingBrandScope({
+      layer,
+      scope,
+      keys,
+      targetDescription: scope === 'same-spec'
+        ? `其他素材中的 ${sourceSpec?.width ?? '-'} × ${sourceSpec?.height ?? '-'} 画板`
+        : `素材“${sourceAsset?.fileName ?? '当前素材'}”的其他尺寸画板`
+    });
+  }
+
+  function confirmBrandScope() {
+    if (!pendingBrandScope) return;
+    if (pendingBrandScope.layer === 'logo') applyFocusLogo(pendingBrandScope.keys);
+    else applyFocusCpr(pendingBrandScope.keys);
+    setPendingBrandScope(undefined);
+  }
+
+  function applyLogoToSameSpec() { requestBrandScope('logo', 'same-spec'); }
+  function applyCprToSameSpec() { requestBrandScope('cpr', 'same-spec'); }
+  function applyLogoToSameAsset() { requestBrandScope('logo', 'same-asset'); }
+  function applyCprToSameAsset() { requestBrandScope('cpr', 'same-asset'); }
 
   const brandControls = <BrandControlsPanel
     logoGroup={focusSession?.draft.brand.logo ?? selectedLogoGroup}
@@ -560,6 +607,26 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           onConfirm={confirmPendingAction}
         />
       )}
+      {pendingBrandScope && (
+        <ConfirmationDialog
+          title={`同步 ${pendingBrandScope.layer === 'logo' ? 'Logo' : 'CPR'} 到${pendingBrandScope.scope === 'same-spec' ? '同尺寸' : '同素材'}画板`}
+          message={`将覆盖 ${pendingBrandScope.keys.length} 个目标画板中已有的 ${pendingBrandScope.layer === 'logo' ? 'Logo' : 'CPR'} 设置。`}
+          details={pendingBrandScope.layer === 'logo'
+            ? [
+                `目标：${pendingBrandScope.targetDescription}`,
+                '同步：组合与语种、位置、大小、显示状态、高级效果',
+                '不影响：图片裁切、CPR、输出规格'
+              ]
+            : [
+                `目标：${pendingBrandScope.targetDescription}`,
+                '同步：位置、大小、显示状态、颜色、高级效果',
+                '不影响：图片裁切、Logo、输出规格'
+              ]}
+          confirmLabel={`确认同步 ${pendingBrandScope.keys.length} 个画板`}
+          onCancel={() => setPendingBrandScope(undefined)}
+          onConfirm={confirmBrandScope}
+        />
+      )}
       {exportDialogOpen && (
         <BatchExportDialog
           assets={assets}
@@ -567,6 +634,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           previewStates={previewStates}
           brandAssets={brandAssets}
           brandLayer={brandLayer}
+          brandSettings={brandSettings}
           boardBrandStates={boardBrandStates}
           baseLanguage={selectedLogoGroup.gameLogoLanguage}
           onClose={() => setExportDialogOpen(false)}

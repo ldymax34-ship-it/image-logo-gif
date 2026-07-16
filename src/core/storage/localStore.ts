@@ -38,7 +38,12 @@ export function loadBrandSettings(): BrandSettingsV1 {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(BRAND_SETTINGS_STORAGE_KEY) ?? 'null') as Partial<BrandSettingsV1> | null;
     if (!parsed || parsed.version !== 1) return DEFAULT_BRAND_SETTINGS;
-    return { ...DEFAULT_BRAND_SETTINGS, ...parsed, defaultPlacementByAspect: { ...DEFAULT_BRAND_SETTINGS.defaultPlacementByAspect, ...parsed.defaultPlacementByAspect } };
+    return {
+      ...DEFAULT_BRAND_SETTINGS,
+      ...parsed,
+      logoScaleByLanguage: { ...DEFAULT_BRAND_SETTINGS.logoScaleByLanguage, ...parsed.logoScaleByLanguage },
+      defaultPlacementByAspect: { ...DEFAULT_BRAND_SETTINGS.defaultPlacementByAspect, ...parsed.defaultPlacementByAspect }
+    };
   } catch { return DEFAULT_BRAND_SETTINGS; }
 }
 
