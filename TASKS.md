@@ -7,7 +7,7 @@
 - [x] Goal 1｜App 根层所有权：`AppRuntimeProvider` 在根层持有当前模块、全局品牌资源、全局品牌设置与 `AppActivity`；`AppShell` 只负责模块导航和出口，`MediaWorkbench` 只负责设媒。
 - [x] Goal 1.1｜全局设置收口：设置弹层、品牌资源替换 / 恢复和 SVG 上传入口由 `GlobalDialogs` 托管；根层直接汇总设置活动状态。
 - [x] Goal 2｜固定桌面应用框架：根元素、应用外壳和模块容器固定为 `100dvh`，工作区与面板改为内部滚动并使用稳定滚动条槽位。
-- [ ] Goal 3｜语义 UI 状态。
+- [x] Goal 3｜语义 UI 状态：统一 `SectionHeader`、状态 token 与 Logo / CPR / 辅助工具的动态状态圆点；启用状态仍由 Toggle 文案共同表达。
 - [ ] Goal 4｜品牌资源唯一解析器。
 - [ ] Goal 5｜工作区内聚焦模式。
 - [ ] Goal 6｜Logo / CPR 操作完善。
