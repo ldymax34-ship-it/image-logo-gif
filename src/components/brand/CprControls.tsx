@@ -1,5 +1,6 @@
 import type { BrandColorMode, CprPlacement, CprState } from '../../core';
 import { BrandEffectControls } from './BrandEffectControls';
+import { SectionHeader } from '../ui';
 
 const PLACEMENTS: Array<{ value: CprPlacement; label: string }> = [
   { value: 'bottom-left', label: '左下' },
@@ -28,13 +29,12 @@ export function CprControls({ state, onChange }: { state: CprState; onChange: (s
 
   return (
     <section className="brand-control-group" aria-labelledby="cpr-controls-title">
-      <div className="brand-control-heading">
-        <div><h3 id="cpr-controls-title">CPR</h3><small>固定 SVG 品牌组件</small></div>
+      <SectionHeader id="cpr-controls-title" title="CPR" description="固定 SVG 品牌组件" state={state.enabled ? 'active' : 'disabled'}>
         <label className="toggle compact-toggle">
           <input type="checkbox" checked={state.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />
           显示
         </label>
-      </div>
+      </SectionHeader>
       <label className="control-row">
         <span>位置</span>
         <select value={state.transform.placement} onChange={(event) => patchTransform({ placement: event.target.value as CprPlacement, offsetX: 0, offsetY: 0 })}>

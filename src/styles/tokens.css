@@ -26,4 +26,10 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --shadow-panel: none;
   --shadow-dialog: 0 20px 60px rgb(0 0 0 / 45%);
+  --state-idle: #7f7f84;
+  --state-active: #3d83d5;
+  --state-warning: #e1b66c;
+  --state-danger: #ee7777;
+  --state-success: #73b987;
+  --state-disabled: #55555a;
 }

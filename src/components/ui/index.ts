@@ -6,3 +6,4 @@ export * from './Select';
 export * from './Tabs';
 export * from './Toggle';
 export * from './Toolbar';
+export * from './SectionHeader';
