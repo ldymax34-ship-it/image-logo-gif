@@ -1,5 +1,24 @@
 # 更新日志
 
+## 0.1.24
+
+本轮目标：启动正式产品路线的 Goal 1，收束应用根层所有权，不改变现有工作台视觉或导出行为。
+
+1. [重构-大] 新增 `src/app/AppRuntimeProvider.tsx`，根层统一持有当前模块、全局品牌资源、全局品牌设置、设置弹层状态和 `AppActivity`。
+2. [重构-中] `src/app/App.tsx` 组合设媒、自定义和 GIF 模块；`src/app/AppShell.tsx` 仅负责应用外壳、模块导航和模块出口。
+3. [重构-中] `src/modules/media-workbench/MediaWorkbench.tsx` 不再渲染 `AppShell`、自定义或 GIF；它保持自身素材、规格、画板与会话状态，并向根层汇报活动状态和顶部统计。
+4. [维护-小] `TASKS.md`、`README.md` 同步当前 0.1.24 正式产品收束路线。
+
+验证方式：
+
+- `npm run verify:core`
+- `npm test -- --run`
+- `npx tsc --noEmit -p tsconfig.app.json`
+- `npm run build`
+- `git diff --check`
+- `cargo check --manifest-path src-tauri/Cargo.toml`
+- 真实浏览器首屏与设媒 / 自定义 / GIF 模块切换冒烟检查
+
 ## 0.1.16-preview.1
 
 本轮目标：不修改现有工作台业务功能，为内部体验提供 Windows 与 macOS 的最小桌面封包路径。

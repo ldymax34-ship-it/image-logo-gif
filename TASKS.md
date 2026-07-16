@@ -1,6 +1,19 @@
 # 任务看板
 
-## 当前版本：0.1.19-preview.1 桌面 Preview 封包
+## 当前版本：0.1.24 正式产品收束基线
+
+### 正式产品路线
+
+- [x] Goal 1｜App 根层所有权：`AppRuntimeProvider` 在根层持有当前模块、全局品牌资源、全局品牌设置与 `AppActivity`；`AppShell` 只负责模块导航和出口，`MediaWorkbench` 只负责设媒。
+- [ ] Goal 2｜固定桌面应用框架。
+- [ ] Goal 3｜语义 UI 状态。
+- [ ] Goal 4｜品牌资源唯一解析器。
+- [ ] Goal 5｜工作区内聚焦模式。
+- [ ] Goal 6｜Logo / CPR 操作完善。
+- [ ] Goal 7｜正式导出模型。
+- [ ] Goal 8｜正式产品封板。
+
+自动更新、GIF、视频、AI 等新业务功能保持冻结，待 Goal 8 通过后再进入独立专项。
 
 ### 产品方向
 
