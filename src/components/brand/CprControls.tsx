@@ -15,7 +15,7 @@ const COLORS: Array<{ value: BrandColorMode; label: string }> = [
   { value: 'original', label: '原始' }
 ];
 
-export function CprControls({ state, onChange }: { state: CprState; onChange: (state: CprState) => void }) {
+export function CprControls({ state, onChange, onApplySameAspect, onApplyAll }: { state: CprState; onChange: (state: CprState) => void; onApplySameAspect?: () => void; onApplyAll?: () => void }) {
   const patch = (next: Partial<CprState>) => onChange({ ...state, ...next });
   const patchTransform = (next: Partial<CprState['transform']>) => patch({ transform: { ...state.transform, ...next } });
   const setColor = (colorMode: BrandColorMode) => patch({
@@ -46,6 +46,10 @@ export function CprControls({ state, onChange }: { state: CprState; onChange: (s
         <span>向下微调</span>
         <input type="range" min="-240" max="240" step="1" value={state.transform.offsetY} onChange={(event) => patchTransform({ offsetY: Number(event.target.value) })} />
       </div>
+      <label className="range-field compact-range">
+        <span>连续缩放 {Math.round((state.scale ?? 1) * 100)}%</span>
+        <input type="range" min="0.5" max="2" step="0.01" value={state.scale ?? 1} onChange={(event) => patch({ scale: Number(event.target.value) })} />
+      </label>
       <button type="button" onClick={() => patchTransform({ placement: state.transform.placement === 'custom' ? 'bottom-right' : state.transform.placement, offsetX: 0, offsetY: 0 })}>恢复推荐位置</button>
       <div className="control-row">
         <span>颜色</span>
@@ -54,6 +58,7 @@ export function CprControls({ state, onChange }: { state: CprState; onChange: (s
         </div>
       </div>
       <BrandEffectControls title="CPR" effect={state.effect} onChange={(effect) => patch({ effect })} />
+      {onApplySameAspect || onApplyAll ? <div className="brand-apply-actions"><span>应用范围</span>{onApplySameAspect ? <button type="button" onClick={onApplySameAspect}>同版型画板</button> : null}{onApplyAll ? <button type="button" onClick={onApplyAll}>全部画板</button> : null}</div> : null}
     </section>
   );
 }

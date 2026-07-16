@@ -21,6 +21,8 @@ export type CprTransform = {
  */
 export type CprState = {
   enabled: boolean;
+  /** Continuous visual scale; legacy records default to 1. */
+  scale?: number;
   transform: CprTransform;
   colorMode: BrandColorMode;
   effect: BrandEffectState;

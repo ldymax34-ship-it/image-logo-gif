@@ -45,7 +45,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   }, [asset, companyEffect, companyEnabled, companyOffset, companyScale, cprEffect, cprEnabled, format, gameEffect, gameEnabled, gameLanguage, gameOffset, gameScale, guidesVisible, onDirtyChange, snapEnabled]);
 
   const group = { mode: 'game-only' as const, gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white' as const, sizePreset: 'xl' as const, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'center' as const, lastExplicitPlacement: 'center' as const };
-  const customCprState = { enabled: cprEnabled, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect };
+  const customCprState = { enabled: cprEnabled, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect };
   const gameGroup = {
     ...group,
     mode: 'game-only' as const,

@@ -10,7 +10,7 @@
 - [x] Goal 3｜语义 UI 状态：统一 `SectionHeader`、状态 token 与 Logo / CPR / 辅助工具的动态状态圆点；启用状态仍由 Toggle 文案共同表达。
 - [x] Goal 4｜品牌资源唯一解析器：缩略图、聚焦画布与批量导出预览 / 实际导出均通过 `resolveBoardBrandAssets` 解析画板资源；多语种导出使用覆写语言且不修改工作区语种。
 - [x] Goal 5｜工作区内聚焦模式：显式 `FocusSession` 管理裁切与画板品牌 draft，双击画板进入同一应用框架内的聚焦工作区；保存一次提交、取消丢弃草稿，左侧复用 Logo / CPR 控件。
-- [ ] Goal 6｜Logo / CPR 操作完善。
+- [x] Goal 6｜Logo / CPR 操作完善：Logo 与 CPR 均支持 0.5～2 的连续缩放；画板状态保存独立位置 / 大小，并通过明确的当前、同版型、全部画板命令应用，不隐式覆盖其他画板。
 - [ ] Goal 7｜正式导出模型。
 - [ ] Goal 8｜正式产品封板。
 

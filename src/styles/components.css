@@ -235,6 +235,8 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
   padding-right: 4px;
   scrollbar-gutter: stable;
 }
+.brand-apply-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 12px; }
+.brand-apply-actions button { min-height: 28px; padding: 4px 7px; }
 .brand-control-group .brand-row { min-height: 48px; padding-block: 7px; }
 .brand-resource-link { width: 100%; min-height: 32px; padding: 6px 8px; border-style: dashed; color: var(--color-text-muted); text-align: left; }
 .brand-resource-manager { display: grid; gap: 8px; }

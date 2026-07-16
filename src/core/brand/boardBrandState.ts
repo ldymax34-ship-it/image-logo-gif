@@ -10,7 +10,7 @@ export type LegacyBoardBrandStateInput = {
 function cloneState(state: BoardBrandState): BoardBrandState {
   return {
     logo: { ...state.logo, manualOffset: state.logo.manualOffset ? { ...state.logo.manualOffset } : undefined },
-    cpr: { ...state.cpr, transform: { ...state.cpr.transform }, effect: { ...state.cpr.effect } }
+    cpr: { ...state.cpr, scale: state.cpr.scale ?? 1, transform: { ...state.cpr.transform }, effect: { ...state.cpr.effect } }
   };
 }
 

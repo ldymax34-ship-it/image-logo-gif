@@ -137,6 +137,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   const defaultCprState = useMemo<CprState>(() => ({
     ...createDefaultCprState(),
     enabled: brandSettings.cprEnabled,
+    scale: 1,
     transform: { placement: brandSettings.defaultCprPlacement, offsetX: 0, offsetY: 0 },
     colorMode: brandSettings.defaultCprColorMode,
     effect: { ...brandLayer.cprEffect, colorEnabled: brandSettings.defaultCprColorMode !== 'original', color: brandSettings.defaultCprColorMode === 'black' ? '#000000' : '#ffffff' }
@@ -268,6 +269,33 @@ export function MediaWorkbench({ active }: { active: boolean }) {
     setFocusSession(updateFocusLogo(focusSession, { ...focusSession.draft.brand.logo, gameLogoLanguage: language, gameLogoId: gameLogo?.id }));
   }
 
+  function sameAspectKeys() {
+    const sourceSpec = focusSession ? focusSpec : selectedSpec;
+    if (!sourceSpec) return [];
+    const family = classifyAspect({ width: sourceSpec.width, height: sourceSpec.height });
+    return assets.flatMap((asset) => specs
+      .filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family)
+      .map((spec) => getBoardPreviewKey(asset.id, spec.id)));
+  }
+
+  function applyLogoToSameAspect() {
+    const logo = focusSession?.draft.brand.logo ?? selectedLogoGroup;
+    dispatchBoardBrand({ type: 'apply-logo-to-same-aspect', keys: sameAspectKeys(), logo });
+  }
+
+  function applyCprToSameAspect() {
+    const cpr = focusSession?.draft.brand.cpr ?? selectedCprState;
+    dispatchBoardBrand({ type: 'apply-cpr-to-same-aspect', keys: sameAspectKeys(), cpr });
+  }
+
+  function applyLogoToAll() {
+    dispatchBoardBrand({ type: 'apply-logo-to-all', logo: focusSession?.draft.brand.logo ?? selectedLogoGroup });
+  }
+
+  function applyCprToAll() {
+    dispatchBoardBrand({ type: 'apply-cpr-to-all', cpr: focusSession?.draft.brand.cpr ?? selectedCprState });
+  }
+
   const brandControls = <BrandControlsPanel
     logoGroup={focusSession?.draft.brand.logo ?? selectedLogoGroup}
     cprState={focusSession?.draft.brand.cpr ?? selectedCprState}
@@ -279,6 +307,10 @@ export function MediaWorkbench({ active }: { active: boolean }) {
     onCprChange={(next) => { if (focusSession) setFocusSession(updateFocusCpr(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
     onBrandLayerChange={setBrandLayer}
     onSettingsChange={setBrandSettings}
+    onApplyLogoSameAspect={applyLogoToSameAspect}
+    onApplyLogoAll={applyLogoToAll}
+    onApplyCprSameAspect={applyCprToSameAspect}
+    onApplyCprAll={applyCprToAll}
   />;
 
   useEffect(() => registerGlobalBrandResourceHandlers({

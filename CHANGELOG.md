@@ -669,3 +669,4 @@
 12. [体验-中] Goal 3：新增语义状态 token 与 `SectionHeader`；Logo、CPR、辅助工具根据真实启用和 focus-within 状态显示空闲、当前或禁用圆点，状态变化使用既有 180ms 动效且不只依赖颜色传达开关状态。
 13. [重构-大] Goal 4：新增 `resolveBoardBrandAssets`，总览缩略图、聚焦画布、批量导出预览与实际导出均按画板状态 / 显式语言覆写解析 Logo、公司 Logo 和 CPR；游戏 Logo 不再跨语种静默回退。
 14. [重构-大] Goal 5：退役遮罩式 `FocusEditorModal`，新增工作区内 `FocusSession` / `FocusWorkspace`。裁切、Logo、CPR 在聚焦期间只写 draft；左侧复用原品牌控件，保存后一次性提交，取消或 Esc 在 dirty 时要求确认放弃。
+15. [功能调整-中] Goal 6：CPR 新增与 Logo 一致的连续缩放，并接入预览 / 聚焦 / 导出同一布局计算；品牌控制新增明确的同版型、全部画板应用命令，画板位置与大小仍保持独立保存。

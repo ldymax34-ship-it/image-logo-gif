@@ -32,4 +32,17 @@ describe('boardBrandReducer reconcile-boards', () => {
     boardBrandReducer({}, { type: 'reconcile-boards', keys: ['a'], defaults: defaults() });
     expect(customState).toEqual({ dirty: true, offset: { x: 4, y: 5 } });
   });
+
+  it('applies logo and CPR settings only through explicit scope actions', () => {
+    const initial = boardBrandReducer({}, { type: 'reconcile-boards', keys: ['a:wide', 'b:wide', 'a:tall'], defaults: defaults() });
+    const nextLogo = { ...createDefaultLogoGroup('zh-CN'), scale: 1.4 };
+    const sameAspect = boardBrandReducer(initial, { type: 'apply-logo-to-same-aspect', keys: ['a:wide', 'b:wide'], logo: nextLogo });
+    expect(sameAspect['a:wide'].logo.scale).toBe(1.4);
+    expect(sameAspect['b:wide'].logo.scale).toBe(1.4);
+    expect(sameAspect['a:tall'].logo.scale).toBe(1);
+
+    const nextCpr = { ...createDefaultCprState(), scale: 1.25 };
+    const all = boardBrandReducer(sameAspect, { type: 'apply-cpr-to-all', cpr: nextCpr });
+    expect(Object.values(all).every((board) => board.cpr.scale === 1.25)).toBe(true);
+  });
 });

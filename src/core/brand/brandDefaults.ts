@@ -16,6 +16,7 @@ export const DEFAULT_BRAND_EFFECT: BrandEffectState = { ...DEFAULT_LOGO_EFFECT, 
  */
 export const DEFAULT_CPR_STATE: CprState = {
   enabled: true,
+  scale: 1,
   transform: { placement: 'bottom-right', offsetX: 0, offsetY: 0 },
   colorMode: 'white',
   effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
@@ -29,6 +30,7 @@ export function createDefaultLogoGroup(language: BrandLanguage = 'zh-CN'): LogoG
 export function createDefaultCprState(): CprState {
   return {
     enabled: true,
+    scale: 1,
     transform: { placement: 'bottom-right', offsetX: 0, offsetY: 0 },
     colorMode: 'white',
     effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
@@ -55,9 +57,10 @@ export function deriveCprColorMode(effect: BrandEffectState): BrandColorMode {
  * 不再继承 Logo custom 坐标。
  */
 export function resolveCprState(layer: BrandLayerState): CprState {
-  if (layer.cprState) return layer.cprState;
+  if (layer.cprState) return { ...layer.cprState, scale: layer.cprState.scale ?? 1 };
   return {
     enabled: layer.cprEnabled,
+    scale: 1,
     transform: { placement: mapLegacyCprAnchor(layer.cprAnchor), offsetX: 0, offsetY: 0 },
     colorMode: deriveCprColorMode(layer.cprEffect),
     effect: { ...layer.cprEffect }

@@ -68,9 +68,9 @@ export type BuildBrandRenderOptions = {
  * 计算 CPR 独立位置：固定尺寸、固定 SVG，底部三档对齐，均离底边和侧边 1 格。
  * 此函数为纯函数，预览与导出共用，确保结果一致。
  */
-export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState['transform']): LayoutRect {
+export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState['transform'], scale = 1): LayoutRect {
   const grid = createBrandGrid(canvas);
-  const cprWidth = grid.unit * 5.5;
+  const cprWidth = grid.unit * 5.5 * scale;
   const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
   const safeMargin = grid.unit * .25;
   const recommendedMargin = grid.unit * .5;
@@ -90,7 +90,7 @@ export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState[
 }
 
 function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRenderPlan['cpr']> {
-  const rect = computeCprPlacementRect(canvas, cpr.transform);
+  const rect = computeCprPlacementRect(canvas, cpr.transform, cpr.scale ?? 1);
   const color = getCprRenderColor(cpr.colorMode) ?? '#ffffff';
   return { id: 'cpr:fixed', kind: 'cpr', rect, color, effect: { ...cpr.effect, colorEnabled: cpr.colorMode !== 'original', color } };
 }
@@ -99,7 +99,7 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
   group = { ...group, companyLogoScale: group.companyLogoScale ?? 'match' };
   const grid = createBrandGrid(canvas); const color = getBrandColor(group.colorMode) ?? '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
-  const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
+  const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;
   if (!hasCompany && !hasGame) return { grid, logoItems: [], cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
   const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);
