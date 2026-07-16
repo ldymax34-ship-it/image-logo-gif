@@ -1,7 +1,7 @@
 import { useReducer, useState } from 'react';
 import {
   loadCustomPresetTemplates,
-  type BoardBrandStateMap, type BoardPreviewState, type BrandLanguage,
+  type BoardBrandStateMap, type BoardPreviewState,
   type MaterialAsset, type MaterialSpec, type PresetTemplate
 } from '../../core';
 import { boardBrandReducer } from './boardBrandReducer';
@@ -25,6 +25,5 @@ export function useMediaWorkbenchState() {
   const [newPresetName, setNewPresetName] = useState(''); const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState(''); const [importFailures, setImportFailures] = useState<string[]>([]);
-  const [resourceUploadLanguage, setResourceUploadLanguage] = useState<BrandLanguage>('zh-CN'); const [replacingResourceId, setReplacingResourceId] = useState<string>();
-  return { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures, resourceUploadLanguage, setResourceUploadLanguage, replacingResourceId, setReplacingResourceId };
+  return { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures };
 }

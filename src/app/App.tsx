@@ -5,6 +5,7 @@ import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
 import { MediaWorkbench } from '../modules/media-workbench/MediaWorkbench';
 import { AppRuntimeProvider, useAppRuntime } from './AppRuntimeProvider';
 import { AppShell } from './AppShell';
+import { GlobalDialogs } from './GlobalDialogs';
 
 function AppContent() {
   const {
@@ -26,23 +27,26 @@ function AppContent() {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
 
-  return <AppShell
-    activeModule={activeModule}
-    onModuleChange={setActiveModule}
-    header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} />}
-  >
-    <MediaWorkbench active={activeModule === 'media'} />
-    {activeModule === 'custom' ? <CustomWorkbench
-      brandLayer={brandLayer}
-      logoAsset={selectedLogo}
-      cprAsset={selectedCpr}
-      companyLogo={companyLogo}
-      gameLogo={gameLogo}
-      gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
-      onDirtyChange={handleCustomWorkbenchDirty}
-    /> : null}
-    {activeModule === 'gif' ? <GifCompressorPlaceholder /> : null}
-  </AppShell>;
+  return <>
+    <AppShell
+      activeModule={activeModule}
+      onModuleChange={setActiveModule}
+      header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} />}
+    >
+      <MediaWorkbench active={activeModule === 'media'} />
+      {activeModule === 'custom' ? <CustomWorkbench
+        brandLayer={brandLayer}
+        logoAsset={selectedLogo}
+        cprAsset={selectedCpr}
+        companyLogo={companyLogo}
+        gameLogo={gameLogo}
+        gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
+        onDirtyChange={handleCustomWorkbenchDirty}
+      /> : null}
+      {activeModule === 'gif' ? <GifCompressorPlaceholder /> : null}
+    </AppShell>
+    <GlobalDialogs />
+  </>;
 }
 
 export function App() {

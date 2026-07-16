@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import type { WorkbenchModule } from '../components/ModuleNav';
 import {
   DEFAULT_BRAND_ASSETS,
@@ -45,10 +45,20 @@ type AppRuntime = {
   setSettingsDialogOpen: Dispatch<SetStateAction<boolean>>;
   settingsDirty: boolean;
   setSettingsDirty: Dispatch<SetStateAction<boolean>>;
+  settingsSelectedCompanyLogoId?: string;
+  setSettingsSelectedCompanyLogoId: Dispatch<SetStateAction<string | undefined>>;
   activity: AppActivity;
   updateActivity: (patch: Partial<AppActivity>) => void;
+  notifyCompanyLogoReplacement: (assetId: string) => void;
+  notifyBrandResourceMessage: (message: string) => void;
+  registerGlobalBrandResourceHandlers: (handlers: GlobalBrandResourceHandlers) => () => void;
   mediaHeader: MediaHeaderState;
   setMediaHeader: Dispatch<SetStateAction<MediaHeaderState>>;
+};
+
+export type GlobalBrandResourceHandlers = {
+  onCompanyLogoReplacement?: (assetId: string) => void;
+  onMessage?: (message: string) => void;
 };
 
 const INITIAL_MEDIA_HEADER: MediaHeaderState = {
@@ -60,6 +70,14 @@ const INITIAL_MEDIA_HEADER: MediaHeaderState = {
 
 const AppRuntimeContext = createContext<AppRuntime | undefined>(undefined);
 
+export function resolveAppActivity(
+  activity: AppActivity,
+  settingsDialogOpen: boolean,
+  settingsDirty: boolean
+): AppActivity {
+  return { ...activity, settingsDialogOpen, settingsDirty };
+}
+
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
@@ -67,8 +85,10 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const [brandSettings, setBrandSettings] = useState<BrandSettingsV1>(() => loadBrandSettings());
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [settingsSelectedCompanyLogoId, setSettingsSelectedCompanyLogoId] = useState<string>();
   const [activity, setActivity] = useState<AppActivity>(IDLE_APP_ACTIVITY);
   const [mediaHeader, setMediaHeader] = useState<MediaHeaderState>(INITIAL_MEDIA_HEADER);
+  const globalBrandResourceHandlersRef = useRef<GlobalBrandResourceHandlers>({});
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -77,6 +97,24 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const updateActivity = useCallback((patch: Partial<AppActivity>) => {
     setActivity((previous) => ({ ...previous, ...patch }));
   }, []);
+  const registerGlobalBrandResourceHandlers = useCallback((handlers: GlobalBrandResourceHandlers) => {
+    globalBrandResourceHandlersRef.current = handlers;
+    return () => {
+      if (globalBrandResourceHandlersRef.current === handlers) {
+        globalBrandResourceHandlersRef.current = {};
+      }
+    };
+  }, []);
+  const notifyCompanyLogoReplacement = useCallback((assetId: string) => {
+    globalBrandResourceHandlersRef.current.onCompanyLogoReplacement?.(assetId);
+  }, []);
+  const notifyBrandResourceMessage = useCallback((message: string) => {
+    globalBrandResourceHandlersRef.current.onMessage?.(message);
+  }, []);
+  const resolvedActivity = useMemo(
+    () => resolveAppActivity(activity, settingsDialogOpen, settingsDirty),
+    [activity, settingsDialogOpen, settingsDirty]
+  );
 
   const value = useMemo<AppRuntime>(() => ({
     activeModule,
@@ -91,13 +129,18 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     setSettingsDialogOpen,
     settingsDirty,
     setSettingsDirty,
-    activity,
+    settingsSelectedCompanyLogoId,
+    setSettingsSelectedCompanyLogoId,
+    activity: resolvedActivity,
     updateActivity,
+    notifyCompanyLogoReplacement,
+    notifyBrandResourceMessage,
+    registerGlobalBrandResourceHandlers,
     mediaHeader,
     setMediaHeader
-  }), [activeModule, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, activity, mediaHeader, updateActivity]);
+  }), [activeModule, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
 
-  return <AppRuntimeContext.Provider value={value}><AppActivityContext.Provider value={activity}>{children}</AppActivityContext.Provider></AppRuntimeContext.Provider>;
+  return <AppRuntimeContext.Provider value={value}><AppActivityContext.Provider value={resolvedActivity}>{children}</AppActivityContext.Provider></AppRuntimeContext.Provider>;
 }
 
 export function useAppRuntime(): AppRuntime {

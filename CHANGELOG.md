@@ -1,24 +1,5 @@
 # 更新日志
 
-## 0.1.24
-
-本轮目标：启动正式产品路线的 Goal 1，收束应用根层所有权，不改变现有工作台视觉或导出行为。
-
-1. [重构-大] 新增 `src/app/AppRuntimeProvider.tsx`，根层统一持有当前模块、全局品牌资源、全局品牌设置、设置弹层状态和 `AppActivity`。
-2. [重构-中] `src/app/App.tsx` 组合设媒、自定义和 GIF 模块；`src/app/AppShell.tsx` 仅负责应用外壳、模块导航和模块出口。
-3. [重构-中] `src/modules/media-workbench/MediaWorkbench.tsx` 不再渲染 `AppShell`、自定义或 GIF；它保持自身素材、规格、画板与会话状态，并向根层汇报活动状态和顶部统计。
-4. [维护-小] `TASKS.md`、`README.md` 同步当前 0.1.24 正式产品收束路线。
-
-验证方式：
-
-- `npm run verify:core`
-- `npm test -- --run`
-- `npx tsc --noEmit -p tsconfig.app.json`
-- `npm run build`
-- `git diff --check`
-- `cargo check --manifest-path src-tauri/Cargo.toml`
-- 真实浏览器首屏与设媒 / 自定义 / GIF 模块切换冒烟检查
-
 ## 0.1.16-preview.1
 
 本轮目标：不修改现有工作台业务功能，为内部体验提供 Windows 与 macOS 的最小桌面封包路径。
@@ -681,3 +662,6 @@
 5. [维护-中] Cargo.lock 应用版本与 package、Cargo、Tauri 配置统一为 0.1.24；未接入更新器、未改变产品行为。
 6. [重构-大] 完成收尾验收：移除运行期 `logoGroup` / `brandLayer.cprState` 双写，拆出 FocusEditor、确认弹窗、品牌控制、素材事件、规格事件和工作台状态 hook；MediaWorkbench 收敛为工作区组合层。
 7. [重构-中] `useBatchExportController` 成为批量导出的唯一 UI 入口；新增 reducer、导出顺序/失败继续/结构化结果、单语/五语言矩阵、状态隔离与真实 activity 来源测试。
+8. [重构-大] Goal 1：新增 `AppRuntimeProvider`，App 根层拥有模块切换、品牌资源、全局设置和 AppActivity；`AppShell` 只组合模块，MediaWorkbench 不再渲染自定义、GIF 或应用外壳。
+9. [重构-中] Goal 1.1：新增 `GlobalDialogs`，设置弹层、品牌资源替换 / 恢复和 SVG 上传入口迁移至根层；根层直接聚合 settings activity，设媒仅汇报导出、聚焦和确认状态。
+10. [验证-中] 根层集成与 AppActivity 聚合测试覆盖模块导航、全局设置入口以及 Custom、Focus、Export、Settings、确认弹窗的活动状态组合；当前专项共 63 项测试通过。

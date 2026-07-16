@@ -5,6 +5,7 @@
 ### 正式产品路线
 
 - [x] Goal 1｜App 根层所有权：`AppRuntimeProvider` 在根层持有当前模块、全局品牌资源、全局品牌设置与 `AppActivity`；`AppShell` 只负责模块导航和出口，`MediaWorkbench` 只负责设媒。
+- [x] Goal 1.1｜全局设置收口：设置弹层、品牌资源替换 / 恢复和 SVG 上传入口由 `GlobalDialogs` 托管；根层直接汇总设置活动状态。
 - [ ] Goal 2｜固定桌面应用框架。
 - [ ] Goal 3｜语义 UI 状态。
 - [ ] Goal 4｜品牌资源唯一解析器。
@@ -19,7 +20,7 @@
 
 当前项目为「品宣物料工作台」。
 
-0.1.x 先完成 Vite + React + TypeScript Web 工作台闭环，0.2.x 再接 Tauri 做 macOS / Windows 桌面化。
+当前已接入 Tauri 2 桌面壳与本地文件写入；正式产品路线优先收束应用状态、交互与导出，再进入自动更新专项。
 
 ### 已完成
 
@@ -237,10 +238,10 @@
 
 ## 0.1.24
 
-1. [重构-大] 画板品牌状态 reconcile 单源化，默认值不会覆盖已有画板。
-2. [重构-大] 批量导出编排移入导出服务，进度、失败与压缩信息结构化返回。
-3. [重构-中] 建立媒体 actions/selectors，AppActivity 接入真实模块活动状态。
-4. [维护-中] package、Cargo、Cargo.lock、Tauri 版本统一为 0.1.24；不接入 updater，不修改产品行为。
-5. [重构-大] [x] MediaWorkbench 已拆出状态、素材事件、规格事件、FocusEditor、确认弹窗和品牌控制边界，不再是旧 App 的文件替代。
-6. [重构-大] [x] 画板 Logo / CPR 只写 `boardBrandStates`；导出只通过 controller 调用结构化批处理服务。
-7. [验证-中] [x] AppActivity 已接入 exporting、编辑器 dirty、自定义工作台 dirty、设置 dirty 与弹窗状态；专项测试共 61 项通过。
+1. [重构-大] 画板品牌状态 reconcile 单源化，默认值不会覆盖已有画板；预览、聚焦编辑与导出继续直接使用 `BoardBrandStateMap`。
+2. [重构-大] 批量导出编排移入导出服务，进度、失败与压缩信息结构化返回；对话框只保留导出 UI 与触发逻辑。
+3. [重构-中] 建立媒体 actions/selectors、FocusEditor、确认弹窗和品牌控制边界；`boardBrandStates` 成为 Logo / CPR 的唯一画板可写状态。
+4. [重构-大] 建立 `AppRuntimeProvider`：App 根层拥有模块切换、品牌资源、全局设置和 AppActivity；`MediaWorkbench` 不再托管自定义、GIF 或应用外壳。
+5. [重构-中] 设置弹层、品牌资源替换 / 恢复和隐藏 SVG 上传入口迁移至 `GlobalDialogs`；根层直接聚合 settings activity，设媒模块只汇报导出、聚焦与确认状态。
+6. [维护-中] package、Cargo、Cargo.lock、Tauri 版本统一为 0.1.24；Tauri 2 桌面壳已经接入，自动更新仍未接入。
+7. [验证-中] AppActivity、根层设置入口、模块切换和状态聚合由专项测试覆盖；不修改产品行为。

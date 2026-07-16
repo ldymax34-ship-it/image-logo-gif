@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import {
   BRAND_LANGUAGE_OPTIONS,
   PRESET_TEMPLATES,
-  DEFAULT_BRAND_ASSETS,
   buildOutputFileName,
   classifyAspect,
-  createBrandAssetFromFile,
   createDefaultCprState,
   normalizeLogoGroup,
   createInitialCropState,
@@ -29,7 +27,6 @@ import {
 import {
   AssetSidebar,
   BoardOverview,
-  BrandSettingsDialog,
   MultiAssetBoardOverview,
   SpecPanel
 } from '../../components';
@@ -124,11 +121,10 @@ function createLogoGroupFromSettings(settings: BrandSettingsV1, spec?: MaterialS
 
 export function MediaWorkbench({ active }: { active: boolean }) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const logoInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
-  const { brandAssets, setBrandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, settingsDialogOpen, setSettingsDialogOpen, settingsDirty, setSettingsDirty, updateActivity, setMediaHeader } = useAppRuntime();
-  const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures, resourceUploadLanguage, setResourceUploadLanguage, replacingResourceId, setReplacingResourceId } = useMediaWorkbenchState();
+  const { brandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, updateActivity, setMediaHeader, registerGlobalBrandResourceHandlers, setSettingsSelectedCompanyLogoId } = useAppRuntime();
+  const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures } = useMediaWorkbenchState();
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
@@ -194,16 +190,18 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   }, [assets.length, hasPendingSpecChanges, previewStates, setMediaHeader, specs.length]);
 
   useEffect(() => {
+    setSettingsSelectedCompanyLogoId(selectedLogoGroup.companyLogoId);
+  }, [selectedLogoGroup.companyLogoId, setSettingsSelectedCompanyLogoId]);
+
+  useEffect(() => {
     updateActivity({
       exporting,
       focusEditorOpen: Boolean(focusAsset && focusSpec),
       focusEditorDirty,
-      settingsDialogOpen,
-      settingsDirty,
       confirmationDialogOpen: Boolean(pendingConfirmation)
     });
-    return () => updateActivity({ exporting: false, focusEditorOpen: false, focusEditorDirty: false, settingsDialogOpen: false, settingsDirty: false, confirmationDialogOpen: false });
-  }, [exporting, focusAsset, focusSpec, focusEditorDirty, pendingConfirmation, settingsDialogOpen, settingsDirty, updateActivity]);
+    return () => updateActivity({ exporting: false, focusEditorOpen: false, focusEditorDirty: false, confirmationDialogOpen: false });
+  }, [exporting, focusAsset, focusSpec, focusEditorDirty, pendingConfirmation, updateActivity]);
 
   useEffect(() => {
     setBrandLayer((previous) => {
@@ -238,7 +236,12 @@ export function MediaWorkbench({ active }: { active: boolean }) {
 
   const { handleImageFiles, selectBoard, selectAssetAndScroll, requestDeleteAsset, deleteAsset, openFocusEditor, closeFocusEditor } = useMediaAssetActions({ assets, selectedAssetId, focusAssetId, imageInputRef, focusReturnRef, setAssets, setSelectedAssetId, setSelectedSpecId, setPreviewStates, setFocusAssetId, setFocusSpecId, setImportFailures, setMessage, setPendingConfirmation, dispatchBoardBrand });
   const { applyParsedSpecs, restoreAppliedText, applyPresetTemplate, saveCurrentAsPreset, removeCustomPreset, confirmPendingAction } = useMediaSpecActions({ result, draftText, appliedText, specs, previewStates, brandSettings, customPresets, newPresetName, pendingConfirmation, setDraftText, setAppliedText, setSpecs, setBrandLayer, setCustomPresets, setNewPresetName, setPendingConfirmation, setMessage, createLogoDefaults: (spec) => createLogoGroupFromSettings(brandSettings, spec), deleteAsset });
-  const { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, handleLogoFiles } = useMediaBrandActions({ assets, specs, boardBrandStates, brandAssets, brandLayer, selectedBoardKey, focusSpec, focusPreviewKey, replacingResourceId, logoInputRef, defaultLogoGroup, setPreviewStates, dispatchBoardBrand, setBrandLayer, setBrandAssets, setSelectedAssetId, setSelectedSpecId, setReplacingResourceId, setMessage, closeFocusEditor });
+  const { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, applyCompanyLogoReplacement } = useMediaBrandActions({ assets, specs, boardBrandStates, brandAssets, brandLayer, selectedBoardKey, focusSpec, focusPreviewKey, defaultLogoGroup, setPreviewStates, dispatchBoardBrand, setBrandLayer, setSelectedAssetId, setSelectedSpecId, setMessage, closeFocusEditor });
+
+  useEffect(() => registerGlobalBrandResourceHandlers({
+    onCompanyLogoReplacement: applyCompanyLogoReplacement,
+    onMessage: setMessage
+  }), [applyCompanyLogoReplacement, registerGlobalBrandResourceHandlers, setMessage]);
 
   return (
     <>
@@ -487,27 +490,6 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           onExportingChange={setExporting}
         />
       )}
-      {settingsDialogOpen && (
-        <BrandSettingsDialog
-          settings={brandSettings}
-          assets={brandAssets}
-          selectedLogoId={brandLayer.selectedLogoId}
-          selectedCompanyLogoId={selectedLogoGroup.companyLogoId}
-          onSelectResource={(asset) => {
-            if (asset.language !== 'custom') setBrandLayer((previous) => ({ ...previous, logoLanguage: asset.language, selectedLogoId: asset.id }));
-          }}
-          onReplaceResource={(asset, language) => {
-            setReplacingResourceId(asset?.id);
-            setResourceUploadLanguage(language);
-            logoInputRef.current?.click();
-          }}
-          onRestoreResources={() => { setBrandAssets(DEFAULT_BRAND_ASSETS); setMessage('已恢复内置品牌资源'); }}
-          onDirtyChange={setSettingsDirty}
-          onClose={() => setSettingsDialogOpen(false)}
-          onChange={setBrandSettings}
-        />
-      )}
-      <input ref={logoInputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={(event) => void handleLogoFiles(event.target.files, resourceUploadLanguage)} />
     </>
   );
 }

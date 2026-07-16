@@ -1,6 +1,6 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import {
-  classifyAspect, createBrandAssetFromFile, getBoardPreviewKey, normalizeLogoGroup,
+  classifyAspect, getBoardPreviewKey, normalizeLogoGroup,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage,
   type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialSpec
 } from '../../core';
@@ -17,11 +17,11 @@ function resolvePreferredBrandAssetId(assets: BrandAsset[], type: BrandAsset['ty
 export function useMediaBrandActions(input: {
   assets: MaterialAsset[]; specs: MaterialSpec[]; boardBrandStates: BoardBrandStateMap; brandAssets: BrandAsset[];
   brandLayer: BrandLayerState; selectedBoardKey?: string; focusSpec?: MaterialSpec; focusPreviewKey?: string;
-  replacingResourceId?: string; logoInputRef: MutableRefObject<HTMLInputElement | null>; defaultLogoGroup: LogoGroupState;
+  defaultLogoGroup: LogoGroupState;
   setPreviewStates: Dispatch<SetStateAction<Record<string, BoardPreviewState>>>; dispatchBoardBrand: Dispatch<BoardBrandAction>;
-  setBrandLayer: Dispatch<SetStateAction<BrandLayerState>>; setBrandAssets: Dispatch<SetStateAction<BrandAsset[]>>;
+  setBrandLayer: Dispatch<SetStateAction<BrandLayerState>>;
   setSelectedAssetId: Dispatch<SetStateAction<string | undefined>>; setSelectedSpecId: Dispatch<SetStateAction<string | undefined>>;
-  setReplacingResourceId: Dispatch<SetStateAction<string | undefined>>; setMessage: Dispatch<SetStateAction<string>>; closeFocusEditor: () => void;
+  setMessage: Dispatch<SetStateAction<string>>; closeFocusEditor: () => void;
 }) {
   function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
     const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
@@ -41,16 +41,10 @@ export function useMediaBrandActions(input: {
     input.setBrandLayer((previous) => ({ ...previous, logoLanguage: language, selectedLogoId: selectedId }));
     if (input.selectedBoardKey) input.dispatchBoardBrand({ type: 'update-logo', key: input.selectedBoardKey, logo: { ...normalizeLogoGroup(input.boardBrandStates[input.selectedBoardKey]?.logo ?? input.defaultLogoGroup), gameLogoLanguage: language, gameLogoId: selectedId } });
   }
-  async function handleLogoFiles(fileList: FileList | null, language = input.brandLayer.logoLanguage) {
-    const files = Array.from(fileList ?? []); if (!files.length) return; input.setMessage('正在读取 SVG 资源...');
-    try {
-      const nextAssets = await Promise.all(files.map((file) => createBrandAssetFromFile(file, 'logo', language)));
-      input.setBrandAssets((previous) => [...previous.filter((asset) => input.replacingResourceId ? asset.id !== input.replacingResourceId : !(asset.type === 'logo' && asset.language === language)), ...nextAssets]);
-      input.setBrandLayer((previous) => ({ ...previous, selectedLogoId: language === 'custom' ? previous.selectedLogoId : nextAssets[0]?.id ?? previous.selectedLogoId }));
-      if (language === 'custom' && nextAssets[0]) for (const [key, state] of Object.entries(input.boardBrandStates)) input.dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: nextAssets[0].id } });
-      input.setMessage(`已导入 ${nextAssets.length} 个 Logo SVG`);
-    } catch (error) { input.setMessage(error instanceof Error ? error.message : 'SVG 导入失败'); }
-    finally { input.setReplacingResourceId(undefined); if (input.logoInputRef.current) input.logoInputRef.current.value = ''; }
+  function applyCompanyLogoReplacement(assetId: string) {
+    for (const [key, state] of Object.entries(input.boardBrandStates)) {
+      input.dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: assetId } });
+    }
   }
-  return { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, handleLogoFiles };
+  return { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, applyCompanyLogoReplacement };
 }
