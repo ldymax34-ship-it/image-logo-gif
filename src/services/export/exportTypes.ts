@@ -17,3 +17,18 @@ export type ExportBoardRequest = {
 };
 
 export type ExportLanguageResolution = { language: BrandLanguage; gameLogo?: BrandAsset; missing: boolean };
+
+export type ExportLanguageSelection = {
+  baseLanguage: BrandLanguage;
+  additionalLanguages: BrandLanguage[];
+};
+
+export type ExportSizePolicy =
+  | { mode: 'default-limit'; maxSizeKb: number }
+  | { mode: 'unlimited' }
+  | { mode: 'custom'; maxSizeKb: number };
+
+export type ExportItemResult =
+  | { status: 'success'; outputBytes: number }
+  | { status: 'compressed'; beforeBytes: number; outputBytes: number }
+  | { status: 'failed'; reason: string };

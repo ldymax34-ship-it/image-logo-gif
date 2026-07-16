@@ -2,10 +2,11 @@ export type BatchProgress = { current: number; total: number };
 export type BatchFailure<T> = { item: T; message: string };
 export type BatchInfo<T> = { item: T; message: string };
 export type BatchResult<T> = { completed: number; failures: BatchFailure<T>[]; info: BatchInfo<T>[] };
+export type BatchItemOutcome = { result: 'success' | 'compressed'; beforeBytes?: number; outputBytes: number };
 
 export async function exportSequentially<T>(
   items: T[],
-  run: (item: T) => Promise<{ info?: string }>,
+  run: (item: T) => Promise<BatchItemOutcome>,
   onProgress?: (progress: BatchProgress) => void
 ): Promise<BatchResult<T>> {
   const failures: BatchFailure<T>[] = [];
@@ -15,7 +16,7 @@ export async function exportSequentially<T>(
     try {
       const outcome = await run(items[index]);
       completed += 1;
-      if (outcome.info) info.push({ item: items[index], message: outcome.info });
+      if (outcome.result === 'compressed') info.push({ item: items[index], message: `已自动压缩至 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB` });
     } catch (error) {
       failures.push({ item: items[index], message: error instanceof Error ? error.message : '导出失败' });
     }

@@ -6,10 +6,10 @@ describe('exportSequentially', () => {
     const order: number[] = []; const progress: number[] = [];
     const result = await exportSequentially([1, 2, 3], async (item) => {
       order.push(item); if (item === 2) throw new Error('second failed');
-      return { info: item === 3 ? 'compressed' : undefined };
+      return item === 3 ? { result: 'compressed' as const, outputBytes: 1024 } : { result: 'success' as const, outputBytes: 1024 };
     }, (value) => progress.push(value.current));
     expect(order).toEqual([1, 2, 3]);
     expect(progress).toEqual([1, 2, 3]);
-    expect(result).toEqual({ completed: 2, failures: [{ item: 2, message: 'second failed' }], info: [{ item: 3, message: 'compressed' }] });
+    expect(result).toEqual({ completed: 2, failures: [{ item: 2, message: 'second failed' }], info: [{ item: 3, message: '已自动压缩至 0.00 MB' }] });
   });
 });

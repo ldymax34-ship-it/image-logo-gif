@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_MAX_SIZE_KB, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
+  DEFAULT_MAX_SIZE_KB, EXPORT_LANGUAGES, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
 } from '../../core';
-import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../../services/export';
+import { buildExportMatrixForLanguages, getExportLanguage, getSelectedExportLanguages, resolveExportLanguages, exportBoard, type ExportLanguageSelection, type ExportSizePolicy } from '../../services/export';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { ExportDialog } from '../../components/ExportDialog';
 import { BoardCanvas } from '../../components/canvas';
@@ -32,14 +32,19 @@ export function BatchExportDialog({
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const [exportAllLanguages, setExportAllLanguages] = useState(false);
+  const [additionalLanguages, setAdditionalLanguages] = useState<BrandLanguage[]>([]);
   const languageResolutions = useMemo(() => resolveExportLanguages(brandAssets), [brandAssets]);
-  const missingLanguages = useMemo(() => languageResolutions.filter((item) => item.missing).map((item) => item.language), [languageResolutions]);
-  const items = useMemo(() => buildExportMatrix(assets, specs, exportAllLanguages), [assets, specs, exportAllLanguages]);
+  const languageSelection = useMemo<ExportLanguageSelection>(() => ({
+    baseLanguage: brandLayer.logoLanguage,
+    additionalLanguages: exportAllLanguages ? EXPORT_LANGUAGES.filter((language) => language !== brandLayer.logoLanguage) : additionalLanguages
+  }), [additionalLanguages, brandLayer.logoLanguage, exportAllLanguages]);
+  const selectedLanguages = useMemo(() => getSelectedExportLanguages(languageSelection), [languageSelection]);
+  const items = useMemo(() => buildExportMatrixForLanguages(assets, specs, languageSelection), [assets, specs, languageSelection]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(items.map((item) => item.id)));
   const [activeItemId, setActiveItemId] = useState(items[0]?.id);
   const [format, setFormat] = useState<MaterialFormat>('png');
   const [quality, setQuality] = useState(0.9);
-  const [defaultMaxSizeMb, setDefaultMaxSizeMb] = useState(8);
+  const [sizePolicy, setSizePolicy] = useState<ExportSizePolicy>({ mode: 'default-limit', maxSizeKb: 8192 });
   const [autoCompressJpeg, setAutoCompressJpeg] = useState(true);
   const [batchName, setBatchName] = useState('material');
 
@@ -77,7 +82,9 @@ export function BatchExportDialog({
         index
       }
     );
-    const effectiveMaxSizeKb = getEffectiveMaxSizeKb(spec, Math.round(defaultMaxSizeMb * 1024) || DEFAULT_MAX_SIZE_KB);
+    const effectiveMaxSizeKb = sizePolicy.mode === 'unlimited'
+      ? Number.MAX_SAFE_INTEGER
+      : getEffectiveMaxSizeKb(spec, sizePolicy.mode === 'custom' ? sizePolicy.maxSizeKb : sizePolicy.maxSizeKb || DEFAULT_MAX_SIZE_KB);
     return { item, asset, spec, estimatedBytes, effectiveMaxSizeKb, fileName };
   }).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
@@ -166,14 +173,15 @@ export function BatchExportDialog({
       }
       await saveBlobToOutputTarget(outputTarget, row.fileName, result.blob);
       if (outputTarget.kind === 'downloads') await new Promise((resolve) => setTimeout(resolve, 180));
-      return { info: result.compressed && result.quality ? `${row.fileName}：已自动压缩至 ${formatMegabytes(result.blob.size)}（${Math.round(result.quality * 100)}%）` : undefined };
+      return result.compressed
+        ? { result: 'compressed' as const, beforeBytes: row.estimatedBytes, outputBytes: result.blob.size }
+        : { result: 'success' as const, outputBytes: result.blob.size };
     });
     if (!batchResult) return;
     if (batchResult.failures.length) {
       return;
     }
     onComplete(batchResult.info[0]?.message ?? `已导出 ${batchResult.completed} 个文件`);
-    onClose();
   }
 
   const previewScale = activeSpec
@@ -280,16 +288,15 @@ export function BatchExportDialog({
                 <input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} />
               </label>
             ) : null}
-            <label className="export-field">
-              <span>指定</span>
-              <div className="export-limit-input"><input aria-label="指定 MB" type="number" min="0.1" max="100" step="0.1" value={defaultMaxSizeMb} onChange={(event) => setDefaultMaxSizeMb(Math.min(100, Math.max(0.1, Number(event.target.value) || 8)))} /><small>MB</small></div>
-            </label>
+            <label className="export-field"><span>体积策略</span><select value={sizePolicy.mode} onChange={(event) => setSizePolicy(event.target.value === 'unlimited' ? { mode: 'unlimited' } : event.target.value === 'custom' ? { mode: 'custom', maxSizeKb: 8192 } : { mode: 'default-limit', maxSizeKb: 8192 })}><option value="default-limit">规格 / 默认 8MB</option><option value="custom">自定义上限</option><option value="unlimited">不限制</option></select></label>
+            {sizePolicy.mode === 'custom' ? <label className="export-field"><span>指定</span><div className="export-limit-input"><input aria-label="指定 MB" type="number" min="0.1" max="100" step="0.1" value={sizePolicy.maxSizeKb / 1024} onChange={(event) => setSizePolicy({ mode: 'custom', maxSizeKb: Math.round(Math.min(100, Math.max(0.1, Number(event.target.value) || 8)) * 1024) })} /><small>MB</small></div></label> : null}
             {format === 'jpg' ? <label className="toggle"><input type="checkbox" checked={autoCompressJpeg} onChange={(event) => setAutoCompressJpeg(event.target.checked)} />JPG 超限时自动压缩</label> : null}
           <div className="export-summary-box">
             <span>已选 {selectedRows.length} 个文件</span>
           </div>
           <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（5 种）</label>
-          {exportAllLanguages && missingLanguages.length ? <p className="size-warning">缺少资源：{missingLanguages.map(getBrandLanguageLabel).join('、')}。补齐后才能导出。</p> : null}
+          {!exportAllLanguages ? <div className="export-language-list"><span>追加语种</span>{EXPORT_LANGUAGES.filter((language) => language !== brandLayer.logoLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...previous, language] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}
+          {selectedLanguages.some((language) => languageResolutions.find((item) => item.language === language)?.missing) ? <p className="size-warning">缺少资源：{selectedLanguages.filter((language) => languageResolutions.find((item) => item.language === language)?.missing).map(getBrandLanguageLabel).join('、')}。补齐后才能导出。</p> : null}
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>
         </div>
@@ -301,7 +308,7 @@ export function BatchExportDialog({
           </div>
           <div className="dialog-actions">
             <button type="button" onClick={onClose} disabled={exporting}>取消</button>
-            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting || (exportAllLanguages && missingLanguages.length > 0)}>
+            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting || selectedLanguages.some((language) => languageResolutions.find((item) => item.language === language)?.missing)}>
               {exporting ? '正在导出...' : `导出 ${selectedRows.length} 个文件`}
             </button>
           </div>
