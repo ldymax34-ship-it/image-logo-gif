@@ -33,7 +33,7 @@ import {
 } from '../../components';
 import { useAppRuntime } from '../../app/AppRuntimeProvider';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
-import { FocusEditorModal } from './FocusEditorModal';
+import { FocusWorkspace } from './FocusWorkspace';
 import { ConfirmationDialog } from './ConfirmationDialog';
 import { BrandControlsPanel } from './BrandControlsPanel';
 import { selectBoardBrandState, selectBoardKey, selectBoardPreviewState } from './mediaWorkbenchSelectors';
@@ -42,6 +42,7 @@ import { useMediaWorkbenchState } from './useMediaWorkbenchState';
 import { useMediaAssetActions } from './useMediaAssetActions';
 import { useMediaSpecActions } from './useMediaSpecActions';
 import { useMediaBrandActions } from './useMediaBrandActions';
+import { createFocusSession, updateFocusCpr, updateFocusLogo } from './focusSession';
 
 function getAspectLabel(spec: MaterialSpec): string {
   const family = classifyAspect({ width: spec.width, height: spec.height });
@@ -125,7 +126,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
   const { brandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, updateActivity, setMediaHeader, registerGlobalBrandResourceHandlers, setSettingsSelectedCompanyLogoId } = useAppRuntime();
-  const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures } = useMediaWorkbenchState();
+  const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusSession, setFocusSession, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures } = useMediaWorkbenchState();
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();
@@ -156,6 +157,12 @@ export function MediaWorkbench({ active }: { active: boolean }) {
     brandCatalog: brandAssets,
     brandLayer
   });
+
+  useEffect(() => {
+    if (!focusAsset || !focusSpec || !focusPreviewKey || !focusPreviewState || focusSession?.boardKey === focusPreviewKey) return;
+    const brand = boardBrandStates[focusPreviewKey] ?? { logo: focusLogoGroup, cpr: focusCprState };
+    setFocusSession(createFocusSession(focusAsset.id, focusSpec.id, focusPreviewKey, { previewState: focusPreviewState, brand }));
+  }, [boardBrandStates, focusAsset, focusCprState, focusLogoGroup, focusPreviewKey, focusPreviewState, focusSession?.boardKey, focusSpec, setFocusSession]);
 
   const workbenchState: WorkbenchState = {
     assets,
@@ -238,7 +245,41 @@ export function MediaWorkbench({ active }: { active: boolean }) {
 
   const { handleImageFiles, selectBoard, selectAssetAndScroll, requestDeleteAsset, deleteAsset, openFocusEditor, closeFocusEditor } = useMediaAssetActions({ assets, selectedAssetId, focusAssetId, imageInputRef, focusReturnRef, setAssets, setSelectedAssetId, setSelectedSpecId, setPreviewStates, setFocusAssetId, setFocusSpecId, setImportFailures, setMessage, setPendingConfirmation, dispatchBoardBrand });
   const { applyParsedSpecs, restoreAppliedText, applyPresetTemplate, saveCurrentAsPreset, removeCustomPreset, confirmPendingAction } = useMediaSpecActions({ result, draftText, appliedText, specs, previewStates, brandSettings, customPresets, newPresetName, pendingConfirmation, setDraftText, setAppliedText, setSpecs, setBrandLayer, setCustomPresets, setNewPresetName, setPendingConfirmation, setMessage, createLogoDefaults: (spec) => createLogoGroupFromSettings(brandSettings, spec), deleteAsset });
-  const { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, applyCompanyLogoReplacement } = useMediaBrandActions({ assets, specs, boardBrandStates, brandAssets, brandLayer, selectedBoardKey, focusSpec, focusPreviewKey, defaultLogoGroup, setPreviewStates, dispatchBoardBrand, setBrandLayer, setSelectedAssetId, setSelectedSpecId, setMessage, closeFocusEditor });
+  const { changeBrandLanguage, applyCompanyLogoReplacement } = useMediaBrandActions({ assets, specs, boardBrandStates, brandAssets, brandLayer, selectedBoardKey, focusSpec, focusPreviewKey, defaultLogoGroup, setPreviewStates, dispatchBoardBrand, setBrandLayer, setSelectedAssetId, setSelectedSpecId, setMessage });
+
+  function closeFocusSession() {
+    setFocusSession(undefined);
+    closeFocusEditor();
+  }
+
+  function commitFocusSession(session: NonNullable<typeof focusSession>) {
+    setPreviewStates((previous) => updateBoardCrop(previous, session.draft.previewState));
+    dispatchBoardBrand({ type: 'update-logo', key: session.boardKey, logo: session.draft.brand.logo });
+    dispatchBoardBrand({ type: 'update-cpr', key: session.boardKey, cpr: session.draft.brand.cpr });
+    setSelectedAssetId(session.assetId);
+    setSelectedSpecId(session.specId);
+    setMessage('已保存当前画板调整');
+    closeFocusSession();
+  }
+
+  function updateFocusedLanguage(language: BrandLanguage) {
+    if (!focusSession) return changeBrandLanguage(language);
+    const gameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === language);
+    setFocusSession(updateFocusLogo(focusSession, { ...focusSession.draft.brand.logo, gameLogoLanguage: language, gameLogoId: gameLogo?.id }));
+  }
+
+  const brandControls = <BrandControlsPanel
+    logoGroup={focusSession?.draft.brand.logo ?? selectedLogoGroup}
+    cprState={focusSession?.draft.brand.cpr ?? selectedCprState}
+    brandLayer={brandLayer}
+    brandSettings={brandSettings}
+    gameLogoAsset={focusSession ? focusBoardAssets.gameLogo : selectedBoardAssets.gameLogo}
+    onLanguageChange={updateFocusedLanguage}
+    onLogoChange={(next) => { if (focusSession) setFocusSession(updateFocusLogo(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next }); }}
+    onCprChange={(next) => { if (focusSession) setFocusSession(updateFocusCpr(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
+    onBrandLayerChange={setBrandLayer}
+    onSettingsChange={setBrandSettings}
+  />;
 
   useEffect(() => registerGlobalBrandResourceHandlers({
     onCompanyLogoReplacement: applyCompanyLogoReplacement,
@@ -247,7 +288,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
 
   return (
     <>
-      {active ? <section className="workspace">
+      {active && !focusSession ? <section className="workspace">
         <AssetSidebar>
           <div className="panel-heading">
             <h2>素材</h2>
@@ -289,18 +330,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           </div>
           {importFailures.length ? <div className="import-failures"><strong>失败文件</strong>{importFailures.map((failure) => <small key={failure}>{failure}</small>)}</div> : null}
 
-          <BrandControlsPanel
-            logoGroup={selectedLogoGroup}
-            cprState={selectedCprState}
-            brandLayer={brandLayer}
-            brandSettings={brandSettings}
-            gameLogoAsset={selectedBoardAssets.gameLogo}
-            onLanguageChange={changeBrandLanguage}
-            onLogoChange={(next) => { if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next }); }}
-            onCprChange={(next) => { if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
-            onBrandLayerChange={setBrandLayer}
-            onSettingsChange={setBrandSettings}
-          />
+          {brandControls}
         </AssetSidebar>
 
         <BoardOverview disabled={!assets.length || !specs.length} onExport={() => setExportDialogOpen(true)} message={message}>
@@ -440,26 +470,20 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           )}
         </SpecPanel>
       </section> : null}
-      {focusAsset && focusSpec && (
-        <FocusEditorModal
-          key={`${focusAsset.id}:${focusSpec.id}`}
+      {focusAsset && focusSpec && focusSession ? (
+        <FocusWorkspace
           asset={focusAsset}
           spec={focusSpec}
-          previewState={focusPreviewState}
-          logoAsset={selectedBoardAssets.gameLogo}
-          cprAsset={selectedBoardAssets.cpr}
+          session={focusSession}
+          brandCatalog={brandAssets}
           brandLayer={brandLayer}
           brandSettings={brandSettings}
-          logoGroup={focusLogoGroup}
-          cprState={focusCprState}
-          overlayCompanyLogo={focusBoardAssets.companyLogo}
-          overlayGameLogo={focusBoardAssets.gameLogo}
-          onCancel={closeFocusEditor}
-          onSave={saveFocusPreview}
-          onApplyToSameAspect={applyLogoGroupToSameAspect}
-          onDirtyChange={setFocusEditorDirty}
+          brandControls={brandControls}
+          onSessionChange={(session) => { setFocusSession(session); setFocusEditorDirty(session.dirty); }}
+          onCancel={closeFocusSession}
+          onCommit={commitFocusSession}
         />
-      )}
+      ) : null}
       {pendingConfirmation && (
         <ConfirmationDialog
           title={pendingConfirmation.type === 'apply-specs' ? '更新尺寸矩阵' : pendingConfirmation.type === 'delete-asset' ? '删除素材' : '删除常用套组'}

@@ -668,3 +668,4 @@
 11. [重构-中] Goal 2：固定 `html/body/#root`、App 外壳与模块容器为桌面 `100dvh` 框架；顶栏统一为 48px、模块栏为 56px，各模块及三栏面板改为内部滚动并启用 `scrollbar-gutter: stable`，消除模块切换造成的外框高度抖动。
 12. [体验-中] Goal 3：新增语义状态 token 与 `SectionHeader`；Logo、CPR、辅助工具根据真实启用和 focus-within 状态显示空闲、当前或禁用圆点，状态变化使用既有 180ms 动效且不只依赖颜色传达开关状态。
 13. [重构-大] Goal 4：新增 `resolveBoardBrandAssets`，总览缩略图、聚焦画布、批量导出预览与实际导出均按画板状态 / 显式语言覆写解析 Logo、公司 Logo 和 CPR；游戏 Logo 不再跨语种静默回退。
+14. [重构-大] Goal 5：退役遮罩式 `FocusEditorModal`，新增工作区内 `FocusSession` / `FocusWorkspace`。裁切、Logo、CPR 在聚焦期间只写 draft；左侧复用原品牌控件，保存后一次性提交，取消或 Esc 在 dirty 时要求确认放弃。

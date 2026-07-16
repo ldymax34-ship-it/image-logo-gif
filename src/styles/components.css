@@ -264,6 +264,15 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 .custom-drag-layer { position: absolute; z-index: 60; width: 128px; height: 80px; transform: translate(-20%, -20%); cursor: move; border: 1px dashed rgb(96 165 250 / 68%); border-radius: 3px; touch-action: none; }
 .custom-drag-layer:hover { border-color: var(--color-primary); background: var(--color-primary-soft); }
 
+.focus-workspace { position: relative; grid-column: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; background: var(--color-border); }
+.focus-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 8px 12px; background: var(--color-panel); border-bottom: 1px solid var(--color-border); }
+.focus-workspace-header h2 { margin: 0; }
+.focus-workspace-body { display: grid; grid-template-columns: 270px minmax(0, 1fr) 260px; min-height: 0; overflow: hidden; }
+.focus-brand-controls { min-width: 0; overflow: auto; padding: var(--panel-padding); background: var(--color-panel); border-right: 1px solid var(--color-border); scrollbar-gutter: stable; }
+.focus-workspace .focus-stage-frame { min-height: 0; display: grid; place-items: center; overflow: auto; padding: var(--panel-padding); background: var(--color-canvas); scrollbar-gutter: stable; }
+.focus-workspace .focus-side-controls { min-width: 0; align-content: start; overflow: auto; padding: var(--panel-padding); background: var(--color-panel); border-left: 1px solid var(--color-border); scrollbar-gutter: stable; }
+.focus-discard-confirm { position: absolute; left: 50%; bottom: 24px; z-index: 80; display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--color-border-strong); background: var(--color-panel); box-shadow: var(--shadow-dialog); transform: translateX(-50%); }
+
 .preview-shell,
 .focus-stage-frame,
 .export-preview-stage { background: var(--color-canvas); }
@@ -346,6 +355,8 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
   .module-nav button { width: 40px; }
   .custom-workspace { grid-template-columns: 1fr; }
   .custom-controls { border-right: 0; border-bottom: 1px solid var(--color-border); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .focus-workspace-body { grid-template-columns: 220px minmax(0, 1fr); }
+  .focus-workspace .focus-side-controls { grid-column: 1 / -1; border-top: 1px solid var(--color-border); border-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

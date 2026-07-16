@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultCprState, createDefaultLogoGroup, createInitialCropState, type BoardPreviewState } from '../../core';
 import { isCustomWorkbenchDirty, type CustomWorkbenchDirtySnapshot } from '../custom-workbench/CustomWorkbench';
-import { isFocusEditorDirty } from './FocusEditorModal';
+import { createFocusSession, isFocusSessionDirty, updateFocusLogo } from './focusSession';
 import { DEFAULT_BRAND_SETTINGS } from '../../core';
 import { isBrandSettingsDirty } from '../../components/brand/BrandSettingsDialog';
 
@@ -12,7 +12,9 @@ describe('workbench activity sources', () => {
     const initial: BoardPreviewState = { assetId: 'a', specId: 's', fitMode: 'cover', crop: createInitialCropState(asset, spec, 'cover') };
     const draft = { ...initial, crop: { ...initial.crop, offsetX: initial.crop.offsetX + 1 } };
     const logo = createDefaultLogoGroup(); const cpr = createDefaultCprState();
-    expect(isFocusEditorDirty(initial, draft, logo, logo, cpr, cpr)).toBe(true);
+    expect(isFocusSessionDirty({ previewState: initial, brand: { logo, cpr } }, { previewState: draft, brand: { logo, cpr } })).toBe(true);
+    const session = createFocusSession('a', 's', 'a:s', { previewState: initial, brand: { logo, cpr } });
+    expect(updateFocusLogo(session, { ...logo, scale: 1.2 }).dirty).toBe(true);
     expect(isCustomWorkbenchDirty(asset)).toBe(true);
     expect(isCustomWorkbenchDirty()).toBe(false);
     const customInitial = { gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, gameOffset: { x: 1, y: 1 }, companyOffset: { x: 2, y: 2 }, cprEnabled: true, gameEffect: cpr.effect, companyEffect: cpr.effect, cprEffect: cpr.effect, format: 'png' as const, gameLanguage: 'zh-CN' as const, guidesVisible: true, snapEnabled: true } satisfies CustomWorkbenchDirtySnapshot;

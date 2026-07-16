@@ -2,7 +2,6 @@ export * from './AssetSidebar';
 export * from './BoardOverview';
 export * from './BrandPanel';
 export * from './ExportDialog';
-export * from './FocusEditor';
 export * from './SpecPanel';
 export * from './WorkbenchHeader';
 export * from './ModuleNav';

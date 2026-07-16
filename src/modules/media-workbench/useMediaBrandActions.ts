@@ -2,10 +2,9 @@ import type { Dispatch, SetStateAction } from 'react';
 import {
   classifyAspect, getBoardPreviewKey, normalizeLogoGroup,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage,
-  type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialSpec
+  type BrandLayerState, type LogoGroupState, type MaterialAsset, type MaterialSpec
 } from '../../core';
 import type { BoardBrandAction } from './boardBrandReducer';
-import { updateBoardCrop } from './mediaWorkbenchActions';
 
 function resolvePreferredBrandAssetId(assets: BrandAsset[], type: BrandAsset['type'], language: BrandLanguage, selectedId?: string): string | undefined {
   const candidates = assets.filter((asset) => asset.type === type); if (!candidates.length) return undefined;
@@ -21,14 +20,8 @@ export function useMediaBrandActions(input: {
   setPreviewStates: Dispatch<SetStateAction<Record<string, BoardPreviewState>>>; dispatchBoardBrand: Dispatch<BoardBrandAction>;
   setBrandLayer: Dispatch<SetStateAction<BrandLayerState>>;
   setSelectedAssetId: Dispatch<SetStateAction<string | undefined>>; setSelectedSpecId: Dispatch<SetStateAction<string | undefined>>;
-  setMessage: Dispatch<SetStateAction<string>>; closeFocusEditor: () => void;
+  setMessage: Dispatch<SetStateAction<string>>;
 }) {
-  function saveFocusPreview(nextPreviewState: BoardPreviewState, nextLogoGroup: LogoGroupState, nextCprState: CprState) {
-    const key = getBoardPreviewKey(nextPreviewState.assetId, nextPreviewState.specId);
-    input.setPreviewStates((previous) => updateBoardCrop(previous, nextPreviewState));
-    input.dispatchBoardBrand({ type: 'update-logo', key, logo: nextLogoGroup }); input.dispatchBoardBrand({ type: 'update-cpr', key, cpr: nextCprState });
-    input.setSelectedAssetId(nextPreviewState.assetId); input.setSelectedSpecId(nextPreviewState.specId); input.closeFocusEditor(); input.setMessage('已保存当前画板调整');
-  }
   function applyLogoGroupToSameAspect(nextLogoGroup: LogoGroupState) {
     if (!input.focusSpec) return;
     const family = classifyAspect({ width: input.focusSpec.width, height: input.focusSpec.height });
@@ -46,5 +39,5 @@ export function useMediaBrandActions(input: {
       input.dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: assetId } });
     }
   }
-  return { saveFocusPreview, applyLogoGroupToSameAspect, changeBrandLanguage, applyCompanyLogoReplacement };
+  return { applyLogoGroupToSameAspect, changeBrandLanguage, applyCompanyLogoReplacement };
 }
