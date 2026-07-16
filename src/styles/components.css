@@ -328,6 +328,10 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 .export-file-panel { background: var(--color-panel); }
 .export-preview-panel { background: var(--color-canvas-deep); }
 .export-summary-box { margin-top: 16px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.export-result-list { display: grid; gap: 4px; max-height: 140px; margin-top: 8px; overflow: auto; color: var(--color-text-muted); scrollbar-gutter: stable; }
+.export-result.is-compressed { color: var(--state-warning); }
+.export-result.is-failed { color: var(--state-danger); }
+.export-result.is-success { color: var(--state-success); }
 .warning-box { border-color: #765f35; background: var(--color-warning-soft); color: #f0cf91; }
 .size-warning { color: var(--color-warning); }
 .export-error { color: var(--color-danger); }

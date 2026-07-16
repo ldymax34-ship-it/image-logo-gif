@@ -92,7 +92,7 @@ export function BatchExportDialog({
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
   type ExportRow = (typeof selectedRows)[number];
   const controller = useBatchExportController<ExportRow>();
-  const { exporting, progress, errorMessage } = controller;
+  const { exporting, progress, errorMessage, result: batchResult } = controller;
 
   useEffect(() => { onExportingChange?.(exporting); }, [exporting, onExportingChange]);
 
@@ -293,6 +293,10 @@ export function BatchExportDialog({
             {format === 'jpg' ? <label className="toggle"><input type="checkbox" checked={autoCompressJpeg} onChange={(event) => setAutoCompressJpeg(event.target.checked)} />JPG 超限时自动压缩</label> : null}
           <div className="export-summary-box">
             <span>已选 {selectedRows.length} 个文件</span>
+            {batchResult ? <div className="export-result-list" aria-live="polite">{batchResult.outcomes.map(({ item, outcome }) => {
+              const row = item as ExportRow;
+              return <span key={row.item.id} className={`export-result is-${outcome.result}`}>{row.fileName} · {outcome.result === 'failed' ? `失败：${outcome.reason}` : outcome.result === 'compressed' ? `已压缩 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB` : `完成 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB`}</span>;
+            })}</div> : null}
           </div>
           <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（5 种）</label>
           {!exportAllLanguages ? <div className="export-language-list"><span>追加语种</span>{EXPORT_LANGUAGES.filter((language) => language !== brandLayer.logoLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...previous, language] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}

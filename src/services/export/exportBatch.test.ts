@@ -10,6 +10,6 @@ describe('exportSequentially', () => {
     }, (value) => progress.push(value.current));
     expect(order).toEqual([1, 2, 3]);
     expect(progress).toEqual([1, 2, 3]);
-    expect(result).toEqual({ completed: 2, failures: [{ item: 2, message: 'second failed' }], info: [{ item: 3, message: '已自动压缩至 0.00 MB' }] });
+    expect(result).toEqual({ completed: 2, failures: [{ item: 2, message: 'second failed' }], info: [{ item: 3, message: '已自动压缩至 0.00 MB' }], outcomes: [{ item: 1, outcome: { result: 'success', outputBytes: 1024 } }, { item: 2, outcome: { result: 'failed', reason: 'second failed' } }, { item: 3, outcome: { result: 'compressed', outputBytes: 1024 } }] });
   });
 });

@@ -307,10 +307,10 @@ export function MediaWorkbench({ active }: { active: boolean }) {
     onCprChange={(next) => { if (focusSession) setFocusSession(updateFocusCpr(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
     onBrandLayerChange={setBrandLayer}
     onSettingsChange={setBrandSettings}
-    onApplyLogoSameAspect={applyLogoToSameAspect}
-    onApplyLogoAll={applyLogoToAll}
-    onApplyCprSameAspect={applyCprToSameAspect}
-    onApplyCprAll={applyCprToAll}
+    onApplyLogoSameAspect={focusSession ? undefined : applyLogoToSameAspect}
+    onApplyLogoAll={focusSession ? undefined : applyLogoToAll}
+    onApplyCprSameAspect={focusSession ? undefined : applyCprToSameAspect}
+    onApplyCprAll={focusSession ? undefined : applyCprToAll}
   />;
 
   useEffect(() => registerGlobalBrandResourceHandlers({
