@@ -3,8 +3,7 @@ import {
   DEFAULT_MAX_SIZE_KB, EXPORT_LANGUAGES, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
 } from '../../core';
-import { buildExportMatrixForLanguages, getExportLanguage, getSelectedExportLanguages, resolveExportLanguages, exportBoard, type ExportLanguageSelection, type ExportSizePolicy } from '../../services/export';
-import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
+import { buildExportMatrixForLanguages, getSelectedExportLanguages, resolveExportLanguages, type ExportLanguageSelection, type ExportSizePolicy, type MediaExportRow } from '../../services/export';
 import { ExportDialog } from '../../components/ExportDialog';
 import { BoardCanvas } from '../../components/canvas';
 import { useBatchExportController } from './useBatchExportController';
@@ -16,6 +15,7 @@ export function BatchExportDialog({
   brandAssets,
   brandLayer,
   boardBrandStates,
+  baseLanguage,
   onClose,
   onComplete,
   onExportingChange
@@ -26,6 +26,7 @@ export function BatchExportDialog({
   brandAssets: BrandAsset[];
   brandLayer: BrandLayerState;
   boardBrandStates: BoardBrandStateMap;
+  baseLanguage: BrandLanguage;
   onClose: () => void;
   onComplete: (message: string) => void;
   onExportingChange?: (exporting: boolean) => void;
@@ -35,9 +36,9 @@ export function BatchExportDialog({
   const [additionalLanguages, setAdditionalLanguages] = useState<BrandLanguage[]>([]);
   const languageResolutions = useMemo(() => resolveExportLanguages(brandAssets), [brandAssets]);
   const languageSelection = useMemo<ExportLanguageSelection>(() => ({
-    baseLanguage: brandLayer.logoLanguage,
-    additionalLanguages: exportAllLanguages ? EXPORT_LANGUAGES.filter((language) => language !== brandLayer.logoLanguage) : additionalLanguages
-  }), [additionalLanguages, brandLayer.logoLanguage, exportAllLanguages]);
+    baseLanguage,
+    additionalLanguages: exportAllLanguages ? EXPORT_LANGUAGES.filter((language) => language !== baseLanguage) : additionalLanguages
+  }), [additionalLanguages, baseLanguage, exportAllLanguages]);
   const selectedLanguages = useMemo(() => getSelectedExportLanguages(languageSelection), [languageSelection]);
   const items = useMemo(() => buildExportMatrixForLanguages(assets, specs, languageSelection), [assets, specs, languageSelection]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(items.map((item) => item.id)));
@@ -62,7 +63,7 @@ export function BatchExportDialog({
   const activeBoardLogoGroup = activeAsset && activeSpec
     ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.logo
     : undefined;
-  const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : brandLayer.logoLanguage) as BrandLanguage;
+  const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : baseLanguage) as BrandLanguage;
   const activeCprState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.cpr ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
   const activeAssets = activeBoardLogoGroup
     ? resolveBoardBrandAssets({ boardBrandState: { logo: activeBoardLogoGroup, cpr: activeCprState }, brandCatalog: brandAssets, brandLayer, languageOverride: activeLanguage })
@@ -78,7 +79,7 @@ export function BatchExportDialog({
       {
         batchName,
         sourceName: asset.fileName.replace(/\.[^.]+$/g, ''),
-        language: brandLayer.logoEnabled ? (('language' in item ? item.language : brandLayer.logoLanguage) as BrandLanguage) : undefined,
+        language: brandLayer.logoEnabled ? (('language' in item ? item.language : baseLanguage) as BrandLanguage) : undefined,
         index
       }
     );
@@ -90,8 +91,8 @@ export function BatchExportDialog({
 
   const selectedRows = rows.filter((row) => selectedIds.has(row.item.id));
   const allSelected = rows.length > 0 && selectedRows.length === rows.length;
-  type ExportRow = (typeof selectedRows)[number];
-  const controller = useBatchExportController<ExportRow>();
+  type ExportRow = MediaExportRow;
+  const controller = useBatchExportController();
   const { exporting, progress, errorMessage, result: batchResult } = controller;
 
   useEffect(() => { onExportingChange?.(exporting); }, [exporting, onExportingChange]);
@@ -138,50 +139,17 @@ export function BatchExportDialog({
 
   async function exportSelectedFiles() {
     if (!selectedRows.length || exporting) return;
-    const outputTarget = await chooseOutputTarget();
-    if (outputTarget.kind === 'cancelled') return;
-    const batchResult = await controller.run(selectedRows, async (row) => {
-      const previewState = previewStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
-      if (!previewState) {
-        throw new Error(`${row.fileName}：缺少画板预览状态`);
-      }
-      const boardBrandState = boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
-      if (!boardBrandState) throw new Error(`${row.fileName}：缺少画板品牌状态`);
-      const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
-      const boardAssets = resolveBoardBrandAssets({ boardBrandState, brandCatalog: brandAssets, brandLayer, languageOverride: exportLanguage });
-      if (boardAssets.missingGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
-      if (boardAssets.missingCpr) throw new Error('缺少 CPR 资源');
-      const languageGroup = { ...boardBrandState.logo, gameLogoLanguage: exportLanguage, gameLogoId: boardAssets.gameLogo?.id };
-      const result = await exportBoard({
-          asset: row.asset,
-          spec: row.spec,
-          previewState,
-          brandLayer: { ...brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState.cpr },
-          logoAsset: boardAssets.gameLogo,
-          cprAsset: boardAssets.cpr,
-          companyLogoAsset: boardAssets.companyLogo,
-          gameLogoAsset: boardAssets.gameLogo,
-          format,
-          quality,
-          maxBytes: row.effectiveMaxSizeKb * 1024,
-          autoCompressJpeg,
-          minJpegQuality: 0.4
-      });
-      if (!result.ok) {
-        const maxLabel = `${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB`;
-        throw new Error(result.reason === 'png-over-limit' ? `PNG 实际为 ${formatMegabytes(result.size)}，超过 ${maxLabel}；请改用 JPG 或调整尺寸` : `在保持当前尺寸时无法压缩到 ${maxLabel} 以下，请降低尺寸或调整内容`);
-      }
-      await saveBlobToOutputTarget(outputTarget, row.fileName, result.blob);
-      if (outputTarget.kind === 'downloads') await new Promise((resolve) => setTimeout(resolve, 180));
-      return result.compressed
-        ? { result: 'compressed' as const, beforeBytes: row.estimatedBytes, outputBytes: result.blob.size }
-        : { result: 'success' as const, outputBytes: result.blob.size };
+    const completed = await controller.run({
+      rows: selectedRows,
+      previewStates,
+      boardBrandStates,
+      brandAssets,
+      brandLayer,
+      format,
+      quality,
+      autoCompressJpeg
     });
-    if (!batchResult) return;
-    if (batchResult.failures.length) {
-      return;
-    }
-    onComplete(batchResult.info[0]?.message ?? `已导出 ${batchResult.completed} 个文件`);
+    if (completed && !completed.failures.length) onComplete(`已导出 ${completed.completed} 个文件`);
   }
 
   const previewScale = activeSpec
@@ -298,8 +266,9 @@ export function BatchExportDialog({
               return <span key={row.item.id} className={`export-result is-${outcome.result}`}>{row.fileName} · {outcome.result === 'failed' ? `失败：${outcome.reason}` : outcome.result === 'compressed' ? `已压缩 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB` : `完成 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB`}</span>;
             })}</div> : null}
           </div>
+          <div className="export-language-list"><span>当前语种（锁定）</span><span>{getBrandLanguageLabel(baseLanguage)}</span></div>
           <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（5 种）</label>
-          {!exportAllLanguages ? <div className="export-language-list"><span>追加语种</span>{EXPORT_LANGUAGES.filter((language) => language !== brandLayer.logoLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...previous, language] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}
+          {!exportAllLanguages ? <div className="export-language-list"><span>追加语种</span>{EXPORT_LANGUAGES.filter((language) => language !== baseLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...previous, language] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}
           {selectedLanguages.some((language) => languageResolutions.find((item) => item.language === language)?.missing) ? <p className="size-warning">缺少资源：{selectedLanguages.filter((language) => languageResolutions.find((item) => item.language === language)?.missing).map(getBrandLanguageLabel).join('、')}。补齐后才能导出。</p> : null}
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>

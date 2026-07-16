@@ -15,7 +15,7 @@ const COLORS: Array<{ value: BrandColorMode; label: string }> = [
   { value: 'original', label: '原始' }
 ];
 
-export function CprControls({ state, onChange, onApplySameAspect, onApplyAll }: { state: CprState; onChange: (state: CprState) => void; onApplySameAspect?: () => void; onApplyAll?: () => void }) {
+export function CprControls({ state, onChange, onApplySameAspect, onApplyAll, sectionState }: { state: CprState; onChange: (state: CprState) => void; onApplySameAspect?: () => void; onApplyAll?: () => void; sectionState?: 'active' }) {
   const patch = (next: Partial<CprState>) => onChange({ ...state, ...next });
   const patchTransform = (next: Partial<CprState['transform']>) => patch({ transform: { ...state.transform, ...next } });
   const setColor = (colorMode: BrandColorMode) => patch({
@@ -29,7 +29,7 @@ export function CprControls({ state, onChange, onApplySameAspect, onApplyAll }: 
 
   return (
     <section className="brand-control-group" aria-labelledby="cpr-controls-title">
-      <SectionHeader id="cpr-controls-title" title="CPR" description="固定 SVG 品牌组件" state={state.enabled ? 'active' : 'disabled'}>
+      <SectionHeader id="cpr-controls-title" title="CPR" description="固定 SVG 品牌组件" state={sectionState ?? (state.enabled ? 'idle' : 'disabled')}>
         <label className="toggle compact-toggle">
           <input type="checkbox" checked={state.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />
           显示
@@ -58,7 +58,7 @@ export function CprControls({ state, onChange, onApplySameAspect, onApplyAll }: 
         </div>
       </div>
       <BrandEffectControls title="CPR" effect={state.effect} onChange={(effect) => patch({ effect })} />
-      {onApplySameAspect || onApplyAll ? <div className="brand-apply-actions"><span>应用范围</span>{onApplySameAspect ? <button type="button" onClick={onApplySameAspect}>同版型画板</button> : null}{onApplyAll ? <button type="button" onClick={onApplyAll}>全部画板</button> : null}</div> : null}
+      {onApplySameAspect || onApplyAll ? <div className="brand-apply-actions"><span>应用范围</span>{onApplySameAspect ? <button type="button" onClick={onApplySameAspect}>同尺寸</button> : null}{onApplyAll ? <button type="button" onClick={onApplyAll}>同素材</button> : null}</div> : null}
     </section>
   );
 }

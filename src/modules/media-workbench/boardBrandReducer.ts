@@ -1,5 +1,17 @@
 import type { BoardBrandState, BoardBrandStateMap, CprState, LogoGroupState } from '../../core';
 
+function cloneLogo(logo: LogoGroupState): LogoGroupState {
+  return { ...logo, manualOffset: logo.manualOffset ? { ...logo.manualOffset } : undefined };
+}
+
+function cloneCpr(cpr: CprState): CprState {
+  return { ...cpr, scale: cpr.scale ?? 1, transform: { ...cpr.transform }, effect: { ...cpr.effect } };
+}
+
+function cloneBoard(board: BoardBrandState): BoardBrandState {
+  return { logo: cloneLogo(board.logo), cpr: cloneCpr(board.cpr) };
+}
+
 export type BoardBrandAction =
   | { type: 'replace'; states: BoardBrandStateMap }
   | { type: 'reconcile-boards'; keys: string[]; defaults: BoardBrandState }
@@ -7,45 +19,41 @@ export type BoardBrandAction =
   | { type: 'update-cpr'; key: string; cpr: CprState }
   | { type: 'remove-asset'; assetId: string }
   | { type: 'apply-brand'; keys: string[]; source: BoardBrandState }
-  | { type: 'apply-logo-to-same-aspect'; keys: string[]; logo: LogoGroupState }
-  | { type: 'apply-cpr-to-same-aspect'; keys: string[]; cpr: CprState }
-  | { type: 'apply-logo-to-all'; logo: LogoGroupState }
-  | { type: 'apply-cpr-to-all'; cpr: CprState };
+  | { type: 'apply-logo-to-scope'; keys: string[]; logo: LogoGroupState }
+  | { type: 'apply-cpr-to-scope'; keys: string[]; cpr: CprState };
 
 export function boardBrandReducer(state: BoardBrandStateMap, action: BoardBrandAction): BoardBrandStateMap {
   switch (action.type) {
     case 'replace': return action.states;
     case 'reconcile-boards': {
-      const keys = new Set(action.keys);
+      const requestedKeys = new Set(action.keys);
+      const hasSameKeys = Object.keys(state).length === requestedKeys.size && action.keys.every((key) => key in state);
+      if (hasSameKeys) return state;
       const next: BoardBrandStateMap = {};
       for (const key of action.keys) {
-        const current = state[key] ?? action.defaults;
-        next[key] = {
-          logo: { ...current.logo, manualOffset: current.logo.manualOffset ? { ...current.logo.manualOffset } : undefined },
-          cpr: { ...current.cpr, scale: current.cpr.scale ?? 1, transform: { ...current.cpr.transform }, effect: { ...current.cpr.effect } }
-        };
+        // Existing boards retain their object identity. Defaults are cloned once
+        // for newly materialized boards so nested offsets/effects never alias.
+        next[key] = state[key] ?? cloneBoard(action.defaults);
       }
-      return Object.keys(state).length === keys.size && action.keys.every((key) => state[key] === next[key]) ? state : next;
+      return next;
     }
     case 'update-logo': return state[action.key] ? { ...state, [action.key]: { ...state[action.key], logo: action.logo } } : state;
     case 'update-cpr': return state[action.key] ? { ...state, [action.key]: { ...state[action.key], cpr: action.cpr } } : state;
     case 'remove-asset': return Object.fromEntries(Object.entries(state).filter(([key]) => !key.startsWith(`${action.assetId}:`)));
     case 'apply-brand': {
       const next = { ...state };
-      for (const key of action.keys) if (next[key]) next[key] = { logo: { ...action.source.logo }, cpr: { ...action.source.cpr, transform: { ...action.source.cpr.transform }, effect: { ...action.source.cpr.effect } } };
+      for (const key of action.keys) if (next[key]) next[key] = cloneBoard(action.source);
       return next;
     }
-    case 'apply-logo-to-same-aspect': {
+    case 'apply-logo-to-scope': {
       const next = { ...state };
-      for (const key of action.keys) if (next[key]) next[key] = { ...next[key], logo: { ...action.logo, manualOffset: action.logo.manualOffset ? { ...action.logo.manualOffset } : undefined } };
+      for (const key of action.keys) if (next[key]) next[key] = { ...next[key], logo: cloneLogo(action.logo) };
       return next;
     }
-    case 'apply-cpr-to-same-aspect': {
+    case 'apply-cpr-to-scope': {
       const next = { ...state };
-      for (const key of action.keys) if (next[key]) next[key] = { ...next[key], cpr: { ...action.cpr, scale: action.cpr.scale ?? 1, transform: { ...action.cpr.transform }, effect: { ...action.cpr.effect } } };
+      for (const key of action.keys) if (next[key]) next[key] = { ...next[key], cpr: cloneCpr(action.cpr) };
       return next;
     }
-    case 'apply-logo-to-all': return Object.fromEntries(Object.entries(state).map(([key, board]) => [key, { ...board, logo: { ...action.logo, manualOffset: action.logo.manualOffset ? { ...action.logo.manualOffset } : undefined } }]));
-    case 'apply-cpr-to-all': return Object.fromEntries(Object.entries(state).map(([key, board]) => [key, { ...board, cpr: { ...action.cpr, scale: action.cpr.scale ?? 1, transform: { ...action.cpr.transform }, effect: { ...action.cpr.effect } } }]));
   }
 }

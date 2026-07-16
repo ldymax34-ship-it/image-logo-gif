@@ -1,10 +1,16 @@
-import type { BoardBrandState, BoardPreviewState, CprState, LogoGroupState } from '../../core';
+import type { BoardBrandState, BoardPreviewState, BrandEffectState, CprState, LogoGroupState } from '../../core';
 
 export type FocusTool = 'crop' | 'logo' | 'cpr';
+
+export type FocusBrandLayerDraft = {
+  logoEnabled: boolean;
+  logoEffect: BrandEffectState;
+};
 
 export type BoardDocumentSnapshot = {
   previewState: BoardPreviewState;
   brand: BoardBrandState;
+  brandLayer: FocusBrandLayerDraft;
 };
 
 export type FocusSession = {
@@ -23,7 +29,8 @@ export function createFocusSession(assetId: string, specId: string, boardKey: st
     brand: {
       logo: { ...initial.brand.logo, manualOffset: initial.brand.logo.manualOffset ? { ...initial.brand.logo.manualOffset } : undefined },
       cpr: { ...initial.brand.cpr, transform: { ...initial.brand.cpr.transform }, effect: { ...initial.brand.cpr.effect } }
-    }
+    },
+    brandLayer: { logoEnabled: initial.brandLayer.logoEnabled, logoEffect: { ...initial.brandLayer.logoEffect } }
   };
   return { assetId, specId, boardKey, initial: snapshot, draft: structuredClone(snapshot), tool: 'crop', dirty: false };
 }
@@ -42,4 +49,8 @@ export function updateFocusLogo(session: FocusSession, logo: LogoGroupState): Fo
 
 export function updateFocusCpr(session: FocusSession, cpr: CprState): FocusSession {
   return withFocusDraft(session, { ...session.draft, brand: { ...session.draft.brand, cpr } });
+}
+
+export function updateFocusBrandLayer(session: FocusSession, brandLayer: FocusBrandLayerDraft): FocusSession {
+  return withFocusDraft(session, { ...session.draft, brandLayer });
 }

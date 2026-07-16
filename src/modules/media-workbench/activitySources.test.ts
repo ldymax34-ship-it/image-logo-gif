@@ -12,8 +12,8 @@ describe('workbench activity sources', () => {
     const initial: BoardPreviewState = { assetId: 'a', specId: 's', fitMode: 'cover', crop: createInitialCropState(asset, spec, 'cover') };
     const draft = { ...initial, crop: { ...initial.crop, offsetX: initial.crop.offsetX + 1 } };
     const logo = createDefaultLogoGroup(); const cpr = createDefaultCprState();
-    expect(isFocusSessionDirty({ previewState: initial, brand: { logo, cpr } }, { previewState: draft, brand: { logo, cpr } })).toBe(true);
-    const session = createFocusSession('a', 's', 'a:s', { previewState: initial, brand: { logo, cpr } });
+    expect(isFocusSessionDirty({ previewState: initial, brand: { logo, cpr }, brandLayer: { logoEnabled: true, logoEffect: { colorEnabled: false, color: '#fff', strokeEnabled: false, strokeColor: '#000', strokeWidth: 0, glowEnabled: false, glowColor: '#fff', glowBlur: 0, shadowEnabled: false, shadowColor: '#000', shadowOpacity: 0, shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 } } }, { previewState: draft, brand: { logo, cpr }, brandLayer: { logoEnabled: true, logoEffect: { colorEnabled: false, color: '#fff', strokeEnabled: false, strokeColor: '#000', strokeWidth: 0, glowEnabled: false, glowColor: '#fff', glowBlur: 0, shadowEnabled: false, shadowColor: '#000', shadowOpacity: 0, shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 } } })).toBe(true);
+    const session = createFocusSession('a', 's', 'a:s', { previewState: initial, brand: { logo, cpr }, brandLayer: { logoEnabled: true, logoEffect: { colorEnabled: false, color: '#fff', strokeEnabled: false, strokeColor: '#000', strokeWidth: 0, glowEnabled: false, glowColor: '#fff', glowBlur: 0, shadowEnabled: false, shadowColor: '#000', shadowOpacity: 0, shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 } } });
     expect(updateFocusLogo(session, { ...logo, scale: 1.2 }).dirty).toBe(true);
     expect(isCustomWorkbenchDirty(asset)).toBe(true);
     expect(isCustomWorkbenchDirty()).toBe(false);

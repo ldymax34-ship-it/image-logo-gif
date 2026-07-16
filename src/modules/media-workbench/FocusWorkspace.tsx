@@ -42,7 +42,8 @@ export function FocusWorkspace({
 }) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number; kind: FocusSession['tool']; originX?: number; originY?: number }>();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const assets = resolveBoardBrandAssets({ boardBrandState: session.draft.brand, brandCatalog, brandLayer });
+  const draftBrandLayer = { ...brandLayer, ...session.draft.brandLayer, logoEffect: session.draft.brandLayer.logoEffect };
+  const assets = resolveBoardBrandAssets({ boardBrandState: session.draft.brand, brandCatalog, brandLayer: draftBrandLayer });
   const stageScale = Math.min(820 / spec.width, 560 / spec.height, 1.6);
   const crop = session.draft.previewState.crop;
   const minScale = computeFitScale(asset, spec, session.draft.previewState.fitMode);
@@ -58,7 +59,7 @@ export function FocusWorkspace({
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
+  }, [onCancel, session.dirty]);
 
   function updateCrop(scale: number) {
     const nextCrop = zoomCropState(asset, spec, crop, scale, { x: spec.width / 2, y: spec.height / 2 }, session.draft.previewState.fitMode);
@@ -66,8 +67,14 @@ export function FocusWorkspace({
   }
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const point = { x: (event.clientX - bounds.left) / stageScale, y: (event.clientY - bounds.top) / stageScale };
+    const plan = buildBrandRenderPlan({ width: spec.width, height: spec.height }, session.draft.brand.logo, { companyLogo: assets.companyLogo, gameLogo: assets.gameLogo, cpr: session.draft.brand.cpr });
+    const contains = (rect: { x: number; y: number; width: number; height: number } | undefined) => Boolean(rect && point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height);
+    const tool = contains(plan.cpr?.rect) ? 'cpr' : contains(plan.logoGroupRect) ? 'logo' : 'crop';
+    if (tool !== session.tool) onSessionChange({ ...session, tool });
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, kind: session.tool };
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, kind: tool };
   }
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
@@ -109,7 +116,7 @@ export function FocusWorkspace({
           previewState={session.draft.previewState}
           logoAsset={assets.gameLogo}
           cprAsset={assets.cpr}
-          brandLayer={{ ...brandLayer, logoGroup: session.draft.brand.logo, cprState: session.draft.brand.cpr, cprEnabled: session.draft.brand.cpr.enabled }}
+          brandLayer={{ ...draftBrandLayer, logoGroup: session.draft.brand.logo, cprState: session.draft.brand.cpr, cprEnabled: session.draft.brand.cpr.enabled }}
           brandSettings={brandSettings}
           overlayCompanyLogo={assets.companyLogo}
           overlayGameLogo={assets.gameLogo}
@@ -121,9 +128,7 @@ export function FocusWorkspace({
         />
       </div>
       <aside className="focus-side-controls">
-        <div><span className="control-label">调整对象</span><div className="segmented-control"><button type="button" className={session.tool === 'crop' ? 'active' : ''} onClick={() => onSessionChange({ ...session, tool: 'crop' })}>图片裁切</button><button type="button" className={session.tool === 'logo' ? 'active' : ''} onClick={() => onSessionChange({ ...session, tool: 'logo' })}>品牌位置</button><button type="button" className={session.tool === 'cpr' ? 'active' : ''} onClick={() => onSessionChange({ ...session, tool: 'cpr' })}>CPR 位置</button></div></div>
-        <div><span className="control-label">填充方式</span><div className="segmented-control"><button type="button" className={session.draft.previewState.fitMode === 'cover' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'cover' } }))}>填满画布</button><button type="button" className={session.draft.previewState.fitMode === 'contain' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'contain' } }))}>适应画布</button></div></div>
-        <label className="focus-range-field"><span className="control-label">缩放</span><input type="range" min={minScale} max={maxScale} step={Math.max(minScale / 100, .001)} value={crop.scale} onChange={(event) => updateCrop(Number(event.target.value))} /></label>
+        {session.tool === 'crop' ? <><div><span className="control-label">填充方式</span><div className="segmented-control"><button type="button" className={session.draft.previewState.fitMode === 'cover' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'cover' } }))}>填满画布</button><button type="button" className={session.draft.previewState.fitMode === 'contain' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'contain' } }))}>适应画布</button></div></div><label className="focus-range-field"><span className="control-label">缩放</span><input type="range" min={minScale} max={maxScale} step={Math.max(minScale / 100, .001)} value={crop.scale} onChange={(event) => updateCrop(Number(event.target.value))} /></label></> : null}
         {session.tool === 'logo' ? <label className="focus-range-field"><span className="control-label">Logo 大小 {Math.round((session.draft.brand.logo.scale ?? 1) * 100)}%</span><input type="range" min="0.5" max="2" step="0.01" value={session.draft.brand.logo.scale ?? 1} onChange={(event) => onSessionChange(updateFocusLogo(session, { ...session.draft.brand.logo, scale: Number(event.target.value) }))} /></label> : null}
         {session.tool === 'cpr' ? <label className="focus-range-field"><span className="control-label">CPR 大小 {Math.round((session.draft.brand.cpr.scale ?? 1) * 100)}%</span><input type="range" min="0.5" max="2" step="0.01" value={session.draft.brand.cpr.scale ?? 1} onChange={(event) => onSessionChange(updateFocusCpr(session, { ...session.draft.brand.cpr, scale: Number(event.target.value) }))} /></label> : null}
         <p className="dialog-help">聚焦期间所有修改均保存在草稿中；保存前不会写入画板。</p>

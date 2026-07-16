@@ -42,7 +42,7 @@ import { useMediaWorkbenchState } from './useMediaWorkbenchState';
 import { useMediaAssetActions } from './useMediaAssetActions';
 import { useMediaSpecActions } from './useMediaSpecActions';
 import { useMediaBrandActions } from './useMediaBrandActions';
-import { createFocusSession, updateFocusCpr, updateFocusLogo } from './focusSession';
+import { createFocusSession, updateFocusBrandLayer, updateFocusCpr, updateFocusLogo } from './focusSession';
 
 function getAspectLabel(spec: MaterialSpec): string {
   const family = classifyAspect({ width: spec.width, height: spec.height });
@@ -162,8 +162,8 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   useEffect(() => {
     if (!focusAsset || !focusSpec || !focusPreviewKey || !focusPreviewState || focusSession?.boardKey === focusPreviewKey) return;
     const brand = boardBrandStates[focusPreviewKey] ?? { logo: focusLogoGroup, cpr: focusCprState };
-    setFocusSession(createFocusSession(focusAsset.id, focusSpec.id, focusPreviewKey, { previewState: focusPreviewState, brand }));
-  }, [boardBrandStates, focusAsset, focusCprState, focusLogoGroup, focusPreviewKey, focusPreviewState, focusSession?.boardKey, focusSpec, setFocusSession]);
+    setFocusSession(createFocusSession(focusAsset.id, focusSpec.id, focusPreviewKey, { previewState: focusPreviewState, brand, brandLayer: { logoEnabled: brandLayer.logoEnabled, logoEffect: { ...brandLayer.logoEffect } } }));
+  }, [boardBrandStates, brandLayer.logoEffect, brandLayer.logoEnabled, focusAsset, focusCprState, focusLogoGroup, focusPreviewKey, focusPreviewState, focusSession?.boardKey, focusSpec, setFocusSession]);
 
   const workbenchState: WorkbenchState = {
     assets,
@@ -250,6 +250,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
 
   function closeFocusSession() {
     setFocusSession(undefined);
+    setFocusEditorDirty(false);
     closeFocusEditor();
   }
 
@@ -257,6 +258,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
     setPreviewStates((previous) => updateBoardCrop(previous, session.draft.previewState));
     dispatchBoardBrand({ type: 'update-logo', key: session.boardKey, logo: session.draft.brand.logo });
     dispatchBoardBrand({ type: 'update-cpr', key: session.boardKey, cpr: session.draft.brand.cpr });
+    setBrandLayer((previous) => ({ ...previous, ...session.draft.brandLayer, logoEffect: { ...session.draft.brandLayer.logoEffect } }));
     setSelectedAssetId(session.assetId);
     setSelectedSpecId(session.specId);
     setMessage('已保存当前画板调整');
@@ -269,48 +271,47 @@ export function MediaWorkbench({ active }: { active: boolean }) {
     setFocusSession(updateFocusLogo(focusSession, { ...focusSession.draft.brand.logo, gameLogoLanguage: language, gameLogoId: gameLogo?.id }));
   }
 
-  function sameAspectKeys() {
-    const sourceSpec = focusSession ? focusSpec : selectedSpec;
-    if (!sourceSpec) return [];
-    const family = classifyAspect({ width: sourceSpec.width, height: sourceSpec.height });
-    return assets.flatMap((asset) => specs
-      .filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family)
-      .map((spec) => getBoardPreviewKey(asset.id, spec.id)));
+  function sameSpecKeys() {
+    const sourceSpecId = selectedSpec?.id;
+    return sourceSpecId ? assets.map((asset) => getBoardPreviewKey(asset.id, sourceSpecId)) : [];
   }
 
-  function applyLogoToSameAspect() {
-    const logo = focusSession?.draft.brand.logo ?? selectedLogoGroup;
-    dispatchBoardBrand({ type: 'apply-logo-to-same-aspect', keys: sameAspectKeys(), logo });
+  function sameAssetKeys() {
+    return selectedAsset ? specs.map((spec) => getBoardPreviewKey(selectedAsset.id, spec.id)) : [];
   }
 
-  function applyCprToSameAspect() {
-    const cpr = focusSession?.draft.brand.cpr ?? selectedCprState;
-    dispatchBoardBrand({ type: 'apply-cpr-to-same-aspect', keys: sameAspectKeys(), cpr });
+  function applyLogoToSameSpec() {
+    dispatchBoardBrand({ type: 'apply-logo-to-scope', keys: sameSpecKeys(), logo: selectedLogoGroup });
   }
 
-  function applyLogoToAll() {
-    dispatchBoardBrand({ type: 'apply-logo-to-all', logo: focusSession?.draft.brand.logo ?? selectedLogoGroup });
+  function applyCprToSameSpec() {
+    dispatchBoardBrand({ type: 'apply-cpr-to-scope', keys: sameSpecKeys(), cpr: selectedCprState });
   }
 
-  function applyCprToAll() {
-    dispatchBoardBrand({ type: 'apply-cpr-to-all', cpr: focusSession?.draft.brand.cpr ?? selectedCprState });
+  function applyLogoToSameAsset() {
+    dispatchBoardBrand({ type: 'apply-logo-to-scope', keys: sameAssetKeys(), logo: selectedLogoGroup });
+  }
+
+  function applyCprToSameAsset() {
+    dispatchBoardBrand({ type: 'apply-cpr-to-scope', keys: sameAssetKeys(), cpr: selectedCprState });
   }
 
   const brandControls = <BrandControlsPanel
     logoGroup={focusSession?.draft.brand.logo ?? selectedLogoGroup}
     cprState={focusSession?.draft.brand.cpr ?? selectedCprState}
-    brandLayer={brandLayer}
+    brandLayer={focusSession ? { ...brandLayer, ...focusSession.draft.brandLayer, logoEffect: focusSession.draft.brandLayer.logoEffect } : brandLayer}
     brandSettings={brandSettings}
     gameLogoAsset={focusSession ? focusBoardAssets.gameLogo : selectedBoardAssets.gameLogo}
     onLanguageChange={updateFocusedLanguage}
     onLogoChange={(next) => { if (focusSession) setFocusSession(updateFocusLogo(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next }); }}
     onCprChange={(next) => { if (focusSession) setFocusSession(updateFocusCpr(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
-    onBrandLayerChange={setBrandLayer}
+    activeSection={focusSession?.tool === 'logo' ? 'logo' : focusSession?.tool === 'cpr' ? 'cpr' : undefined}
+    onBrandLayerChange={(next) => { if (focusSession) setFocusSession(updateFocusBrandLayer(focusSession, { logoEnabled: next.logoEnabled, logoEffect: { ...next.logoEffect } })); else setBrandLayer(next); }}
     onSettingsChange={setBrandSettings}
-    onApplyLogoSameAspect={focusSession ? undefined : applyLogoToSameAspect}
-    onApplyLogoAll={focusSession ? undefined : applyLogoToAll}
-    onApplyCprSameAspect={focusSession ? undefined : applyCprToSameAspect}
-    onApplyCprAll={focusSession ? undefined : applyCprToAll}
+    onApplyLogoSameSpec={focusSession ? undefined : applyLogoToSameSpec}
+    onApplyLogoSameAsset={focusSession ? undefined : applyLogoToSameAsset}
+    onApplyCprSameSpec={focusSession ? undefined : applyCprToSameSpec}
+    onApplyCprSameAsset={focusSession ? undefined : applyCprToSameAsset}
   />;
 
   useEffect(() => registerGlobalBrandResourceHandlers({
@@ -540,6 +541,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           brandAssets={brandAssets}
           brandLayer={brandLayer}
           boardBrandStates={boardBrandStates}
+          baseLanguage={selectedLogoGroup.gameLogoLanguage}
           onClose={() => setExportDialogOpen(false)}
           onComplete={setMessage}
           onExportingChange={setExporting}

@@ -536,7 +536,7 @@ describe('core 0.1.x foundation', () => {
 });
 
 describe('board brand reconcile', () => {
-  it('preserves existing board state, creates missing states, removes stale states, and clones nested values', async () => {
+  it('preserves existing board state identity, creates isolated missing states, and removes stale states', async () => {
     const { boardBrandReducer } = await import('../modules/media-workbench/boardBrandReducer');
     const logo = createDefaultLogoGroup('zh-CN');
     const defaults = { logo, cpr: createDefaultCprState() };
@@ -545,7 +545,8 @@ describe('board brand reconcile', () => {
     expect(Object.keys(next)).toEqual(['a:one', 'b:one']);
     expect(next['a:one'].logo.manualOffset).toEqual({ x: 9, y: 8 });
     expect(next['a:one'].cpr.transform).toMatchObject({ placement: 'bottom-left', offsetX: 2 });
-    expect(next['a:one'].logo.manualOffset).not.toBe(existing['a:one'].logo.manualOffset);
+    expect(next['a:one']).toBe(existing['a:one']);
+    expect(next['a:one'].logo.manualOffset).toBe(existing['a:one'].logo.manualOffset);
     expect(next['b:one'].cpr.transform).not.toBe(defaults.cpr.transform);
   });
 });

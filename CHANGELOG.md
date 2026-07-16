@@ -655,7 +655,7 @@
 
 ## 0.1.24
 
-1. [重构-大] `boardBrandReducer` 新增增量 reconcile，保留现有画板品牌状态、初始化新画板、移除失效画板，并深拷贝可变嵌套状态；默认设置不再通过全量 replace 覆盖已有画板。
+1. [重构-大] `boardBrandReducer` 新增增量 reconcile，保留现有画板品牌状态引用、初始化新画板时深拷贝可变嵌套状态、移除失效画板；默认设置不再通过全量 replace 覆盖已有画板。
 2. [重构-大] 画板品牌状态继续收口，预览、聚焦编辑与导出直接使用 `BoardBrandStateMap`。
 3. [重构-大] 批量导出循环、逐项失败继续执行、进度和结构化信息结果进入 `services/export/exportBatch.ts`；对话框只保留导出 UI 与触发逻辑。
 4. [重构-中] 新增媒体工作台 actions/selectors，继续按状态所有权拆分；AppActivity 聚合真实 exporting、编辑器和弹窗活动状态。
@@ -666,8 +666,10 @@
 9. [重构-中] Goal 1.1：新增 `GlobalDialogs`，设置弹层、品牌资源替换 / 恢复和 SVG 上传入口迁移至根层；根层直接聚合 settings activity，设媒仅汇报导出、聚焦和确认状态。
 10. [验证-中] 根层集成与 AppActivity 聚合测试覆盖模块导航、全局设置入口以及 Custom、Focus、Export、Settings、确认弹窗的活动状态组合；当前专项共 63 项测试通过。
 11. [重构-中] Goal 2：固定 `html/body/#root`、App 外壳与模块容器为桌面 `100dvh` 框架；顶栏统一为 48px、模块栏为 56px，各模块及三栏面板改为内部滚动并启用 `scrollbar-gutter: stable`，消除模块切换造成的外框高度抖动。
-12. [体验-中] Goal 3：新增语义状态 token 与 `SectionHeader`；Logo、CPR、辅助工具根据真实启用和 focus-within 状态显示空闲、当前或禁用圆点，状态变化使用既有 180ms 动效且不只依赖颜色传达开关状态。
+12. [体验-中] Goal 3：新增语义状态 token 与 `SectionHeader`；圆点区分空闲、当前编辑、警告和禁用，启用状态仍由 Toggle 文案表达，状态变化使用既有 180ms 动效且不只依赖颜色。
 13. [重构-大] Goal 4：新增 `resolveBoardBrandAssets`，总览缩略图、聚焦画布、批量导出预览与实际导出均按画板状态 / 显式语言覆写解析 Logo、公司 Logo 和 CPR；游戏 Logo 不再跨语种静默回退。
 14. [重构-大] Goal 5：退役遮罩式 `FocusEditorModal`，新增工作区内 `FocusSession` / `FocusWorkspace`。裁切、Logo、CPR 在聚焦期间只写 draft；左侧复用原品牌控件，保存后一次性提交，取消或 Esc 在 dirty 时要求确认放弃。
-15. [功能调整-中] Goal 6：CPR 新增与 Logo 一致的连续缩放，并接入预览 / 聚焦 / 导出同一布局计算；品牌控制新增明确的同版型、全部画板应用命令，画板位置与大小仍保持独立保存。
+15. [功能调整-中] Goal 6：CPR 新增与 Logo 一致的连续缩放，并接入预览 / 聚焦 / 导出同一布局计算；品牌控制新增明确的同尺寸、同素材应用命令，画板位置与大小仍保持独立保存。
 16. [重构-大] Goal 7：导出模型新增基础语种 + 追加语种选择、默认 / 自定义 / 不限制体积策略与结构化逐项结果；保持原有 PNG 超限、JPG 自动压缩和平台文件写入实现不变。
+17. [修复-高] Goal 7.1：聚焦状态将 Logo 显示与效果纳入 draft，Esc 使用最新 dirty 状态；点击画布品牌元素可直接选中拖动，批量应用范围改为同尺寸 / 同素材。
+18. [重构-中] Goal 7.1：导出基础语种锁定为当前画板语种；渲染、写入、失败继续与结果汇总收口至 `services/export/exportBatch.ts` 和 controller，Dialog 仅保留 UI。
