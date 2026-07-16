@@ -18,13 +18,10 @@ export function AssetBoardGroup({
   previewStates,
   selectedAssetId,
   selectedSpecId,
-  logoAsset,
-  cprAsset,
+  brandCatalog,
   brandLayer,
   brandSettings,
   boardBrandStates,
-  companyLogo,
-  gameLogo,
   thumbnailWidth,
   onSelect,
   onEdit,
@@ -35,13 +32,10 @@ export function AssetBoardGroup({
   previewStates: Record<string, BoardPreviewState>;
   selectedAssetId?: string;
   selectedSpecId?: string;
-  logoAsset?: BrandAsset;
-  cprAsset?: BrandAsset;
+  brandCatalog: BrandAsset[];
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
   boardBrandStates: BoardBrandStateMap;
-  companyLogo?: BrandAsset;
-  gameLogo?: BrandAsset;
   thumbnailWidth: number;
   onSelect: (assetId: string, specId: string) => void;
   onEdit: (assetId: string, specId: string) => void;
@@ -88,14 +82,11 @@ export function AssetBoardGroup({
               spec={spec}
               previewState={previewStates[getBoardPreviewKey(asset.id, spec.id)]}
               selected={active && selectedSpecId === spec.id}
-              logoAsset={logoAsset}
-              cprAsset={cprAsset}
+              brandCatalog={brandCatalog}
               brandLayer={brandLayer}
               brandSettings={brandSettings}
               logoGroup={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]?.logo}
               cprState={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]?.cpr}
-              companyLogo={companyLogo}
-              gameLogo={gameLogo}
               thumbnailWidth={thumbnailWidth}
               onSelect={() => onSelect(asset.id, spec.id)}
               onEdit={() => onEdit(asset.id, spec.id)}

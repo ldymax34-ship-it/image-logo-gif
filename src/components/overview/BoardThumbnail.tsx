@@ -4,6 +4,7 @@ import {
   createDefaultCprState,
   createDefaultLogoGroup,
   getBoardPreviewKey,
+  resolveBoardBrandAssets,
   type BoardPreviewState,
   type BrandAsset,
   type BrandLayerState,
@@ -34,14 +35,11 @@ export function BoardThumbnail({
   spec,
   previewState,
   selected,
-  logoAsset,
-  cprAsset,
+  brandCatalog,
   brandLayer,
   brandSettings,
   logoGroup,
   cprState,
-  companyLogo,
-  gameLogo,
   thumbnailWidth,
   onSelect,
   onEdit
@@ -50,14 +48,11 @@ export function BoardThumbnail({
   spec: MaterialSpec;
   previewState?: BoardPreviewState;
   selected: boolean;
-  logoAsset?: BrandAsset;
-  cprAsset?: BrandAsset;
+  brandCatalog: BrandAsset[];
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
   logoGroup?: LogoGroupState;
   cprState?: CprState;
-  companyLogo?: BrandAsset;
-  gameLogo?: BrandAsset;
   thumbnailWidth: number;
   onSelect: () => void;
   onEdit: () => void;
@@ -75,6 +70,11 @@ export function BoardThumbnail({
     : brandSettings;
   const effectiveLogoGroup = logoGroup ?? createDefaultLogoGroup(brandLayer.logoLanguage);
   const effectiveCprState = cprState ?? createDefaultCprState();
+  const assets = resolveBoardBrandAssets({
+    boardBrandState: { logo: effectiveLogoGroup, cpr: effectiveCprState },
+    brandCatalog,
+    brandLayer
+  });
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key !== 'Enter') return;
@@ -102,14 +102,14 @@ export function BoardThumbnail({
             asset={asset}
             spec={spec}
             previewState={previewState}
-            logoAsset={logoAsset}
-            cprAsset={cprAsset}
+            logoAsset={assets.gameLogo}
+            cprAsset={assets.cpr}
             brandLayer={{ ...brandLayer, logoGroup: effectiveLogoGroup, cprState: effectiveCprState, cprEnabled: effectiveCprState.enabled }}
             scale={scale}
             brandSettings={thumbnailGuideSettings}
             logoGroup={effectiveLogoGroup}
-            overlayCompanyLogo={companyLogo}
-            overlayGameLogo={gameLogo}
+            overlayCompanyLogo={assets.companyLogo}
+            overlayGameLogo={assets.gameLogo}
           />
         </div>
         <div className="board-card-footer">

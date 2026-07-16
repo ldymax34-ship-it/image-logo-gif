@@ -10,6 +10,7 @@ import {
   formatFileSize,
   getBoardPreviewKey,
   parseSpecText,
+  resolveBoardBrandAssets,
   saveCustomPresetTemplates,
   type BoardPreviewState,
   type BrandAsset,
@@ -145,15 +146,16 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   const focusPreviewKey = selectBoardKey(focusAsset, focusSpec);
   const focusPreviewState = selectBoardPreviewState(previewStates, focusPreviewKey);
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
-  const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
-  const selectedLogo = logoAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
-  const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const selectedCprState = selectBoardBrandState(boardBrandStates, selectedBoardKey)?.cpr ?? defaultCprState;
-  const companyLogoAsset = useMemo(
-    () => logoAssets.find((asset) => asset.language === 'custom'),
-    [logoAssets]
-  );
-  const gameLogoAsset = selectedLogo?.language !== 'custom' ? selectedLogo : logoAssets.find((asset) => asset.language !== 'custom');
+  const selectedBoardBrandState = selectBoardBrandState(boardBrandStates, selectedBoardKey) ?? { logo: selectedLogoGroup, cpr: selectedCprState };
+  const selectedBoardAssets = resolveBoardBrandAssets({ boardBrandState: selectedBoardBrandState, brandCatalog: brandAssets, brandLayer });
+  const focusLogoGroup = focusPreviewKey ? boardBrandStates[focusPreviewKey]?.logo ?? defaultLogoGroup : defaultLogoGroup;
+  const focusCprState = focusPreviewKey ? boardBrandStates[focusPreviewKey]?.cpr ?? defaultCprState : defaultCprState;
+  const focusBoardAssets = resolveBoardBrandAssets({
+    boardBrandState: { logo: focusLogoGroup, cpr: focusCprState },
+    brandCatalog: brandAssets,
+    brandLayer
+  });
 
   const workbenchState: WorkbenchState = {
     assets,
@@ -292,7 +294,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
             cprState={selectedCprState}
             brandLayer={brandLayer}
             brandSettings={brandSettings}
-            gameLogoAsset={gameLogoAsset}
+            gameLogoAsset={selectedBoardAssets.gameLogo}
             onLanguageChange={changeBrandLanguage}
             onLogoChange={(next) => { if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next }); }}
             onCprChange={(next) => { if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
@@ -308,13 +310,10 @@ export function MediaWorkbench({ active }: { active: boolean }) {
             previewStates={previewStates}
             selectedAssetId={selectedAsset?.id}
             selectedSpecId={selectedSpec?.id}
-            logoAsset={selectedLogo}
-            cprAsset={selectedCpr}
+            brandCatalog={brandAssets}
             brandLayer={brandLayer}
             brandSettings={brandSettings}
             boardBrandStates={boardBrandStates}
-            companyLogo={companyLogoAsset}
-            gameLogo={gameLogoAsset}
             onSelect={selectBoard}
             onEdit={openFocusEditor}
             onDelete={requestDeleteAsset}
@@ -447,14 +446,14 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           asset={focusAsset}
           spec={focusSpec}
           previewState={focusPreviewState}
-          logoAsset={selectedLogo}
-          cprAsset={selectedCpr}
+          logoAsset={selectedBoardAssets.gameLogo}
+          cprAsset={selectedBoardAssets.cpr}
           brandLayer={brandLayer}
           brandSettings={brandSettings}
-          logoGroup={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.logo ?? defaultLogoGroup : defaultLogoGroup}
-          cprState={focusPreviewKey ? boardBrandStates[focusPreviewKey]?.cpr ?? defaultCprState : defaultCprState}
-          overlayCompanyLogo={companyLogoAsset}
-          overlayGameLogo={gameLogoAsset}
+          logoGroup={focusLogoGroup}
+          cprState={focusCprState}
+          overlayCompanyLogo={focusBoardAssets.companyLogo}
+          overlayGameLogo={focusBoardAssets.gameLogo}
           onCancel={closeFocusEditor}
           onSave={saveFocusPreview}
           onApplyToSameAspect={applyLogoGroupToSameAspect}

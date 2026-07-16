@@ -17,13 +17,10 @@ export function MultiAssetBoardOverview({
   previewStates,
   selectedAssetId,
   selectedSpecId,
-  logoAsset,
-  cprAsset,
+  brandCatalog,
   brandLayer,
   brandSettings,
   boardBrandStates,
-  companyLogo,
-  gameLogo,
   onSelect,
   onEdit,
   onDelete
@@ -33,13 +30,10 @@ export function MultiAssetBoardOverview({
   previewStates: Record<string, BoardPreviewState>;
   selectedAssetId?: string;
   selectedSpecId?: string;
-  logoAsset?: BrandAsset;
-  cprAsset?: BrandAsset;
+  brandCatalog: BrandAsset[];
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
   boardBrandStates: BoardBrandStateMap;
-  companyLogo?: BrandAsset;
-  gameLogo?: BrandAsset;
   onSelect: (assetId: string, specId: string) => void;
   onEdit: (assetId: string, specId: string) => void;
   onDelete: (assetId: string) => void;
@@ -68,13 +62,10 @@ export function MultiAssetBoardOverview({
             previewStates={previewStates}
             selectedAssetId={selectedAssetId}
             selectedSpecId={selectedSpecId}
-            logoAsset={logoAsset}
-            cprAsset={cprAsset}
+            brandCatalog={brandCatalog}
             brandLayer={brandLayer}
             brandSettings={brandSettings}
             boardBrandStates={boardBrandStates}
-            companyLogo={companyLogo}
-            gameLogo={gameLogo}
             thumbnailWidth={thumbnailWidth}
             onSelect={onSelect}
             onEdit={onEdit}

@@ -667,3 +667,4 @@
 10. [验证-中] 根层集成与 AppActivity 聚合测试覆盖模块导航、全局设置入口以及 Custom、Focus、Export、Settings、确认弹窗的活动状态组合；当前专项共 63 项测试通过。
 11. [重构-中] Goal 2：固定 `html/body/#root`、App 外壳与模块容器为桌面 `100dvh` 框架；顶栏统一为 48px、模块栏为 56px，各模块及三栏面板改为内部滚动并启用 `scrollbar-gutter: stable`，消除模块切换造成的外框高度抖动。
 12. [体验-中] Goal 3：新增语义状态 token 与 `SectionHeader`；Logo、CPR、辅助工具根据真实启用和 focus-within 状态显示空闲、当前或禁用圆点，状态变化使用既有 180ms 动效且不只依赖颜色传达开关状态。
+13. [重构-大] Goal 4：新增 `resolveBoardBrandAssets`，总览缩略图、聚焦画布、批量导出预览与实际导出均按画板状态 / 显式语言覆写解析 Logo、公司 Logo 和 CPR；游戏 Logo 不再跨语种静默回退。

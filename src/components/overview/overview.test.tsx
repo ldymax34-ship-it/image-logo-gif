@@ -65,8 +65,7 @@ describe('multi asset overview', () => {
         previewStates={previewStates}
         selectedAssetId="asset-1"
         selectedSpecId="square"
-        logoAsset={DEFAULT_BRAND_ASSETS.find((asset) => asset.type === 'logo')}
-        cprAsset={DEFAULT_BRAND_ASSETS.find((asset) => asset.type === 'cpr')}
+        brandCatalog={DEFAULT_BRAND_ASSETS}
         brandLayer={brandLayer}
         brandSettings={DEFAULT_BRAND_SETTINGS}
         boardBrandStates={boardBrandStates}

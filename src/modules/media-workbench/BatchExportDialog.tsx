@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_MAX_SIZE_KB, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveCprState,
+  DEFAULT_MAX_SIZE_KB, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
 } from '../../core';
 import { buildExportMatrix, getExportLanguage, resolveExportLanguages, exportBoard } from '../../services/export';
@@ -54,18 +54,14 @@ export function BatchExportDialog({
   const activePreviewState = activeAsset && activeSpec
     ? previewStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]
     : undefined;
-  // Export deliberately reads the workspace state as-is. It must not create a
-  // second, divergent set of Logo / CPR choices inside the export dialog.
-  const exportLogo = brandAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
-  const exportCpr = brandAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const activeBoardLogoGroup = activeAsset && activeSpec
     ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.logo
     : undefined;
-  const activeCompanyLogo = brandAssets.find((asset) => asset.id === activeBoardLogoGroup?.companyLogoId)
-    ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
   const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : brandLayer.logoLanguage) as BrandLanguage;
-  const activeGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === activeLanguage);
   const activeCprState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.cpr ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
+  const activeAssets = activeBoardLogoGroup
+    ? resolveBoardBrandAssets({ boardBrandState: { logo: activeBoardLogoGroup, cpr: activeCprState }, brandCatalog: brandAssets, brandLayer, languageOverride: activeLanguage })
+    : undefined;
 
   const rows = items.map((item, index) => {
     const asset = assets.find((candidate) => candidate.id === item.assetId);
@@ -144,22 +140,20 @@ export function BatchExportDialog({
       }
       const boardBrandState = boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
       if (!boardBrandState) throw new Error(`${row.fileName}：缺少画板品牌状态`);
-      const boardLogoGroup = boardBrandState.logo;
-      const boardCompanyLogo = brandAssets.find((asset) => asset.id === boardLogoGroup?.companyLogoId)
-        ?? brandAssets.find((asset) => asset.type === 'logo' && asset.language === 'custom');
       const exportLanguage = getExportLanguage(row.item, brandLayer.logoLanguage);
-      const boardGameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === exportLanguage);
-      if (brandLayer.logoEnabled && !boardGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
-      const languageGroup = { ...boardLogoGroup, gameLogoLanguage: exportLanguage, gameLogoId: boardGameLogo?.id };
+      const boardAssets = resolveBoardBrandAssets({ boardBrandState, brandCatalog: brandAssets, brandLayer, languageOverride: exportLanguage });
+      if (boardAssets.missingGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
+      if (boardAssets.missingCpr) throw new Error('缺少 CPR 资源');
+      const languageGroup = { ...boardBrandState.logo, gameLogoLanguage: exportLanguage, gameLogoId: boardAssets.gameLogo?.id };
       const result = await exportBoard({
           asset: row.asset,
           spec: row.spec,
           previewState,
           brandLayer: { ...brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState.cpr },
-          logoAsset: exportLogo,
-          cprAsset: exportCpr,
-          companyLogoAsset: boardCompanyLogo,
-          gameLogoAsset: boardGameLogo,
+          logoAsset: boardAssets.gameLogo,
+          cprAsset: boardAssets.cpr,
+          companyLogoAsset: boardAssets.companyLogo,
+          gameLogoAsset: boardAssets.gameLogo,
           format,
           quality,
           maxBytes: row.effectiveMaxSizeKb * 1024,
@@ -242,15 +236,15 @@ export function BatchExportDialog({
                   asset={activeAsset}
                   spec={activeSpec}
                   previewState={activePreviewState}
-                  logoAsset={exportLogo}
-                  cprAsset={exportCpr}
+                  logoAsset={activeAssets?.gameLogo}
+                  cprAsset={activeAssets?.cpr}
                   brandLayer={{
                     ...brandLayer,
                     logoGroup: activeBoardLogoGroup,
                     cprState: activeCprState
                   }}
-                  overlayCompanyLogo={activeCompanyLogo}
-                  overlayGameLogo={activeGameLogo}
+                  overlayCompanyLogo={activeAssets?.companyLogo}
+                  overlayGameLogo={activeAssets?.gameLogo}
                   scale={previewScale}
                 />
               ) : (

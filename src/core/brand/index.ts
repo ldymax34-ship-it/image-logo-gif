@@ -7,3 +7,4 @@ export * from './cprPreset';
 export * from './brandLayout';
 export * from './brandSnap';
 export * from './boardBrandState';
+export * from './resolveBoardBrandAssets';
