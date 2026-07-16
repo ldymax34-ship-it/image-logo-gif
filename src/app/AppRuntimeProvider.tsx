@@ -35,6 +35,8 @@ export type MediaHeaderState = {
 type AppRuntime = {
   activeModule: WorkbenchModule;
   setActiveModule: Dispatch<SetStateAction<WorkbenchModule>>;
+  requestModuleChange: (module: WorkbenchModule) => void;
+  registerMediaModuleChangeGuard: (guard: (module: WorkbenchModule) => boolean) => () => void;
   brandAssets: BrandAsset[];
   setBrandAssets: Dispatch<SetStateAction<BrandAsset[]>>;
   brandLayer: BrandLayerState;
@@ -89,11 +91,21 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<AppActivity>(IDLE_APP_ACTIVITY);
   const [mediaHeader, setMediaHeader] = useState<MediaHeaderState>(INITIAL_MEDIA_HEADER);
   const globalBrandResourceHandlersRef = useRef<GlobalBrandResourceHandlers>({});
+  const mediaModuleChangeGuardRef = useRef<((module: WorkbenchModule) => boolean) | undefined>();
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
   }, [brandSettings]);
 
+  const requestModuleChange = useCallback((module: WorkbenchModule) => {
+    if (module === activeModule) return;
+    if (mediaModuleChangeGuardRef.current && !mediaModuleChangeGuardRef.current(module)) return;
+    setActiveModule(module);
+  }, [activeModule]);
+  const registerMediaModuleChangeGuard = useCallback((guard: (module: WorkbenchModule) => boolean) => {
+    mediaModuleChangeGuardRef.current = guard;
+    return () => { if (mediaModuleChangeGuardRef.current === guard) mediaModuleChangeGuardRef.current = undefined; };
+  }, []);
   const updateActivity = useCallback((patch: Partial<AppActivity>) => {
     setActivity((previous) => ({ ...previous, ...patch }));
   }, []);
@@ -119,6 +131,8 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppRuntime>(() => ({
     activeModule,
     setActiveModule,
+    requestModuleChange,
+    registerMediaModuleChangeGuard,
     brandAssets,
     setBrandAssets,
     brandLayer,
@@ -138,7 +152,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     registerGlobalBrandResourceHandlers,
     mediaHeader,
     setMediaHeader
-  }), [activeModule, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
+  }), [activeModule, requestModuleChange, registerMediaModuleChangeGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
 
   return <AppRuntimeContext.Provider value={value}><AppActivityContext.Provider value={resolvedActivity}>{children}</AppActivityContext.Provider></AppRuntimeContext.Provider>;
 }

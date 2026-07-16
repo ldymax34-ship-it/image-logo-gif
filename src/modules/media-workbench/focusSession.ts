@@ -54,3 +54,19 @@ export function updateFocusCpr(session: FocusSession, cpr: CprState): FocusSessi
 export function updateFocusBrandLayer(session: FocusSession, brandLayer: FocusBrandLayerDraft): FocusSession {
   return withFocusDraft(session, { ...session.draft, brandLayer });
 }
+
+/** Marks the Logo portion of a draft as persisted while retaining unrelated pending edits. */
+export function rebaseFocusLogo(session: FocusSession): FocusSession {
+  const initial = {
+    ...session.initial,
+    brand: { ...session.initial.brand, logo: structuredClone(session.draft.brand.logo) },
+    brandLayer: structuredClone(session.draft.brandLayer)
+  };
+  return { ...session, initial, dirty: isFocusSessionDirty(initial, session.draft) };
+}
+
+/** Marks the CPR portion of a draft as persisted while retaining unrelated pending edits. */
+export function rebaseFocusCpr(session: FocusSession): FocusSession {
+  const initial = { ...session.initial, brand: { ...session.initial.brand, cpr: structuredClone(session.draft.brand.cpr) } };
+  return { ...session, initial, dirty: isFocusSessionDirty(initial, session.draft) };
+}

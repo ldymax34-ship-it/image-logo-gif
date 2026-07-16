@@ -33,7 +33,11 @@ export function FocusWorkspace({
   brandControls,
   onSessionChange,
   onCancel,
-  onCommit
+  onCommit,
+  pendingModuleChange,
+  onSaveAndLeave,
+  onDiscardAndLeave,
+  onCancelModuleChange
 }: {
   asset: MaterialAsset;
   spec: MaterialSpec;
@@ -45,6 +49,10 @@ export function FocusWorkspace({
   onSessionChange: (session: FocusSession) => void;
   onCancel: () => void;
   onCommit: (session: FocusSession) => void;
+  pendingModuleChange?: string;
+  onSaveAndLeave?: () => void;
+  onDiscardAndLeave?: () => void;
+  onCancelModuleChange?: () => void;
 }) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number; kind: FocusSession['tool']; originX?: number; originY?: number }>();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -145,6 +153,6 @@ export function FocusWorkspace({
         <p className="dialog-help">聚焦期间所有修改均保存在草稿中；保存前不会写入画板。</p>
       </aside>
     </div>
-    {confirmDiscard ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存，确定放弃吗？</span><button type="button" onClick={() => setConfirmDiscard(false)}>继续调整</button><button type="button" className="danger-button" onClick={onCancel}>放弃修改</button></div> : null}
+    {pendingModuleChange ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存。保存后切换到{pendingModuleChange}吗？</span><button type="button" onClick={onCancelModuleChange}>取消</button><button type="button" className="danger-button" onClick={onDiscardAndLeave}>放弃</button><button type="button" className="primary-button" onClick={onSaveAndLeave}>保存</button></div> : confirmDiscard ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存，确定放弃吗？</span><button type="button" onClick={() => setConfirmDiscard(false)}>继续调整</button><button type="button" className="danger-button" onClick={onCancel}>放弃修改</button></div> : null}
   </section>;
 }

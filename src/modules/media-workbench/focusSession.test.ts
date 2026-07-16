@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBrandRenderPlan, createDefaultCprState, createDefaultLogoGroup } from '../../core';
-import { createFocusSession, updateFocusBrandLayer, updateFocusCpr, updateFocusLogo } from './focusSession';
+import { createFocusSession, rebaseFocusCpr, rebaseFocusLogo, updateFocusBrandLayer, updateFocusCpr, updateFocusLogo } from './focusSession';
 import { getFocusHitTarget } from './FocusWorkspace';
 
 describe('FocusSession', () => {
@@ -42,5 +42,16 @@ describe('Focus canvas hit targets', () => {
     expect(getFocusHitTarget({ x: plan.logoGroupRect!.x + 1, y: plan.logoGroupRect!.y + 1 }, plan)).toBe('logo');
     expect(getFocusHitTarget({ x: plan.cpr!.rect.x + 1, y: plan.cpr!.rect.y + 1 }, plan)).toBe('cpr');
     expect(getFocusHitTarget({ x: 2, y: 2 }, plan)).toBe('crop');
+  });
+});
+
+
+describe('Focus scope baseline', () => {
+  it('rebases only an applied section and keeps other draft edits dirty', () => {
+    const initial = { previewState: { assetId: 'a', specId: 's', fitMode: 'cover' as const, crop: { scale: 1, offsetX: 0, offsetY: 0 } }, brand: { logo: createDefaultLogoGroup(), cpr: createDefaultCprState() }, brandLayer: { logoEnabled: true, logoEffect: { colorEnabled: false, color: '#fff', strokeEnabled: false, strokeColor: '#000', strokeWidth: 0, glowEnabled: false, glowColor: '#fff', glowBlur: 0, shadowEnabled: false, shadowColor: '#000', shadowOpacity: 0, shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 } } };
+    const session = createFocusSession('a', 's', 'a:s', initial);
+    const changed = updateFocusCpr(updateFocusLogo(session, { ...session.draft.brand.logo, scale: 1.2 }), { ...session.draft.brand.cpr, scale: 1.3 });
+    expect(rebaseFocusLogo(changed).dirty).toBe(true);
+    expect(rebaseFocusCpr(rebaseFocusLogo(changed)).dirty).toBe(false);
   });
 });

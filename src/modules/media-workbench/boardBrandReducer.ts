@@ -21,7 +21,8 @@ export type BoardBrandAction =
   | { type: 'remove-asset'; assetId: string }
   | { type: 'apply-brand'; keys: string[]; source: BoardBrandState }
   | { type: 'apply-logo-to-scope'; keys: string[]; logo: LogoGroupState }
-  | { type: 'apply-cpr-to-scope'; keys: string[]; cpr: CprState };
+  | { type: 'apply-cpr-to-scope'; keys: string[]; cpr: CprState }
+  | { type: 'apply-logo-visual-to-scope'; keys: string[]; logoEnabled: boolean; logoEffect: import('../../core').BrandEffectState };
 
 export function boardBrandReducer(state: BoardBrandStateMap, action: BoardBrandAction): BoardBrandStateMap {
   switch (action.type) {
@@ -50,6 +51,11 @@ export function boardBrandReducer(state: BoardBrandStateMap, action: BoardBrandA
     case 'apply-logo-to-scope': {
       const next = { ...state };
       for (const key of action.keys) if (next[key]) next[key] = { ...next[key], logo: cloneLogo(action.logo) };
+      return next;
+    }
+    case 'apply-logo-visual-to-scope': {
+      const next = { ...state };
+      for (const key of action.keys) if (next[key]) next[key] = { ...next[key], logoEnabled: action.logoEnabled, logoEffect: { ...action.logoEffect } };
       return next;
     }
     case 'apply-cpr-to-scope': {

@@ -52,7 +52,8 @@ describe('board logo visual scope', () => {
     const initial = boardBrandReducer({}, { type: 'reconcile-boards', keys: ['a:s', 'b:s'], defaults: defaults() });
     const effect = { ...initial['a:s'].cpr.effect, glowEnabled: true };
     const visual = boardBrandReducer(initial, { type: 'update-logo-visual', key: 'a:s', logoEnabled: false, logoEffect: effect });
-    const applied = boardBrandReducer(visual, { type: 'apply-brand', keys: ['b:s'], source: visual['a:s'] });
+    const scopedVisual = boardBrandReducer(visual, { type: 'apply-logo-visual-to-scope', keys: ['b:s'], logoEnabled: false, logoEffect: effect });
+    const applied = boardBrandReducer(scopedVisual, { type: 'apply-brand', keys: ['b:s'], source: visual['a:s'] });
     expect(applied['b:s'].logoEnabled).toBe(false);
     expect(applied['b:s'].logoEffect).toEqual(effect);
     expect(applied['b:s'].logoEffect).not.toBe(effect);

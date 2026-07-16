@@ -10,7 +10,7 @@ import { GlobalDialogs } from './GlobalDialogs';
 function AppContent() {
   const {
     activeModule,
-    setActiveModule,
+    requestModuleChange,
     brandAssets,
     brandLayer,
     mediaHeader,
@@ -30,7 +30,7 @@ function AppContent() {
   return <>
     <AppShell
       activeModule={activeModule}
-      onModuleChange={setActiveModule}
+      onModuleChange={requestModuleChange}
       header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} />}
     >
       <MediaWorkbench active={activeModule === 'media'} />
