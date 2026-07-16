@@ -10,7 +10,9 @@ export type LegacyBoardBrandStateInput = {
 function cloneState(state: BoardBrandState): BoardBrandState {
   return {
     logo: { ...state.logo, manualOffset: state.logo.manualOffset ? { ...state.logo.manualOffset } : undefined },
-    cpr: { ...state.cpr, scale: state.cpr.scale ?? 1, transform: { ...state.cpr.transform }, effect: { ...state.cpr.effect } }
+    cpr: { ...state.cpr, scale: state.cpr.scale ?? 1, transform: { ...state.cpr.transform }, effect: { ...state.cpr.effect } },
+    logoEnabled: state.logoEnabled,
+    logoEffect: state.logoEffect ? { ...state.logoEffect } : undefined
   };
 }
 
@@ -25,5 +27,5 @@ export function migrateBoardBrandStates(input: LegacyBoardBrandStateInput): Boar
 export function updateBoardBrandState(map: BoardBrandStateMap, key: string, patch: Partial<BoardBrandState>): BoardBrandStateMap {
   const current = map[key];
   if (!current) return map;
-  return { ...map, [key]: { logo: patch.logo ?? current.logo, cpr: patch.cpr ?? current.cpr } };
+  return { ...map, [key]: { ...current, ...patch, logo: patch.logo ?? current.logo, cpr: patch.cpr ?? current.cpr } };
 }

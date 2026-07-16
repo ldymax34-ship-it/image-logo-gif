@@ -74,7 +74,8 @@ export async function exportMediaBatch(request: MediaExportRequest): Promise<Bat
     const boardBrandState = request.boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
     if (!boardBrandState) throw new Error(`${row.fileName}：缺少画板品牌状态`);
     const exportLanguage = row.item.language ?? boardBrandState.logo.gameLogoLanguage;
-    const boardAssets = resolveBoardBrandAssets({ boardBrandState, brandCatalog: request.brandAssets, brandLayer: request.brandLayer, languageOverride: exportLanguage });
+    const boardLayer = { ...request.brandLayer, logoEnabled: boardBrandState.logoEnabled ?? request.brandLayer.logoEnabled, logoEffect: boardBrandState.logoEffect ?? request.brandLayer.logoEffect };
+    const boardAssets = resolveBoardBrandAssets({ boardBrandState, brandCatalog: request.brandAssets, brandLayer: boardLayer, languageOverride: exportLanguage });
     if (boardAssets.missingGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
     if (boardAssets.missingCpr) throw new Error('缺少 CPR 资源');
     const languageGroup = { ...boardBrandState.logo, gameLogoLanguage: exportLanguage, gameLogoId: boardAssets.gameLogo?.id };
@@ -82,7 +83,7 @@ export async function exportMediaBatch(request: MediaExportRequest): Promise<Bat
       asset: row.asset,
       spec: row.spec,
       previewState,
-      brandLayer: { ...request.brandLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState.cpr },
+      brandLayer: { ...boardLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState.cpr, cprEnabled: boardBrandState.cpr.enabled },
       logoAsset: boardAssets.gameLogo,
       cprAsset: boardAssets.cpr,
       companyLogoAsset: boardAssets.companyLogo,

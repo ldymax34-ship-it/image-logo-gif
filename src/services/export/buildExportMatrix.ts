@@ -11,7 +11,7 @@ export function getExportLanguage(item: unknown, fallback: BrandLanguage): Brand
 }
 
 export function getSelectedExportLanguages(selection: ExportLanguageSelection): BrandLanguage[] {
-  return [selection.baseLanguage, ...selection.additionalLanguages.filter((language) => language !== selection.baseLanguage && language !== 'custom')];
+  return [...new Set([selection.baseLanguage, ...selection.additionalLanguages.filter((language) => language !== selection.baseLanguage && language !== 'custom')])];
 }
 
 export function buildExportMatrixForLanguages(assets: MaterialAsset[], specs: MaterialSpec[], selection: ExportLanguageSelection) {

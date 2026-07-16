@@ -550,3 +550,14 @@ describe('board brand reconcile', () => {
     expect(next['b:one'].cpr.transform).not.toBe(defaults.cpr.transform);
   });
 });
+
+describe('continuous custom Logo scaling', () => {
+  it('does not jump across the former 1.20 preset threshold', () => {
+    const game = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, aspectRatio: 2 };
+    const base = { ...createDefaultLogoGroup('zh-CN'), placement: 'custom' as const, manualOffset: { x: 100, y: 100 }, sizePreset: 'standard' as const };
+    const before = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...base, scale: 1.2 }, { gameLogo: game }).logoGroupRect!;
+    const after = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...base, scale: 1.21 }, { gameLogo: game }).logoGroupRect!;
+    expect(after.width).toBeGreaterThan(before.width);
+    expect(after.width / before.width).toBeCloseTo(1.21 / 1.2, 5);
+  });
+});

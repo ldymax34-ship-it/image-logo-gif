@@ -59,6 +59,9 @@ export type LogoGroupState = {
 export type BoardBrandState = {
   logo: LogoGroupState;
   cpr: CprState;
+  /** Per-board visual state. Legacy records omit these and inherit the global defaults. */
+  logoEnabled?: boolean;
+  logoEffect?: BrandEffectState;
 };
 
 export type BoardBrandStateMap = Record<string, BoardBrandState>;

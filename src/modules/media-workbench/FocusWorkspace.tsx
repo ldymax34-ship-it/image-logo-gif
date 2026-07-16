@@ -1,6 +1,7 @@
 import { type PointerEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   buildBrandRenderPlan,
+  createInitialCropState,
   clampCropState,
   computeFitScale,
   panCropState,
@@ -16,6 +17,11 @@ import {
 import { BoardCanvas } from '../../components/canvas';
 import type { FocusSession } from './focusSession';
 import { updateFocusCpr, updateFocusLogo, withFocusDraft } from './focusSession';
+
+export function getFocusHitTarget(point: { x: number; y: number }, plan: ReturnType<typeof buildBrandRenderPlan>): FocusSession['tool'] {
+  const contains = (rect: { x: number; y: number; width: number; height: number } | undefined) => Boolean(rect && point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height);
+  return contains(plan.cpr?.rect) ? 'cpr' : contains(plan.logoGroupRect) ? 'logo' : 'crop';
+}
 
 export function FocusWorkspace({
   asset,
@@ -42,12 +48,16 @@ export function FocusWorkspace({
 }) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number; kind: FocusSession['tool']; originX?: number; originY?: number }>();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const draftBrandLayer = { ...brandLayer, ...session.draft.brandLayer, logoEffect: session.draft.brandLayer.logoEffect };
   const assets = resolveBoardBrandAssets({ boardBrandState: session.draft.brand, brandCatalog, brandLayer: draftBrandLayer });
   const stageScale = Math.min(820 / spec.width, 560 / spec.height, 1.6);
   const crop = session.draft.previewState.crop;
   const minScale = computeFitScale(asset, spec, session.draft.previewState.fitMode);
   const maxScale = minScale * 6;
+  const selectionPlan = buildBrandRenderPlan({ width: spec.width, height: spec.height }, session.draft.brand.logo, { companyLogo: assets.companyLogo, gameLogo: assets.gameLogo, cpr: session.draft.brand.cpr });
+  const selectionRect = session.tool === 'logo' ? selectionPlan.logoGroupRect : session.tool === 'cpr' ? selectionPlan.cpr?.rect : undefined;
+  const selectionLabel = session.tool === 'logo' ? 'Logo' : session.tool === 'cpr' ? 'CPR' : '图片裁切';
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -70,11 +80,11 @@ export function FocusWorkspace({
     const bounds = event.currentTarget.getBoundingClientRect();
     const point = { x: (event.clientX - bounds.left) / stageScale, y: (event.clientY - bounds.top) / stageScale };
     const plan = buildBrandRenderPlan({ width: spec.width, height: spec.height }, session.draft.brand.logo, { companyLogo: assets.companyLogo, gameLogo: assets.gameLogo, cpr: session.draft.brand.cpr });
-    const contains = (rect: { x: number; y: number; width: number; height: number } | undefined) => Boolean(rect && point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height);
-    const tool = contains(plan.cpr?.rect) ? 'cpr' : contains(plan.logoGroupRect) ? 'logo' : 'crop';
+    const tool = getFocusHitTarget(point, plan);
     if (tool !== session.tool) onSessionChange({ ...session, tool });
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, kind: tool };
+    setDragging(true);
   }
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
@@ -109,7 +119,8 @@ export function FocusWorkspace({
     </div>
     <div className="focus-workspace-body">
       <aside className="focus-brand-controls">{brandControls}</aside>
-      <div className="focus-stage-frame">
+      <div className={`focus-stage-frame is-editing-${session.tool} ${dragging ? 'is-dragging' : ''}`}>
+        <div className="focus-canvas-wrapper">
         <BoardCanvas
           asset={asset}
           spec={spec}
@@ -124,13 +135,13 @@ export function FocusWorkspace({
           draggable
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={() => { dragRef.current = undefined; }}
+          onPointerUp={() => { dragRef.current = undefined; setDragging(false); }}
         />
+        {selectionRect ? <div className="focus-selection-outline" aria-live="polite" style={{ left: selectionRect.x * stageScale, top: selectionRect.y * stageScale, width: selectionRect.width * stageScale, height: selectionRect.height * stageScale }}><span>{dragging ? `正在拖动${selectionLabel}` : selectionLabel}</span></div> : <div className="focus-selection-hint">图片裁切</div>}
+        </div>
       </div>
       <aside className="focus-side-controls">
-        {session.tool === 'crop' ? <><div><span className="control-label">填充方式</span><div className="segmented-control"><button type="button" className={session.draft.previewState.fitMode === 'cover' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'cover' } }))}>填满画布</button><button type="button" className={session.draft.previewState.fitMode === 'contain' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'contain' } }))}>适应画布</button></div></div><label className="focus-range-field"><span className="control-label">缩放</span><input type="range" min={minScale} max={maxScale} step={Math.max(minScale / 100, .001)} value={crop.scale} onChange={(event) => updateCrop(Number(event.target.value))} /></label></> : null}
-        {session.tool === 'logo' ? <label className="focus-range-field"><span className="control-label">Logo 大小 {Math.round((session.draft.brand.logo.scale ?? 1) * 100)}%</span><input type="range" min="0.5" max="2" step="0.01" value={session.draft.brand.logo.scale ?? 1} onChange={(event) => onSessionChange(updateFocusLogo(session, { ...session.draft.brand.logo, scale: Number(event.target.value) }))} /></label> : null}
-        {session.tool === 'cpr' ? <label className="focus-range-field"><span className="control-label">CPR 大小 {Math.round((session.draft.brand.cpr.scale ?? 1) * 100)}%</span><input type="range" min="0.5" max="2" step="0.01" value={session.draft.brand.cpr.scale ?? 1} onChange={(event) => onSessionChange(updateFocusCpr(session, { ...session.draft.brand.cpr, scale: Number(event.target.value) }))} /></label> : null}
+        {session.tool === 'crop' ? <><div><span className="control-label">填充方式</span><div className="segmented-control"><button type="button" className={session.draft.previewState.fitMode === 'cover' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'cover' } }))}>填满画布</button><button type="button" className={session.draft.previewState.fitMode === 'contain' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'contain' } }))}>适应画布</button></div></div><label className="focus-range-field"><span className="control-label">缩放</span><input type="range" min={minScale} max={maxScale} step={Math.max(minScale / 100, .001)} value={crop.scale} onChange={(event) => updateCrop(Number(event.target.value))} /></label><button type="button" onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, crop: createInitialCropState(asset, spec, session.draft.previewState.fitMode) } }))}>裁切复位</button></> : null}
         <p className="dialog-help">聚焦期间所有修改均保存在草稿中；保存前不会写入画板。</p>
       </aside>
     </div>

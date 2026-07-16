@@ -15,7 +15,7 @@ const COLORS: Array<{ value: BrandColorMode; label: string }> = [
   { value: 'original', label: '原始' }
 ];
 
-export function CprControls({ state, onChange, onApplySameAspect, onApplyAll, sectionState }: { state: CprState; onChange: (state: CprState) => void; onApplySameAspect?: () => void; onApplyAll?: () => void; sectionState?: 'active' }) {
+export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset, sectionState }: { state: CprState; onChange: (state: CprState) => void; onApplySameSpec?: () => void; onApplySameAsset?: () => void; sectionState?: 'active' }) {
   const patch = (next: Partial<CprState>) => onChange({ ...state, ...next });
   const patchTransform = (next: Partial<CprState['transform']>) => patch({ transform: { ...state.transform, ...next } });
   const setColor = (colorMode: BrandColorMode) => patch({
@@ -58,7 +58,7 @@ export function CprControls({ state, onChange, onApplySameAspect, onApplyAll, se
         </div>
       </div>
       <BrandEffectControls title="CPR" effect={state.effect} onChange={(effect) => patch({ effect })} />
-      {onApplySameAspect || onApplyAll ? <div className="brand-apply-actions"><span>应用范围</span>{onApplySameAspect ? <button type="button" onClick={onApplySameAspect}>同尺寸</button> : null}{onApplyAll ? <button type="button" onClick={onApplyAll}>同素材</button> : null}</div> : null}
+      {onApplySameSpec || onApplySameAsset ? <div className="brand-apply-actions"><span>应用范围</span>{onApplySameSpec ? <button type="button" onClick={onApplySameSpec}>同尺寸</button> : null}{onApplySameAsset ? <button type="button" onClick={onApplySameAsset}>同素材</button> : null}</div> : null}
     </section>
   );
 }

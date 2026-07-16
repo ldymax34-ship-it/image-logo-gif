@@ -87,6 +87,7 @@ export function AssetBoardGroup({
               brandSettings={brandSettings}
               logoGroup={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]?.logo}
               cprState={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]?.cpr}
+              boardBrandState={boardBrandStates[getBoardPreviewKey(asset.id, spec.id)]}
               thumbnailWidth={thumbnailWidth}
               onSelect={() => onSelect(asset.id, spec.id)}
               onEdit={() => onEdit(asset.id, spec.id)}

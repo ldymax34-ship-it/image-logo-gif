@@ -65,8 +65,10 @@ export function BatchExportDialog({
     : undefined;
   const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : baseLanguage) as BrandLanguage;
   const activeCprState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.cpr ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
+  const activeBoardState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)] : undefined;
+  const activeLayer = activeBoardState ? { ...brandLayer, logoEnabled: activeBoardState.logoEnabled ?? brandLayer.logoEnabled, logoEffect: activeBoardState.logoEffect ?? brandLayer.logoEffect } : brandLayer;
   const activeAssets = activeBoardLogoGroup
-    ? resolveBoardBrandAssets({ boardBrandState: { logo: activeBoardLogoGroup, cpr: activeCprState }, brandCatalog: brandAssets, brandLayer, languageOverride: activeLanguage })
+    ? resolveBoardBrandAssets({ boardBrandState: { logo: activeBoardLogoGroup, cpr: activeCprState, logoEnabled: activeBoardState?.logoEnabled, logoEffect: activeBoardState?.logoEffect }, brandCatalog: brandAssets, brandLayer: activeLayer, languageOverride: activeLanguage })
     : undefined;
 
   const rows = items.map((item, index) => {
@@ -192,7 +194,7 @@ export function BatchExportDialog({
                       <strong>{row.fileName}</strong>
                       <span>{row.spec.width} x {row.spec.height}</span>
                       <small className={overLimit ? 'size-warning' : ''}>
-                        预计 {formatMegabytes(row.estimatedBytes)}{overLimit ? ` · 超过${row.spec.maxSizeKb ? '规格限制 ' : ' '}${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB` : ''}
+                        预计 {formatMegabytes(row.estimatedBytes)}{overLimit ? format === 'jpg' ? ` · 超限，将压缩至 ${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB` : ' · PNG 超限' : ''}
                       </small>
                     </button>
                   </div>
@@ -215,9 +217,10 @@ export function BatchExportDialog({
                   logoAsset={activeAssets?.gameLogo}
                   cprAsset={activeAssets?.cpr}
                   brandLayer={{
-                    ...brandLayer,
+                    ...activeLayer,
                     logoGroup: activeBoardLogoGroup,
-                    cprState: activeCprState
+                    cprState: activeCprState,
+                    cprEnabled: activeCprState.enabled
                   }}
                   overlayCompanyLogo={activeAssets?.companyLogo}
                   overlayGameLogo={activeAssets?.gameLogo}
@@ -268,7 +271,7 @@ export function BatchExportDialog({
           </div>
           <div className="export-language-list"><span>当前语种（锁定）</span><span>{getBrandLanguageLabel(baseLanguage)}</span></div>
           <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（5 种）</label>
-          {!exportAllLanguages ? <div className="export-language-list"><span>追加语种</span>{EXPORT_LANGUAGES.filter((language) => language !== baseLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...previous, language] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}
+          {!exportAllLanguages ? <div className="export-language-list"><div className="export-language-heading"><span>追加语种</span><span><button type="button" onClick={() => setAdditionalLanguages(EXPORT_LANGUAGES.filter((language) => language !== baseLanguage))}>全选</button><button type="button" onClick={() => setAdditionalLanguages([])}>清空</button></span></div>{EXPORT_LANGUAGES.filter((language) => language !== baseLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...new Set([...previous, language])] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}
           {selectedLanguages.some((language) => languageResolutions.find((item) => item.language === language)?.missing) ? <p className="size-warning">缺少资源：{selectedLanguages.filter((language) => languageResolutions.find((item) => item.language === language)?.missing).map(getBrandLanguageLabel).join('、')}。补齐后才能导出。</p> : null}
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>

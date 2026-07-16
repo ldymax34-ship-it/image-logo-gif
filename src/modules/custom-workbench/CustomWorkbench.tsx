@@ -1,6 +1,6 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
-import { buildBoardRenderPlan, canvasToBlob, createInitialCropState, createMaterialAsset, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, renderBoardToCanvas, snapLogoGroupPosition, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec } from '../../core';
+import { buildBoardRenderPlan, canvasToBlob, createInitialCropState, createMaterialAsset, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, renderBoardToCanvas, snapLogoGroupPosition, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { BoardCanvas } from '../../components/canvas';
 
@@ -169,7 +169,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => void importAsset(event.target.files)} />
       <button type="button" className="primary-button" onClick={() => inputRef.current?.click()}>导入图片</button>
       <label className="toggle"><input type="checkbox" checked={gameEnabled} onChange={(event) => setGameEnabled(event.target.checked)} />游戏 Logo</label>
-      <label className="control-row"><span>游戏语种</span><select value={gameLanguage} onChange={(event) => setGameLanguage(event.target.value as BrandLanguage)}>{gameLogos.map((item) => <option key={item.id} value={item.language}>{item.language}</option>)}</select></label>
+      <label className="control-row"><span>游戏语种</span><select value={gameLanguage} onChange={(event) => setGameLanguage(event.target.value as BrandLanguage)}>{gameLogos.map((item) => <option key={item.id} value={item.language}>{getBrandLanguageLabel(item.language)}</option>)}</select></label>
       {numberControl('游戏大小', gameScale, .6, 1.7, .01, setGameScale)}
       {numberControl('游戏横移', gameOffset.x, 0, 1500, 1, (x) => setGameOffset((previous) => ({ ...previous, x })))}
       {numberControl('游戏纵移', gameOffset.y, 0, 900, 1, (y) => setGameOffset((previous) => ({ ...previous, y })))}

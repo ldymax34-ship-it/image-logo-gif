@@ -6,6 +6,7 @@ import {
   getBoardPreviewKey,
   resolveBoardBrandAssets,
   type BoardPreviewState,
+  type BoardBrandState,
   type BrandAsset,
   type BrandLayerState,
   type BrandSettingsV1,
@@ -40,6 +41,7 @@ export function BoardThumbnail({
   brandSettings,
   logoGroup,
   cprState,
+  boardBrandState,
   thumbnailWidth,
   onSelect,
   onEdit
@@ -53,6 +55,7 @@ export function BoardThumbnail({
   brandSettings: BrandSettingsV1;
   logoGroup?: LogoGroupState;
   cprState?: CprState;
+  boardBrandState?: BoardBrandState;
   thumbnailWidth: number;
   onSelect: () => void;
   onEdit: () => void;
@@ -70,11 +73,9 @@ export function BoardThumbnail({
     : brandSettings;
   const effectiveLogoGroup = logoGroup ?? createDefaultLogoGroup(brandLayer.logoLanguage);
   const effectiveCprState = cprState ?? createDefaultCprState();
-  const assets = resolveBoardBrandAssets({
-    boardBrandState: { logo: effectiveLogoGroup, cpr: effectiveCprState },
-    brandCatalog,
-    brandLayer
-  });
+  const effectiveBoardState = boardBrandState ?? { logo: effectiveLogoGroup, cpr: effectiveCprState };
+  const effectiveLayer = { ...brandLayer, logoEnabled: effectiveBoardState.logoEnabled ?? brandLayer.logoEnabled, logoEffect: effectiveBoardState.logoEffect ?? brandLayer.logoEffect, logoGroup: effectiveLogoGroup, cprState: effectiveCprState, cprEnabled: effectiveCprState.enabled };
+  const assets = resolveBoardBrandAssets({ boardBrandState: effectiveBoardState, brandCatalog, brandLayer: effectiveLayer });
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key !== 'Enter') return;
@@ -104,7 +105,7 @@ export function BoardThumbnail({
             previewState={previewState}
             logoAsset={assets.gameLogo}
             cprAsset={assets.cpr}
-            brandLayer={{ ...brandLayer, logoGroup: effectiveLogoGroup, cprState: effectiveCprState, cprEnabled: effectiveCprState.enabled }}
+            brandLayer={effectiveLayer}
             scale={scale}
             brandSettings={thumbnailGuideSettings}
             logoGroup={effectiveLogoGroup}

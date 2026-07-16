@@ -16,7 +16,7 @@ export function BrandControlsPanel({ logoGroup, cprState, brandLayer, brandSetti
       <BrandEffectControls title="Logo" effect={brandLayer.logoEffect} onChange={(logoEffect) => onBrandLayerChange({ ...brandLayer, logoEffect })} preview={<LogoStylePreview asset={gameLogoAsset} effect={brandLayer.logoEffect} />} />
       {onApplyLogoSameSpec || onApplyLogoSameAsset ? <div className="brand-apply-actions"><span>应用范围</span>{onApplyLogoSameSpec ? <button type="button" onClick={onApplyLogoSameSpec}>同尺寸</button> : null}{onApplyLogoSameAsset ? <button type="button" onClick={onApplyLogoSameAsset}>同素材</button> : null}</div> : null}
     </section>
-    <CprControls state={cprState} onChange={onCprChange} onApplySameAspect={onApplyCprSameSpec} onApplyAll={onApplyCprSameAsset} sectionState={activeSection === 'cpr' ? 'active' : undefined} />
+    <CprControls state={cprState} onChange={onCprChange} onApplySameSpec={onApplyCprSameSpec} onApplySameAsset={onApplyCprSameAsset} sectionState={activeSection === 'cpr' ? 'active' : undefined} />
     <section className="brand-control-group" aria-labelledby="guide-controls-title">
       <SectionHeader id="guide-controls-title" title="辅助工具" description="画布显示与吸附" state="idle" />
       <BrandGuideControls settings={brandSettings} onChange={onSettingsChange} />

@@ -9,7 +9,7 @@ function cloneCpr(cpr: CprState): CprState {
 }
 
 function cloneBoard(board: BoardBrandState): BoardBrandState {
-  return { logo: cloneLogo(board.logo), cpr: cloneCpr(board.cpr) };
+  return { logo: cloneLogo(board.logo), cpr: cloneCpr(board.cpr), logoEnabled: board.logoEnabled, logoEffect: board.logoEffect ? { ...board.logoEffect } : undefined };
 }
 
 export type BoardBrandAction =
@@ -17,6 +17,7 @@ export type BoardBrandAction =
   | { type: 'reconcile-boards'; keys: string[]; defaults: BoardBrandState }
   | { type: 'update-logo'; key: string; logo: LogoGroupState }
   | { type: 'update-cpr'; key: string; cpr: CprState }
+  | { type: 'update-logo-visual'; key: string; logoEnabled: boolean; logoEffect: import('../../core').BrandEffectState }
   | { type: 'remove-asset'; assetId: string }
   | { type: 'apply-brand'; keys: string[]; source: BoardBrandState }
   | { type: 'apply-logo-to-scope'; keys: string[]; logo: LogoGroupState }
@@ -39,6 +40,7 @@ export function boardBrandReducer(state: BoardBrandStateMap, action: BoardBrandA
     }
     case 'update-logo': return state[action.key] ? { ...state, [action.key]: { ...state[action.key], logo: action.logo } } : state;
     case 'update-cpr': return state[action.key] ? { ...state, [action.key]: { ...state[action.key], cpr: action.cpr } } : state;
+    case 'update-logo-visual': return state[action.key] ? { ...state, [action.key]: { ...state[action.key], logoEnabled: action.logoEnabled, logoEffect: { ...action.logoEffect } } } : state;
     case 'remove-asset': return Object.fromEntries(Object.entries(state).filter(([key]) => !key.startsWith(`${action.assetId}:`)));
     case 'apply-brand': {
       const next = { ...state };
