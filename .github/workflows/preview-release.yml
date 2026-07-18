@@ -63,15 +63,18 @@ jobs:
           test -n "$SIG"
           PACKAGE="${SIG%.sig}"
           test -f "$PACKAGE"
-          cp "$PACKAGE" "release/$(basename "$PACKAGE")"
-          cp "$SIG" "release/$(basename "$SIG")"
+          VERSION="${GITHUB_REF_NAME#v}"
           if [ "${{ runner.os }}" = "Windows" ]; then
+            UPDATER="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
             INSTALLER=$(find "$ROOT/nsis" -type f -name '*.exe' ! -name '*.sig' -print -quit)
-            cp "$INSTALLER" "release/BrandMaterialWorkbench_${GITHUB_REF_NAME#v}_Windows_x64_Setup.exe"
+            cp "$INSTALLER" "release/BrandMaterialWorkbench_${VERSION}_Windows_x64_Setup.exe"
           else
+            UPDATER="release/BrandMaterialWorkbench_${VERSION}_darwin-aarch64_updater.tar.gz"
             DMG=$(find "$ROOT/dmg" -type f -name '*.dmg' -print -quit)
-            cp "$DMG" "release/BrandMaterialWorkbench_${GITHUB_REF_NAME#v}_macOS_arm64.dmg"
+            cp "$DMG" "release/BrandMaterialWorkbench_${VERSION}_macOS_arm64.dmg"
           fi
+          cp "$PACKAGE" "$UPDATER"
+          cp "$SIG" "$UPDATER.sig"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -92,10 +95,10 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          MAC_SIG=$(find release -maxdepth 1 -type f -name '*.sig' | grep -E 'darwin|aarch64|macos' | head -1)
-          WIN_SIG=$(find release -maxdepth 1 -type f -name '*.sig' | grep -E 'windows|x86_64|nsis' | head -1)
-          MAC_PACKAGE="${MAC_SIG%.sig}"
-          WIN_PACKAGE="${WIN_SIG%.sig}"
+          MAC_PACKAGE="release/BrandMaterialWorkbench_${VERSION}_darwin-aarch64_updater.tar.gz"
+          WIN_PACKAGE="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
+          MAC_SIG="${MAC_PACKAGE}.sig"
+          WIN_SIG="${WIN_PACKAGE}.sig"
           test -f "$MAC_PACKAGE" && test -f "$WIN_PACKAGE"
           node scripts/create-preview-manifest.mjs "$VERSION" "$MAC_PACKAGE" "$MAC_SIG" "$WIN_PACKAGE" "$WIN_SIG" release/latest-preview.json
           node -e "const m=require('./release/latest-preview.json'); if(Object.keys(m.platforms).join(',') !== 'darwin-aarch64,windows-x86_64') process.exit(1); for(const p of Object.values(m.platforms)) if(/^https?:/.test(p.signature)) process.exit(1)"
