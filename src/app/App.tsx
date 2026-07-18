@@ -6,6 +6,7 @@ import { MediaWorkbench } from '../modules/media-workbench/MediaWorkbench';
 import { AppRuntimeProvider, useAppRuntime } from './AppRuntimeProvider';
 import { AppShell } from './AppShell';
 import { GlobalDialogs } from './GlobalDialogs';
+import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 
 function AppContent() {
   const {
@@ -17,6 +18,7 @@ function AppContent() {
     setSettingsDialogOpen,
     updateActivity
   } = useAppRuntime();
+  const { checkForUpdate } = useUpdate();
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
   const selectedLogo = logoAssets.find((asset) => asset.id === brandLayer.selectedLogoId);
@@ -31,7 +33,7 @@ function AppContent() {
     <AppShell
       activeModule={activeModule}
       onModuleChange={requestModuleChange}
-      header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} />}
+      header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} onCheckUpdate={() => void checkForUpdate(true)} />}
     >
       <MediaWorkbench active={activeModule === 'media'} />
       {activeModule === 'custom' ? <CustomWorkbench
@@ -46,9 +48,10 @@ function AppContent() {
       {activeModule === 'gif' ? <GifCompressorPlaceholder /> : null}
     </AppShell>
     <GlobalDialogs />
+    <UpdateDialog />
   </>;
 }
 
 export function App() {
-  return <AppRuntimeProvider><AppContent /></AppRuntimeProvider>;
+  return <AppRuntimeProvider><UpdateProvider><AppContent /></UpdateProvider></AppRuntimeProvider>;
 }
