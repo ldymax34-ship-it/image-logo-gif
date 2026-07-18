@@ -25,7 +25,8 @@ async function main() {
   if (!version || !macPackage || !macSig || !windowsPackage || !windowsSig || !output) {
     throw new Error('Usage: create-preview-manifest <version> <mac-package> <mac-sig> <windows-package> <windows-sig> <output>');
   }
-  const releaseBase = 'https://github.com/ldymax34-ship-it/image-logo-gif/releases/download/preview';
+  const releaseRepository = process.env.PREVIEW_RELEASE_REPOSITORY || 'ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases';
+  const releaseBase = `https://github.com/${releaseRepository}/releases/download/preview`;
   const manifest = buildPreviewManifest({
     version,
     notes: process.env.PREVIEW_RELEASE_NOTES || `Preview ${version}`,

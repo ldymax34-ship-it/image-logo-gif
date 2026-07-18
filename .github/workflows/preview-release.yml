@@ -6,7 +6,10 @@ on:
     tags: ['v*-preview.*']
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
 
 jobs:
   build:
@@ -63,7 +66,7 @@ jobs:
           test -n "$SIG"
           PACKAGE="${SIG%.sig}"
           test -f "$PACKAGE"
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -p \"require('./package.json').version\")"
           if [ "${{ runner.os }}" = "Windows" ]; then
             UPDATER="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
             INSTALLER=$(find "$ROOT/nsis" -type f -name '*.exe' ! -name '*.sig' -print -quit)
@@ -86,6 +89,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Require release repository token
+        shell: bash
+        env:
+          RELEASE_REPOSITORY_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+        run: |
+          test -n "$RELEASE_REPOSITORY_TOKEN" || { echo 'RELEASE_REPOSITORY_TOKEN is required to publish to the public binary repository'; exit 1; }
       - uses: actions/download-artifact@v4
         with:
           path: release
@@ -94,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -p \"require('./package.json').version\")"
           MAC_PACKAGE="release/BrandMaterialWorkbench_${VERSION}_darwin-aarch64_updater.tar.gz"
           WIN_PACKAGE="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
           MAC_SIG="${MAC_PACKAGE}.sig"
@@ -103,7 +112,10 @@ jobs:
           node scripts/create-preview-manifest.mjs "$VERSION" "$MAC_PACKAGE" "$MAC_SIG" "$WIN_PACKAGE" "$WIN_SIG" release/latest-preview.json
           node -e "const m=require('./release/latest-preview.json'); if(Object.keys(m.platforms).join(',') !== 'darwin-aarch64,windows-x86_64') process.exit(1); for(const p of Object.values(m.platforms)) if(/^https?:/.test(p.signature)) process.exit(1)"
       - uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
         with:
+          repository: ${{ env.PREVIEW_RELEASE_REPOSITORY }}
           tag_name: preview
           name: 品宣物料工作台 Preview
           prerelease: true
