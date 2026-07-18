@@ -1,6 +1,6 @@
 # 更新日志
 
-## 0.1.26
+## 0.1.27
 
 1. [更新-大] 接入 Tauri 官方 Updater 与 Process 插件；仅读取 Preview `latest-preview.json`，公钥固定在 Tauri 配置，私钥仅存 GitHub Actions Secrets。
 2. [更新-中] 新增提示式更新检查、下载、失败重试、安装二次确认与 AppActivity 门禁；Web 开发模式不加载 Tauri Updater。
