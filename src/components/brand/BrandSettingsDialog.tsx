@@ -51,7 +51,9 @@ export function BrandSettingsDialog({
   onRestoreResources,
   onDirtyChange,
   onClose,
-  onChange
+  onChange,
+  version,
+  onCheckUpdate
 }: {
   settings: BrandSettingsV1;
   assets: import('../../core').BrandAsset[];
@@ -63,6 +65,8 @@ export function BrandSettingsDialog({
   onDirtyChange?: (dirty: boolean) => void;
   onClose: () => void;
   onChange: (next: BrandSettingsV1) => void;
+  version?: string;
+  onCheckUpdate?: () => void;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const [draft, setDraft] = useState<BrandSettingsV1>(settings);
@@ -158,6 +162,7 @@ export function BrandSettingsDialog({
         </div>
 
         <div className="settings-dialog-body">
+          {version ? <div className="settings-group"><h3>关于与更新</h3><p>当前版本 {version}</p>{onCheckUpdate ? <button type="button" onClick={onCheckUpdate}>检查更新</button> : null}</div> : null}
           <div className="settings-group">
             <h3>默认 Logo 组合</h3>
             <label className="settings-field">

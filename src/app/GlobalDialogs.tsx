@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import packageMetadata from '../../package.json';
 import { BrandSettingsDialog } from '../components';
 import {
   DEFAULT_BRAND_ASSETS,
@@ -7,6 +8,7 @@ import {
   type BrandLanguage
 } from '../core';
 import { useAppRuntime } from './AppRuntimeProvider';
+import { useUpdate } from '../update';
 
 function resolvePreferredBrandAssetId(
   assets: BrandAsset[],
@@ -41,6 +43,7 @@ export function GlobalDialogs() {
     notifyBrandResourceMessage,
     notifyCompanyLogoReplacement
   } = useAppRuntime();
+  const { checkForUpdate } = useUpdate();
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
 
   useEffect(() => {
@@ -102,6 +105,8 @@ export function GlobalDialogs() {
       onDirtyChange={setSettingsDirty}
       onClose={() => setSettingsDialogOpen(false)}
       onChange={setBrandSettings}
+      version={packageMetadata.version}
+      onCheckUpdate={() => void checkForUpdate(true)}
     /> : null}
     <input ref={inputRef} type="file" accept=".svg,image/svg+xml" hidden onChange={(event) => void handleLogoFiles(event.target.files)} />
   </>;
