@@ -29,7 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with:
+          node-version: 22
+          cache: npm
       - name: Require updater signing secrets
         shell: bash
         env:
@@ -40,9 +42,11 @@ jobs:
           test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" || { echo 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required'; exit 1; }
       - run: npm ci
       - uses: dtolnay/rust-toolchain@stable
-        with: { targets: ${{ matrix.target }} }
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
+        with:
+          workspaces: src-tauri
       - run: npm run verify:core && npm test -- --run && npm run build
       - name: Build signed updater artifacts
         env:
@@ -69,7 +73,10 @@ jobs:
             cp "$DMG" "release/BrandMaterialWorkbench_${GITHUB_REF_NAME#v}_macOS_arm64.dmg"
           fi
       - uses: actions/upload-artifact@v4
-        with: { name: ${{ matrix.artifact }}, path: release/*, if-no-files-found: error }
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
 
   release:
     needs: build
@@ -77,7 +84,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { path: release, merge-multiple: true }
+        with:
+          path: release
+          merge-multiple: true
       - name: Generate Preview manifest and validate updater assets
         shell: bash
         run: |
@@ -95,7 +104,6 @@ jobs:
           tag_name: preview
           name: 品宣物料工作台 Preview
           prerelease: true
-          make_latest: false
           overwrite_files: true
           generate_release_notes: true
           files: release/*
