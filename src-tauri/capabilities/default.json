@@ -6,18 +6,32 @@
     "main"
   ],
   "permissions": [
-    "core:default"
-    ,"dialog:default"
-    ,"fs:default"
-    ,{
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$HOME/**" },
-        { "path": "$DOWNLOAD/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$DOCUMENT/**" },
-        { "path": "$PICTURE/**" }
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$PICTURE/**"
+        }
       ]
-    }
+    },
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install",
+    "process:allow-restart"
   ]
 }

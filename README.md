@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.25，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
+当前项目已推进到 0.1.26，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
 
 当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。自动更新、GIF 编解码、视频和 AI 能力尚未进入开发。
 
@@ -118,7 +118,7 @@ npm run package:preview
 
 ### 平台产物
 
-GitHub Actions 在 Preview tag（例如 `v0.1.25-preview.1`）上构建：
+GitHub Actions 在 Preview tag（例如 `v0.1.26-preview.1`）上构建：
 
 - Windows 10/11 x64：NSIS Setup EXE，内置离线 WebView2。
 - macOS Apple Silicon：arm64 DMG 与 App ZIP。

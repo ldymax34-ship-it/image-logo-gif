@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "品宣物料工作台",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "identifier": "com.kuro.internal.brandmaterialworkbench",
   "build": {
     "frontendDist": "../dist",
@@ -29,7 +29,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "app"],
+    "targets": [
+      "nsis",
+      "dmg",
+      "app"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -47,6 +51,15 @@
     },
     "macOS": {
       "signingIdentity": "-"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUxQjA0NkYyNkYyNDUxMDUKUldRRlVTUnY4a2F3VVRodEJ0U2IzVlp6Q1lXdE9sN3doT0VSajA4S1ovK1JzbmdFTWxnenEyQVMK",
+      "endpoints": [
+        "https://github.com/ldymax34-ship-it/image-logo-gif/releases/download/preview/latest-preview.json"
+      ]
     }
   }
 }
