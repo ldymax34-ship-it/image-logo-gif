@@ -27,10 +27,11 @@ async function main() {
   }
   const releaseRepository = process.env.PREVIEW_RELEASE_REPOSITORY || 'ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases';
   const releaseBase = `https://github.com/${releaseRepository}/releases/download/preview`;
+  const pubDate = new Date().toISOString();
   const manifest = buildPreviewManifest({
     version,
-    notes: process.env.PREVIEW_RELEASE_NOTES || `Preview ${version}`,
-    pubDate: new Date().toISOString(),
+    notes: process.env.PREVIEW_RELEASE_NOTES || `Preview ${version} · ${pubDate} · Signed macOS Apple Silicon and Windows x64 updater artifacts.`,
+    pubDate,
     macUrl: `${releaseBase}/${encodeURIComponent(basename(macPackage))}`,
     macSignature: await readFile(resolve(macSig), 'utf8'),
     windowsUrl: `${releaseBase}/${encodeURIComponent(basename(windowsPackage))}`,
