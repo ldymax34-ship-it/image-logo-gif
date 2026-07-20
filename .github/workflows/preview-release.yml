@@ -120,5 +120,5 @@ jobs:
           name: 品宣物料工作台 Preview
           prerelease: true
           overwrite_files: true
-          generate_release_notes: true
+          body: Signed Preview updater artifacts for macOS Apple Silicon and Windows x64.
           files: release/*
