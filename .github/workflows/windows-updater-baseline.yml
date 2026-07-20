@@ -11,12 +11,16 @@ on:
         description: Version label used in the test-baseline installer filename
         required: true
         default: 0.1.26
+  push:
+    tags: ['windows-baseline-v*']
 
 permissions:
   contents: read
 
 env:
   PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
+  BASELINE_REF: ${{ inputs.baseline_ref || 'v0.1.26-preview.3' }}
+  BASELINE_VERSION: ${{ inputs.baseline_version || '0.1.26' }}
 
 jobs:
   build-and-publish-baseline:
@@ -25,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.baseline_ref }}
+          ref: ${{ env.BASELINE_REF }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -59,10 +63,10 @@ jobs:
           $installer = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
           if ($null -eq $installer) { throw 'NSIS installer was not produced' }
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item $installer.FullName "release/BrandMaterialWorkbench_${{ inputs.baseline_version }}_windows-x86_64_test-baseline.exe"
+          Copy-Item $installer.FullName "release/BrandMaterialWorkbench_${{ env.BASELINE_VERSION }}_windows-x86_64_test-baseline.exe"
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-x64-test-baseline-${{ inputs.baseline_version }}
+          name: windows-x64-test-baseline-${{ env.BASELINE_VERSION }}
           path: release/*
           if-no-files-found: error
       - name: Publish test baseline to the public Preview Release
