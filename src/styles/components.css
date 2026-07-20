@@ -388,3 +388,27 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 }
 .topbar { min-height: 48px; padding-block: 8px; }
 .topbar h1 { font-size: 16px; line-height: 1.2; }
+.diagnostics-notice {
+  align-items: center;
+  background: #fff4d6;
+  border-bottom: 1px solid #d6b35f;
+  color: #3d3218;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 40px;
+  padding: 6px 16px;
+}
+
+.diagnostics-fallback {
+  display: grid;
+  gap: 16px;
+  margin: 15vh auto;
+  max-width: 640px;
+  padding: 24px;
+}
+
+.diagnostics-settings .dialog-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}

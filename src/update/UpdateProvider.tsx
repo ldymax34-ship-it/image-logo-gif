@@ -4,6 +4,7 @@ import { useAppActivity, type AppActivity } from '../app/appActivity';
 import { getInstallBlockReason } from './updateGate';
 import { createTauriUpdateAdapter } from './updateService';
 import type { UpdateAdapter, UpdateDiagnostic, UpdateFailureStage, UpdateHandle, UpdateState } from './updateTypes';
+import { logDiagnostic, sanitizeForDiagnostics } from '../diagnostics';
 
 const UpdateContext = createContext<ReturnType<typeof useUpdateController> | undefined>(undefined);
 
@@ -20,33 +21,24 @@ function platformLabel() {
   return navigator.userAgent.includes('Windows') ? 'windows' : navigator.userAgent.includes('Mac') ? 'macos' : 'unknown';
 }
 
-function sanitizeDetails(error: unknown) {
-  const raw = error instanceof Error ? error.message : String(error || 'unknown updater error');
-  return raw
-    .replace(/https?:\/\/\S+/gi, '[URL]')
-    .replace(/(?:[A-Za-z]:\\|\/Users\/|\/home\/)[^\s]*/g, '[PATH]')
-    .replace(/(?:token|password|authorization)\s*[=:]\s*[^\s,;]+/gi, '$1=[REDACTED]')
-    .slice(0, 240);
-}
-
 function describeFailure(stage: UpdateFailureStage, error: unknown, trigger: 'automatic' | 'manual', retryCount: number, appVersion: string, platform: string): UpdateDiagnostic {
-  const details = sanitizeDetails(error).toLowerCase();
+  const details = sanitizeForDiagnostics(error).toLowerCase();
   const classifiedStage: UpdateFailureStage = /signature|verify|verification/.test(details) ? 'signature'
     : /json|parse|deserialize|404|not found/.test(details) && stage === 'check' ? 'manifest'
       : stage;
-  const code = classifiedStage === 'signature' ? 'signature-verification-failed'
-    : classifiedStage === 'manifest' ? /404|not found/.test(details) ? 'manifest-not-found' : 'manifest-invalid'
-      : /timeout|network|connect|dns|offline/.test(details) ? 'network-failed'
-        : `${classifiedStage}-failed`;
+  const code = classifiedStage === 'signature' ? 'UPD_SIGNATURE_INVALID'
+    : classifiedStage === 'manifest' ? 'UPD_MANIFEST_INVALID'
+      : classifiedStage === 'download' ? 'UPD_DOWNLOAD_FAILED'
+        : classifiedStage === 'install' || classifiedStage === 'install-preparation' ? 'UPD_INSTALL_FAILED'
+          : 'UPD_CHECK_NETWORK';
   const labels: Record<UpdateFailureStage, string> = {
     check: '检查更新', manifest: '读取更新清单', download: '下载更新', signature: '签名校验', 'install-preparation': '安装准备', install: '安装更新'
   };
-  const reason = code === 'network-failed' ? '网络连接中断或不可达。'
-    : code === 'manifest-not-found' ? '更新清单暂时不可用。'
-      : code === 'manifest-invalid' ? '更新清单格式无效。'
-        : code === 'signature-verification-failed' ? '更新包签名无法验证。'
+  const reason = code === 'UPD_CHECK_NETWORK' ? '网络连接中断或不可达。'
+    : code === 'UPD_MANIFEST_INVALID' ? '更新清单格式无效或暂时不可用。'
+      : code === 'UPD_SIGNATURE_INVALID' ? '更新包签名无法验证。'
           : '操作未完成。';
-  return { stage: classifiedStage, code, message: `${labels[classifiedStage]}失败：${reason} 当前版本仍可继续使用。`, timestamp: new Date().toISOString(), appVersion, platform, trigger, retryCount, sanitizedDetails: sanitizeDetails(error), retryable: classifiedStage !== 'signature' };
+  return { stage: classifiedStage, code, message: `${labels[classifiedStage]}失败：${reason} 当前版本仍可继续使用。`, timestamp: new Date().toISOString(), appVersion, platform, trigger, retryCount, sanitizedDetails: sanitizeForDiagnostics(error), retryable: classifiedStage !== 'signature' };
 }
 
 /**
@@ -65,6 +57,7 @@ export function createUpdateCoordinator(options: CoordinatorOptions) {
   const releaseHandle = async () => { const previous = handle; handle = undefined; await previous?.close?.(); };
   const errorState = (stage: UpdateFailureStage, error: unknown, trigger: 'automatic' | 'manual', update?: UpdateHandle) => {
     const diagnostic = describeFailure(stage, error, trigger, retryCount, options.appVersion ?? packageMetadata.version, options.platform ?? platformLabel());
+    void logDiagnostic('error', diagnostic.code, diagnostic.sanitizedDetails, diagnostic.stage);
     publish({ status: 'error', dialogOpen: trigger === 'manual' || state.dialogOpen, update, error: diagnostic.message, diagnostic });
   };
   const runCheck = (trigger: 'automatic' | 'manual') => {
@@ -77,10 +70,12 @@ export function createUpdateCoordinator(options: CoordinatorOptions) {
     const previousStatus = state.status;
     const task = (async () => {
       if (previousStatus === 'error' || previousStatus === 'cancelled') { retryCount += 1; await releaseHandle(); }
+      void logDiagnostic('info', 'UPD_STATE', 'checking', trigger);
       publish({ status: 'checking', dialogOpen: trigger === 'manual' || state.dialogOpen });
       try {
         const next = await options.adapter.check();
         handle = next ?? undefined;
+        void logDiagnostic('info', 'UPD_STATE', next ? 'available' : 'up-to-date', trigger);
         publish(next ? { status: 'available', dialogOpen: true, update: next } : { status: 'idle', dialogOpen: trigger === 'manual' });
       } catch (error) {
         if (trigger === 'automatic') publish({ status: 'idle', dialogOpen: false });
@@ -97,6 +92,7 @@ export function createUpdateCoordinator(options: CoordinatorOptions) {
     lastProgressPaint = 0;
     const task = (async () => {
       publish({ status: 'downloading', dialogOpen: true, update, progress: { received: 0 } });
+      void logDiagnostic('info', 'UPD_STATE', 'downloading');
       try {
         await update.download((progress) => {
           const now = Date.now();
@@ -106,6 +102,7 @@ export function createUpdateCoordinator(options: CoordinatorOptions) {
           publish({ ...state, status: 'downloading', dialogOpen: state.dialogOpen, update, progress: { ...state.progress, ...progress } });
         });
         publish({ status: 'downloaded', dialogOpen: state.dialogOpen, update });
+        void logDiagnostic('info', 'UPD_STATE', 'downloaded');
       } catch (error) {
         await releaseHandle();
         errorState('download', error, 'manual');
@@ -127,6 +124,7 @@ export function createUpdateCoordinator(options: CoordinatorOptions) {
     if (!update || !requestInstall()) return Promise.resolve(false);
     const task = (async () => {
       publish({ status: 'installing', dialogOpen: true, update });
+      void logDiagnostic('info', 'UPD_STATE', 'installing');
       try { await update.install(); await options.adapter.restart(); return true; }
       catch (error) { errorState('install', error, 'manual', update); return false; }
       finally { installPromise = undefined; }

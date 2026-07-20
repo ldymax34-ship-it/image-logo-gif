@@ -7,6 +7,7 @@ import { AppRuntimeProvider, useAppRuntime } from './AppRuntimeProvider';
 import { AppShell } from './AppShell';
 import { GlobalDialogs } from './GlobalDialogs';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
+import { UncleanExitNotice } from '../diagnostics';
 
 function AppContent() {
   const {
@@ -30,6 +31,7 @@ function AppContent() {
   }, [updateActivity]);
 
   return <>
+    <UncleanExitNotice />
     <AppShell
       activeModule={activeModule}
       onModuleChange={requestModuleChange}

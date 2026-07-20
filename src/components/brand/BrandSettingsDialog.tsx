@@ -13,6 +13,7 @@ import {
   type CprPlacement
 } from '../../core';
 import { BrandResourceManager } from './BrandResourceManager';
+import { DiagnosticsSection } from '../../diagnostics';
 
 const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original'>; label: string }> = [
   { value: 'white', label: '白色' },
@@ -163,6 +164,7 @@ export function BrandSettingsDialog({
 
         <div className="settings-dialog-body">
           {version ? <div className="settings-group"><h3>关于与更新</h3><p>当前版本 {version}</p>{onCheckUpdate ? <button type="button" onClick={onCheckUpdate}>检查更新</button> : null}</div> : null}
+          <DiagnosticsSection />
           <div className="settings-group">
             <h3>默认 Logo 组合</h3>
             <label className="settings-field">

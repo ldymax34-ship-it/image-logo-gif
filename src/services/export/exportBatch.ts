@@ -16,6 +16,7 @@ import {
 } from '../../core';
 import { saveBlobToOutputTarget, type OutputTarget } from '../../platform/fileSystem';
 import { exportBoard } from './exportBoard';
+import { logDiagnostic } from '../../diagnostics';
 
 export type BatchProgress = { current: number; total: number };
 export type BatchFailure<T> = { item: T; message: string };
@@ -38,6 +39,7 @@ export async function exportSequentially<T>(
       outcomes.push({ item: items[index], outcome });
     } catch (error) {
       const message = error instanceof Error ? error.message : '导出失败';
+      void logDiagnostic('error', 'RENDER_FAILED', message, 'batch-export');
       failures.push({ item: items[index], message });
       outcomes.push({ item: items[index], outcome: { result: 'failed', reason: message } });
     }

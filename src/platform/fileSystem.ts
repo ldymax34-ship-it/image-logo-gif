@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isDesktopBridgeAvailable } from './desktopBridge';
+import { logDiagnostic } from '../diagnostics';
 
 export type PickedFile = {
   name: string;
@@ -94,6 +95,7 @@ export async function saveBlobToOutputTarget(target: OutputTarget, fileName: str
       return resolvedName;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
+      void logDiagnostic('error', 'EXPORT_WRITE_FAILED', reason, 'desktop-directory');
       throw new Error(`无法写入所选文件夹：${reason}`);
     }
   }
