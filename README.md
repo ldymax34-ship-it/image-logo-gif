@@ -6,7 +6,7 @@
 
 当前项目已推进到 0.1.27，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
 
-当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。自动更新、GIF 编解码、视频和 AI 能力尚未进入开发。
+当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。Preview 提示式自动更新已接入并完成 macOS 本机升级回归；GIF 编解码、视频和 AI 能力尚未进入开发。
 
 当前正式工作流已收束为：固定桌面应用框架、按画板独立保存品牌状态、统一解析预览 / 聚焦 / 导出的语言资源、工作区内聚焦草稿、连续 Logo / CPR 缩放，以及“当前语种 + 追加语种 / 全语种”的批量导出。PNG 超限会明确失败，JPG 可按现有策略自动压缩；导出窗口会保留逐项结果。
 
@@ -125,11 +125,13 @@ GitHub Actions 在 Preview tag（例如 `v0.1.27-preview.1`）上构建：
 
 Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macOS Apple Silicon 首次启动可能要求在“系统设置 → 隐私与安全性”中手动允许。不要关闭系统安全机制或运行绕过脚本。
 
-## 自动更新规划
+## Preview 自动更新
 
-后续正式版本计划使用 GitHub Release 作为跨网络更新源：客户端只读取版本清单与平台更新包，所有素材处理仍然完全在本地完成。更新不会把安装包提交到 Git 历史，也不会上传图片或工作台数据。
+桌面客户端只读取公开二进制分发仓库的 Preview 清单 `latest-preview.json`，使用 Tauri Updater 的独立签名验证更新包；素材处理仍完全在本地完成。更新不会将安装包提交到 Git 历史，也不会上传图片或工作台数据。
 
-Windows 将先接入提示式更新，完整离线 WebView2 安装包保留为首次安装和无网络环境兜底。macOS 需要先完成 Developer ID 签名和公证后再启用更新通道。完整实施步骤、签名边界和发布检查见 [自动更新规划](docs/AUTO_UPDATE_PLAN.md)。
+更新为提示式流程：首屏后延迟检查，用户主动下载；安装前检查导出、聚焦编辑、未保存设置和确认弹窗等活动状态，并要求二次确认。当前不会读取 Stable `latest.json`。Updater 签名不等同于 Windows Authenticode、macOS Developer ID 或公证。
+
+发布到公开二进制仓库的 Actions 需要 `RELEASE_REPOSITORY_TOKEN`：该 token 必须是仅对分发仓库授予 Contents 读写权限的 fine-grained PAT。完整发布和 Windows 实机步骤见 [自动更新说明](docs/AUTO_UPDATE_PLAN.md) 与 [Windows 测试说明](docs/WINDOWS_UPDATER_TEST.md)。
 
 ## UI 方向
 
