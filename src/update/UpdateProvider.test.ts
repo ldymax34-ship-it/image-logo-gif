@@ -12,6 +12,16 @@ function setup(adapterOverrides: Partial<UpdateAdapter> = {}) {
 }
 
 describe('updater single-flight coordinator', () => {
+  it('shows a clear up-to-date result for manual checks and stays silent for automatic checks', async () => {
+    const automatic = setup();
+    await automatic.coordinator.checkForUpdate(false);
+    expect(automatic.coordinator.getState()).toMatchObject({ status: 'idle', dialogOpen: false });
+
+    const manual = setup();
+    await manual.coordinator.checkForUpdate(true);
+    expect(manual.coordinator.getState()).toMatchObject({ status: 'up-to-date', dialogOpen: true });
+  });
+
   it('shares one check between automatic and manual triggers', async () => {
     const pending = deferred<UpdateHandle | null>();
     const { adapter, coordinator } = setup({ check: vi.fn(() => pending.promise) });

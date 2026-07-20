@@ -1,4 +1,4 @@
-export type UpdateStatus = 'idle' | 'scheduled' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'install-blocked' | 'installing' | 'cancelled' | 'error';
+export type UpdateStatus = 'idle' | 'scheduled' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'downloaded' | 'install-blocked' | 'installing' | 'cancelled' | 'error';
 
 export type UpdateInfo = { version: string; date?: string; notes?: string };
 export type DownloadProgress = { received: number; total?: number };

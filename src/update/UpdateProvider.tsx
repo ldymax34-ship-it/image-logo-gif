@@ -76,10 +76,24 @@ export function createUpdateCoordinator(options: CoordinatorOptions) {
         const next = await options.adapter.check();
         handle = next ?? undefined;
         void logDiagnostic('info', 'UPD_STATE', next ? 'available' : 'up-to-date', trigger);
-        publish(next ? { status: 'available', dialogOpen: true, update: next } : { status: 'idle', dialogOpen: trigger === 'manual' });
+        publish(next
+          ? { status: 'available', dialogOpen: true, update: next }
+          : trigger === 'manual'
+            ? { status: 'up-to-date', dialogOpen: true }
+            : { status: 'idle', dialogOpen: false });
       } catch (error) {
-        if (trigger === 'automatic') publish({ status: 'idle', dialogOpen: false });
-        else errorState('check', error, trigger);
+        if (trigger === 'automatic') {
+          const diagnostic = describeFailure(
+            'check',
+            error,
+            trigger,
+            retryCount,
+            options.appVersion ?? packageMetadata.version,
+            options.platform ?? platformLabel()
+          );
+          void logDiagnostic('error', diagnostic.code, diagnostic.sanitizedDetails, diagnostic.stage);
+          publish({ status: 'idle', dialogOpen: false });
+        } else errorState('check', error, trigger);
       } finally { checkPromise = undefined; }
     })();
     checkPromise = task;
