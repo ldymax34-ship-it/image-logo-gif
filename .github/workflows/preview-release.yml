@@ -66,7 +66,7 @@ jobs:
           test -n "$SIG"
           PACKAGE="${SIG%.sig}"
           test -f "$PACKAGE"
-          VERSION="$(node -p \"require('./package.json').version\")"
+          VERSION="$(node -p "require('./package.json').version")"
           if [ "${{ runner.os }}" = "Windows" ]; then
             UPDATER="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
             INSTALLER=$(find "$ROOT/nsis" -type f -name '*.exe' ! -name '*.sig' -print -quit)
@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(node -p \"require('./package.json').version\")"
+          VERSION="$(node -p "require('./package.json').version")"
           MAC_PACKAGE="release/BrandMaterialWorkbench_${VERSION}_darwin-aarch64_updater.tar.gz"
           WIN_PACKAGE="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
           MAC_SIG="${MAC_PACKAGE}.sig"
