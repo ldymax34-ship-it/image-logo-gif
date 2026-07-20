@@ -20,4 +20,6 @@ export type UpdateState = {
   update?: UpdateHandle;
   progress?: DownloadProgress;
   error?: string;
+  /** Non-sensitive operation stage for local troubleshooting and retry UI. */
+  failureStage?: 'check' | 'download' | 'install';
 };

@@ -345,6 +345,9 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 .export-result.is-success { color: var(--state-success); }
 .warning-box { border-color: #765f35; background: var(--color-warning-soft); color: #f0cf91; }
 .size-warning { color: var(--color-warning); }
+
+.update-progress { display: flex; justify-content: space-between; gap: 12px; min-height: 20px; }
+.update-progress-values { min-width: 18ch; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .export-error { color: var(--color-danger); }
 .icon-button { color: var(--color-text-muted); border-color: transparent; background: transparent; }
 .icon-button:hover:not(:disabled) { border-color: transparent; background: var(--color-panel-raised); color: var(--color-text); }

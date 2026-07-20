@@ -7,7 +7,7 @@
 - Preview Release：<https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/tag/preview>
 - Preview 清单：<https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/preview/latest-preview.json>
 - 基线客户端：`BrandMaterialWorkbench_0.1.26_windows-x86_64_test-baseline.exe`
-- 当前完整安装包：`BrandMaterialWorkbench_0.1.27_Windows_x64_Setup.exe`
+- 当前完整安装包：`BrandMaterialWorkbench_0.1.28_Windows_x64_Setup.exe`
 
 先把基线安装包复制到 **Windows 本地磁盘**，从本地安装和启动；共享盘只能用来传输文件。
 
@@ -16,11 +16,11 @@
 1. 安装并启动 `0.1.26` 测试基线客户端。
 2. 确认首屏正常出现；启动不应被检查更新阻塞。
 3. 等待约 10 秒，或在设置中点击“检查更新”。
-4. 确认出现 `0.1.27` Preview：版本号、发布日期、主要变化、“稍后”和“下载更新”均可见。
+4. 确认出现 `0.1.28` Preview：版本号、发布日期、主要变化、“稍后”和“下载更新”均可见。
 5. 点击“下载更新”。已知总大小时确认显示百分比；未知总大小时应显示不确定下载状态。
 6. 下载完成后确认**不会**自动安装或重启。
 7. 点击“安装并重启”，确认出现二次确认：应用将关闭，临时状态可能丢失。
-8. 确认后二次点击安装，等待应用重启；在设置“关于”确认版本为 `0.1.27`。
+8. 在二次确认中单击一次“确认安装并重启”，等待应用重启；在设置“关于”确认版本为 `0.1.28`。
 
 ## B. 安装门禁
 
@@ -47,7 +47,7 @@
 
 ## D. 无更新
 
-在 `0.1.27` 中手动检查：确认显示当前已是最新版，不显示下载/安装按钮，也不反复弹窗。
+在 `0.1.28` 中手动检查：确认显示当前已是最新版，不显示下载/安装按钮，也不反复弹窗。
 
 ## SmartScreen 边界
 

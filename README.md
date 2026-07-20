@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.27，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
+当前项目已推进到 0.1.28，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
 
 当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。Preview 提示式自动更新已接入并完成 macOS 本机升级回归；GIF 编解码、视频和 AI 能力尚未进入开发。
 

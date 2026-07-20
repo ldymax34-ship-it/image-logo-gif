@@ -1,6 +1,6 @@
 [package]
 name = "brand_material_workbench"
-version = "0.1.27"
+version = "0.1.28"
 description = "Internal offline brand material workbench"
 authors = ["Kuro Games"]
 license = "UNLICENSED"
