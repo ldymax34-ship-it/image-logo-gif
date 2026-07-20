@@ -4,7 +4,7 @@
 
 ### 正式产品路线
 
-- [ ] Goal 9｜Preview 自动更新：官方 Tauri Updater/Process、Preview-only manifest、提示式下载和 AppActivity 安装门禁已完成；macOS arm64 已实机验证。正式双平台 Preview 发布和 Windows x64 实机验证进行中。
+- [ ] Goal 9｜Preview 自动更新：官方 Tauri Updater/Process、Preview-only manifest、提示式下载和 AppActivity 安装门禁已完成；正式双平台 Preview 已发布，macOS arm64 已实机验证，Windows x64 CI 与测试基线包已准备。Windows x64 实机验证待用户执行。
 
 - [x] Goal 1｜App 根层所有权：`AppRuntimeProvider` 在根层持有当前模块、全局品牌资源、全局品牌设置与 `AppActivity`；`AppShell` 只负责模块导航和出口，`MediaWorkbench` 只负责设媒。
 - [x] Goal 1.1｜全局设置收口：设置弹层、品牌资源替换 / 恢复和 SVG 上传入口由 `GlobalDialogs` 托管；根层直接汇总设置活动状态。

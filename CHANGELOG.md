@@ -5,6 +5,8 @@
 1. [更新-大] 接入 Tauri 官方 Updater 与 Process 插件；仅读取 Preview `latest-preview.json`，公钥固定在 Tauri 配置，私钥仅存 GitHub Actions Secrets。
 2. [更新-中] 新增提示式更新检查、下载、失败重试、安装二次确认与 AppActivity 门禁；Web 开发模式不加载 Tauri Updater。
 3. [发布-中] Preview 工作流构建 darwin-aarch64 与 windows-x86_64 的签名 updater artifacts，并生成/校验双平台 `latest-preview.json`。
+4. [发布-中] 正式 Preview 已发布到独立公开二进制仓库固定 `preview` Release；清单只含 macOS arm64 与 Windows x64，签名字段使用实际 `.sig` 内容。
+5. [验证-中] macOS arm64 已完成 `0.1.26 → 0.1.27` 实机升级；Windows x64 已完成 CI 签名构建，并提供明确标识的 `0.1.26` 测试基线安装包，实机升级待验证。
 
 
 ## 0.1.25 补充收口

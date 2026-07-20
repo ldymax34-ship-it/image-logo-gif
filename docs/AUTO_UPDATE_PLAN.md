@@ -58,4 +58,4 @@ Preview 清单仅有两个平台：
 ## 实机回归状态
 
 - macOS Apple Silicon：已完成 `0.1.26 → 0.1.27` 的发现、提示、下载、签名包、安装和重启验证。
-- Windows x64：CI 构建与 Preview 资产/清单验证后，仍需在真实 Windows 设备执行完整更新回归；步骤见 [Windows updater test](WINDOWS_UPDATER_TEST.md)。
+- Windows x64：CI 构建、Preview 资产/清单和 `0.1.26` 测试基线包均已验证；仍需在真实 Windows 设备执行完整更新回归，步骤见 [Windows updater test](WINDOWS_UPDATER_TEST.md)。
