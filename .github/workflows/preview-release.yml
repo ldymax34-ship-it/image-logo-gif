@@ -112,9 +112,8 @@ jobs:
           node scripts/create-preview-manifest.mjs "$VERSION" "$MAC_PACKAGE" "$MAC_SIG" "$WIN_PACKAGE" "$WIN_SIG" release/latest-preview.json
           node -e "const m=require('./release/latest-preview.json'); if(Object.keys(m.platforms).join(',') !== 'darwin-aarch64,windows-x86_64') process.exit(1); for(const p of Object.values(m.platforms)) if(/^https?:/.test(p.signature)) process.exit(1)"
       - uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
         with:
+          token: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
           repository: ${{ env.PREVIEW_RELEASE_REPOSITORY }}
           tag_name: preview
           name: 品宣物料工作台 Preview
