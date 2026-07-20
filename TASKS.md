@@ -1,10 +1,10 @@
 # 任务看板
 
-## 当前版本：0.1.28 Goal 9 Preview 自动更新
+## 当前版本：0.1.29 Goal 9 Preview 自动更新
 
 ### 正式产品路线
 
-- [ ] Goal 9｜Preview 自动更新：官方 Tauri Updater/Process、Preview-only manifest、提示式下载和 AppActivity 安装门禁已完成；0.1.28 补齐下载进度稳定性、阶段化重试和单击安装锁定。macOS arm64 已实机验证，Windows x64 CI 与修复版产物待用户实机回归。
+- [ ] Goal 9｜Preview 自动更新：官方 Tauri Updater/Process、Preview-only manifest、提示式下载和 AppActivity 安装门禁已完成；0.1.29 统一自动/手动检查与下载 single-flight，补齐后台下载语义、本地诊断日志、异常退出提示和诊断导出。macOS arm64 本地构建已验证，Windows x64 签名产物与实机更新待发布后回归。
 
 - [x] Goal 1｜App 根层所有权：`AppRuntimeProvider` 在根层持有当前模块、全局品牌资源、全局品牌设置与 `AppActivity`；`AppShell` 只负责模块导航和出口，`MediaWorkbench` 只负责设媒。
 - [x] Goal 1.1｜全局设置收口：设置弹层、品牌资源替换 / 恢复和 SVG 上传入口由 `GlobalDialogs` 托管；根层直接汇总设置活动状态。
