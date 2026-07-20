@@ -1,4 +1,4 @@
-export type UpdateStatus = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'install-blocked' | 'installing' | 'error';
+export type UpdateStatus = 'idle' | 'scheduled' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'install-blocked' | 'installing' | 'cancelled' | 'error';
 
 export type UpdateInfo = { version: string; date?: string; notes?: string };
 export type DownloadProgress = { received: number; total?: number };
@@ -15,11 +15,28 @@ export type UpdateAdapter = {
   restart: () => Promise<void>;
 };
 
+export type UpdateFailureStage = 'check' | 'manifest' | 'download' | 'signature' | 'install-preparation' | 'install';
+
+/** A local-only, sanitized error record. It is never uploaded automatically. */
+export type UpdateDiagnostic = {
+  stage: UpdateFailureStage;
+  code: string;
+  message: string;
+  timestamp: string;
+  appVersion: string;
+  platform: string;
+  trigger: 'automatic' | 'manual';
+  retryCount: number;
+  sanitizedDetails: string;
+  retryable: boolean;
+};
+
 export type UpdateState = {
   status: UpdateStatus;
   update?: UpdateHandle;
   progress?: DownloadProgress;
   error?: string;
-  /** Non-sensitive operation stage for local troubleshooting and retry UI. */
-  failureStage?: 'check' | 'download' | 'install';
+  diagnostic?: UpdateDiagnostic;
+  /** Whether the single shared dialog is visible; download work survives hiding it. */
+  dialogOpen: boolean;
 };
