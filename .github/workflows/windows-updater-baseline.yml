@@ -1,0 +1,73 @@
+name: Build Windows updater test baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Existing lower-version source ref used only for the updater test client
+        required: true
+        default: v0.1.26-preview.3
+      baseline_version:
+        description: Version label used in the test-baseline installer filename
+        required: true
+        default: 0.1.26
+
+permissions:
+  contents: read
+
+env:
+  PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
+
+jobs:
+  build-and-publish-baseline:
+    name: Windows x64 updater test baseline
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.baseline_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Require public-release token
+        shell: bash
+        env:
+          RELEASE_REPOSITORY_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+        run: |
+          test -n "$RELEASE_REPOSITORY_TOKEN" || { echo 'RELEASE_REPOSITORY_TOKEN is required to publish the Windows test baseline'; exit 1; }
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Point the temporary baseline at the public Preview endpoint
+        shell: pwsh
+        run: |
+          $config = Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+          $config.plugins.updater.endpoints = @('https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/preview/latest-preview.json')
+          $config.bundle.createUpdaterArtifacts = $false
+          $config | ConvertTo-Json -Depth 100 | Set-Content 'src-tauri/tauri.conf.json'
+      - run: npm run verify:core && npm test -- --run && npm run build
+      - name: Build lower-version NSIS installer
+        run: npm run tauri:build -- --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Stage clearly-labelled test baseline
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'NSIS installer was not produced' }
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item $installer.FullName "release/BrandMaterialWorkbench_${{ inputs.baseline_version }}_windows-x86_64_test-baseline.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-test-baseline-${{ inputs.baseline_version }}
+          path: release/*
+          if-no-files-found: error
+      - name: Publish test baseline to the public Preview Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+        run: |
+          gh release upload preview release/* --repo $env:PREVIEW_RELEASE_REPOSITORY --clobber
