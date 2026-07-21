@@ -9,6 +9,22 @@ export const CUSTOM_LOGO_MAX_SCALE = 3;
 export type CustomWorkbenchDirtySnapshot = { gameEnabled: boolean; companyEnabled: boolean; gameScale: number; companyScale: number; gameOffset: { x: number; y: number }; companyOffset: { x: number; y: number }; cprEnabled: boolean; gameEffect: BrandEffectState; companyEffect: BrandEffectState; cprEffect: BrandEffectState; format: MaterialFormat; gameLanguage: BrandLanguage; guidesVisible: boolean; snapEnabled: boolean };
 export function isCustomWorkbenchDirty(asset?: MaterialAsset, initial?: CustomWorkbenchDirtySnapshot, current?: CustomWorkbenchDirtySnapshot): boolean { return Boolean(asset) || Boolean(initial && current && JSON.stringify(initial) !== JSON.stringify(current)); }
 
+function fmtScale(v: number): string { return `${v.toFixed(2)}×`; }
+
+function fmtCoord(v: number): string {
+  if (v === Math.round(v)) return String(v);
+  return v.toFixed(1);
+}
+
+function effectSummary(effect: BrandEffectState): string {
+  const parts: string[] = [];
+  parts.push(effect.strokeEnabled ? '描边开' : '描边关');
+  parts.push(effect.shadowEnabled ? '阴影开' : '阴影关');
+  parts.push(effect.glowEnabled ? '发光开' : '发光关');
+  if (effect.colorEnabled) parts.push('改色');
+  return parts.join(' · ');
+}
+
 export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos, onDirtyChange }: {
   brandLayer: BrandLayerState;
   logoAsset?: BrandAsset;
@@ -25,19 +41,19 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const [companyEnabled, setCompanyEnabled] = useState(false);
   const [gameScale, setGameScale] = useState(1);
   const [companyScale, setCompanyScale] = useState(1);
-  const [gameOffset, setGameOffset] = useState({ x: CUSTOM_SPEC.width * .24, y: CUSTOM_SPEC.height * .2 });
-  const [companyOffset, setCompanyOffset] = useState({ x: CUSTOM_SPEC.width * .54, y: CUSTOM_SPEC.height * .2 });
+  const [gameOffset, setGameOffset] = useState({ x: 460, y: 216 });
+  const [companyOffset, setCompanyOffset] = useState({ x: 1036, y: 216 });
   const [cprEnabled, setCprEnabled] = useState(true);
   const [gameEffect, setGameEffect] = useState<BrandEffectState>(brandLayer.logoEffect);
   const [companyEffect, setCompanyEffect] = useState<BrandEffectState>(brandLayer.logoEffect);
   const [cprEffect, setCprEffect] = useState<BrandEffectState>(brandLayer.cprEffect);
   const [format, setFormat] = useState<MaterialFormat>('png');
-  const [status, setStatus] = useState('导入图片后可自由摆放品牌元素。');
+  const [status, setStatus] = useState('');
   const [gameLanguage, setGameLanguage] = useState<BrandLanguage>(gameLogo?.language ?? 'zh-CN');
   const [guidesVisible, setGuidesVisible] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const dragRef = useRef<{ target: 'game' | 'company'; pointerId: number; startX: number; startY: number; origin: { x: number; y: number } }>();
-  const initialDirtySnapshot = useRef<CustomWorkbenchDirtySnapshot>({ gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, gameOffset: { x: CUSTOM_SPEC.width * .24, y: CUSTOM_SPEC.height * .2 }, companyOffset: { x: CUSTOM_SPEC.width * .54, y: CUSTOM_SPEC.height * .2 }, cprEnabled: true, gameEffect: brandLayer.logoEffect, companyEffect: brandLayer.logoEffect, cprEffect: brandLayer.cprEffect, format: 'png', gameLanguage: gameLogo?.language ?? 'zh-CN', guidesVisible: true, snapEnabled: true });
+  const initialDirtySnapshot = useRef<CustomWorkbenchDirtySnapshot>({ gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, gameOffset: { x: 460, y: 216 }, companyOffset: { x: 1036, y: 216 }, cprEnabled: true, gameEffect: brandLayer.logoEffect, companyEffect: brandLayer.logoEffect, cprEffect: brandLayer.cprEffect, format: 'png', gameLanguage: gameLogo?.language ?? 'zh-CN', guidesVisible: true, snapEnabled: true });
 
   useEffect(() => {
     const dirty = isCustomWorkbenchDirty(asset, initialDirtySnapshot.current, { gameEnabled, companyEnabled, gameScale, companyScale, gameOffset, companyOffset, cprEnabled, gameEffect, companyEffect, cprEffect, format, gameLanguage, guidesVisible, snapEnabled });
@@ -163,31 +179,92 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     }
   }
 
+  const hasImage = Boolean(asset && previewState);
   const previewScale = Math.min(760 / CUSTOM_SPEC.width, 520 / CUSTOM_SPEC.height);
+
   return <section className="custom-workspace" aria-label="自定义工作区">
     <aside className="custom-controls">
-      <div className="section-title"><span />自定义构图</div>
+      <div className="custom-section-title">自定义构图</div>
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => void importAsset(event.target.files)} />
-      <button type="button" className="primary-button" onClick={() => inputRef.current?.click()}>导入图片</button>
-      <label className="toggle"><input type="checkbox" checked={gameEnabled} onChange={(event) => setGameEnabled(event.target.checked)} />游戏 Logo</label>
-      <label className="control-row"><span>游戏语种</span><select value={gameLanguage} onChange={(event) => setGameLanguage(event.target.value as BrandLanguage)}>{gameLogos.map((item) => <option key={item.id} value={item.language}>{getBrandLanguageLabel(item.language)}</option>)}</select></label>
-      {numberControl('游戏大小', gameScale, .6, CUSTOM_LOGO_MAX_SCALE, .01, setGameScale)}
-      {numberControl('游戏横移', gameOffset.x, 0, 1500, 1, (x) => setGameOffset((previous) => ({ ...previous, x })))}
-      {numberControl('游戏纵移', gameOffset.y, 0, 900, 1, (y) => setGameOffset((previous) => ({ ...previous, y })))}
-      <BrandEffectControls title="游戏 Logo" effect={gameEffect} onChange={setGameEffect} />
-      <label className="toggle"><input type="checkbox" checked={companyEnabled} onChange={(event) => setCompanyEnabled(event.target.checked)} />公司 Logo</label>
-      {numberControl('公司大小', companyScale, .6, CUSTOM_LOGO_MAX_SCALE, .01, setCompanyScale)}
-      {numberControl('公司横移', companyOffset.x, 0, 1500, 1, (x) => setCompanyOffset((previous) => ({ ...previous, x })))}
-      {numberControl('公司纵移', companyOffset.y, 0, 900, 1, (y) => setCompanyOffset((previous) => ({ ...previous, y })))}
-      <BrandEffectControls title="公司 Logo" effect={companyEffect} onChange={setCompanyEffect} />
-      <label className="toggle"><input type="checkbox" checked={cprEnabled} onChange={(event) => setCprEnabled(event.target.checked)} />CPR</label>
-      <BrandEffectControls title="CPR" effect={cprEffect} onChange={setCprEffect} />
-      <label className="toggle"><input type="checkbox" checked={guidesVisible} onChange={(event) => setGuidesVisible(event.target.checked)} />参考线</label>
-      <label className="toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => setSnapEnabled(event.target.checked)} />网格吸附</label>
-      <div className="segmented-control"><button type="button" className={format === 'png' ? 'active' : ''} onClick={() => setFormat('png')}>PNG</button><button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => setFormat('jpg')}>JPG</button></div>
-      <button type="button" onClick={() => void exportCurrent()} disabled={!asset}>导出当前画板</button>
-      <small>{status}</small>
+      <button type="button" className="primary-button" onClick={() => inputRef.current?.click()} title="导入一张图片开始自定义构图">
+        导入图片
+      </button>
+
+      {!hasImage ? (
+        <div className="custom-empty">
+          <strong>未导入图片</strong>
+          <p>导入图片后可自由摆放游戏 Logo、公司 Logo 与 CPR。拖拽为主，数值输入用于精调；支持参考线、网格吸附和高级效果。</p>
+        </div>
+      ) : (
+        <>
+          {/* ── Game Logo ── */}
+          <div className="brand-control-group">
+            <div className="section-header is-idle" data-section-state="idle">
+              <div><h3><span className="section-state-dot" aria-hidden="true" />游戏 Logo</h3><small>位置、大小与语种</small></div>
+            </div>
+            <label className="toggle"><input type="checkbox" checked={gameEnabled} onChange={(event) => setGameEnabled(event.target.checked)} />显示游戏 Logo</label>
+            <label className="control-row"><span>语种</span><select value={gameLanguage} onChange={(event) => setGameLanguage(event.target.value as BrandLanguage)}>{gameLogos.map((item) => <option key={item.id} value={item.language}>{getBrandLanguageLabel(item.language)}</option>)}</select></label>
+            {numberControl('缩放', gameScale, .6, CUSTOM_LOGO_MAX_SCALE, .01, setGameScale)}
+            <small className="inline-note">当前 {fmtScale(gameScale)}</small>
+            {numberControl('横移', gameOffset.x, 0, 1500, 1, (x) => setGameOffset((previous) => ({ ...previous, x })))}
+            {numberControl('纵移', gameOffset.y, 0, 900, 1, (y) => setGameOffset((previous) => ({ ...previous, y })))}
+            <small className="inline-note">坐标 ({fmtCoord(gameOffset.x)}, {fmtCoord(gameOffset.y)})</small>
+            <details className="effect-details">
+              <summary>高级样式 <span className="effect-summary">{effectSummary(gameEffect)}</span></summary>
+              <BrandEffectControls title="游戏 Logo" effect={gameEffect} onChange={setGameEffect} />
+            </details>
+          </div>
+
+          {/* ── Company Logo ── */}
+          <div className="brand-control-group">
+            <div className="section-header is-idle" data-section-state="idle">
+              <div><h3><span className="section-state-dot" aria-hidden="true" />公司 Logo</h3><small>位置、大小</small></div>
+            </div>
+            <label className="toggle"><input type="checkbox" checked={companyEnabled} onChange={(event) => setCompanyEnabled(event.target.checked)} />显示公司 Logo</label>
+            {numberControl('缩放', companyScale, .6, CUSTOM_LOGO_MAX_SCALE, .01, setCompanyScale)}
+            <small className="inline-note">当前 {fmtScale(companyScale)}</small>
+            {numberControl('横移', companyOffset.x, 0, 1500, 1, (x) => setCompanyOffset((previous) => ({ ...previous, x })))}
+            {numberControl('纵移', companyOffset.y, 0, 900, 1, (y) => setCompanyOffset((previous) => ({ ...previous, y })))}
+            <small className="inline-note">坐标 ({fmtCoord(companyOffset.x)}, {fmtCoord(companyOffset.y)})</small>
+            <details className="effect-details">
+              <summary>高级样式 <span className="effect-summary">{effectSummary(companyEffect)}</span></summary>
+              <BrandEffectControls title="公司 Logo" effect={companyEffect} onChange={setCompanyEffect} />
+            </details>
+          </div>
+
+          {/* ── CPR ── */}
+          <div className="brand-control-group">
+            <div className="section-header is-idle" data-section-state="idle">
+              <div><h3><span className="section-state-dot" aria-hidden="true" />CPR</h3><small>显示与效果</small></div>
+            </div>
+            <label className="toggle"><input type="checkbox" checked={cprEnabled} onChange={(event) => setCprEnabled(event.target.checked)} />显示 CPR</label>
+            <details className="effect-details">
+              <summary>高级样式 <span className="effect-summary">{effectSummary(cprEffect)}</span></summary>
+              <BrandEffectControls title="CPR" effect={cprEffect} onChange={setCprEffect} />
+            </details>
+          </div>
+
+          {/* ── Assist ── */}
+          <div className="brand-control-group">
+            <div className="section-header is-idle" data-section-state="idle">
+              <div><h3><span className="section-state-dot" aria-hidden="true" />辅助显示</h3><small>参考线与吸附</small></div>
+            </div>
+            <label className="toggle"><input type="checkbox" checked={guidesVisible} onChange={(event) => setGuidesVisible(event.target.checked)} />参考线</label>
+            <label className="toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => setSnapEnabled(event.target.checked)} />网格吸附</label>
+          </div>
+
+          {/* ── Export ── */}
+          <div className="brand-control-group">
+            <div className="section-header is-idle" data-section-state="idle">
+              <div><h3><span className="section-state-dot" aria-hidden="true" />导出</h3><small>格式与输出</small></div>
+            </div>
+            <div className="segmented-control"><button type="button" className={format === 'png' ? 'active' : ''} onClick={() => setFormat('png')}>PNG</button><button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => setFormat('jpg')}>JPG</button></div>
+            <button type="button" onClick={() => void exportCurrent()} disabled={!asset}>导出当前画板</button>
+            {status ? <small role="status">{status}</small> : null}
+          </div>
+        </>
+      )}
     </aside>
-    <div className="custom-stage">{asset && previewState ? <div className="custom-canvas-stack">{guidesVisible ? <div className="custom-guides"><span /><span /></div> : null}<BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={cprAsset} brandLayer={{ ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: customCprState, logoGroup: gameGroup }} scale={previewScale} overlayGameLogo={gameEnabled ? selectedGameLogo : undefined} />{gameEnabled ? <div className="custom-drag-layer" style={{ left: gameOffset.x * previewScale, top: gameOffset.y * previewScale }} onPointerDown={(event) => beginDrag('game', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /> : null}{companyEnabled ? <><BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={undefined} brandLayer={{ ...brandLayer, logoEnabled: true, cprEnabled: false, logoEffect: companyEffect, logoGroup: companyGroup }} scale={previewScale} showImage={false} transparent overlayCompanyLogo={companyLogo} /> <div className="custom-drag-layer" style={{ left: companyOffset.x * previewScale, top: companyOffset.y * previewScale }} onPointerDown={(event) => beginDrag('company', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /></> : null}</div> : <div className="empty-state">导入一张图片开始自定义构图</div>}</div>
+    <div className="custom-stage">{asset && previewState ? <div className="custom-canvas-stack">{guidesVisible ? <div className="custom-guides"><span /><span /></div> : null}<BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={cprAsset} brandLayer={{ ...brandLayer, logoEnabled: gameEnabled, cprEnabled, logoEffect: gameEffect, cprEffect, cprState: customCprState, logoGroup: gameGroup }} scale={previewScale} overlayGameLogo={gameEnabled ? selectedGameLogo : undefined} />{gameEnabled ? <div className="custom-drag-layer" style={{ left: gameOffset.x * previewScale, top: gameOffset.y * previewScale }} onPointerDown={(event) => beginDrag('game', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /> : null}{companyEnabled ? <><BoardCanvas asset={asset} spec={CUSTOM_SPEC} previewState={previewState} logoAsset={logoAsset} cprAsset={undefined} brandLayer={{ ...brandLayer, logoEnabled: true, cprEnabled: false, logoEffect: companyEffect, logoGroup: companyGroup }} scale={previewScale} showImage={false} transparent overlayCompanyLogo={companyLogo} /> <div className="custom-drag-layer" style={{ left: companyOffset.x * previewScale, top: companyOffset.y * previewScale }} onPointerDown={(event) => beginDrag('company', event)} onPointerMove={moveDrag} onPointerUp={endDrag} /></> : null}</div> : <div className="custom-empty"><strong>导入一张图片开始自定义构图</strong></div>}</div>
   </section>;
 }

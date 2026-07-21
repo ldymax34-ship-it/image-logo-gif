@@ -40,6 +40,16 @@ const GROUP_MODE_OPTIONS: Array<{ value: BrandSettingsV1['defaultLogoGroupMode']
   { value: 'company-and-game', label: '公司 + 游戏' }
 ];
 
+type SettingsTab = 'general' | 'brand-lang' | 'cpr-guides' | 'updates' | 'diagnostics';
+
+const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
+  { id: 'general', label: '常规' },
+  { id: 'brand-lang', label: '品牌与语种' },
+  { id: 'cpr-guides', label: 'CPR与辅助' },
+  { id: 'updates', label: '更新' },
+  { id: 'diagnostics', label: '诊断' }
+];
+
 export function isBrandSettingsDirty(settings: BrandSettingsV1, draft: BrandSettingsV1): boolean { return JSON.stringify(draft) !== JSON.stringify(settings); }
 
 export function BrandSettingsDialog({
@@ -71,6 +81,7 @@ export function BrandSettingsDialog({
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
   const [draft, setDraft] = useState<BrandSettingsV1>(settings);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -157,177 +168,216 @@ export function BrandSettingsDialog({
           <div>
             <span className="dialog-kicker">品牌设置</span>
             <h2 id="brand-settings-title">默认配置</h2>
-            <small>默认组合影响新画板；语种大小会用于语种切换和多语言导出</small>
+            <small>默认组合影响新画板；语种大小用于语种切换和多语言导出</small>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭设置" title="关闭">×</button>
         </div>
 
-        <div className="settings-dialog-body">
-          {version ? <div className="settings-group"><h3>关于与更新</h3><p>当前版本 {version}</p>{onCheckUpdate ? <button type="button" onClick={onCheckUpdate}>检查更新</button> : null}</div> : null}
-          <DiagnosticsSection />
-          <div className="settings-group">
-            <h3>默认 Logo 组合</h3>
-            <label className="settings-field">
-              <span>组合模式</span>
-              <select
-                value={draft.defaultLogoGroupMode}
-                onChange={(event) => patch({ defaultLogoGroupMode: event.target.value as BrandSettingsV1['defaultLogoGroupMode'] })}
-              >
-                {GROUP_MODE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-field">
-              <span>默认语种</span>
-              <select
-                value={draft.defaultLanguage}
-                onChange={(event) => patch({ defaultLanguage: event.target.value as BrandLanguage })}
-              >
-                {BRAND_LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-field">
-              <span>默认配色</span>
-              <select
-                value={draft.defaultColorMode}
-                onChange={(event) => patch({ defaultColorMode: event.target.value as Exclude<BrandColorMode, 'original'> })}
-              >
-                {COLOR_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-field">
-              <span>默认大小</span>
-              <select
-                value={draft.defaultSize}
-                onChange={(event) => patch({ defaultSize: event.target.value as BrandSize })}
-              >
-                {SIZE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+        <div className="settings-tabs" role="tablist" aria-label="设置分类">
+          {SETTINGS_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-          <div className="settings-group">
-            <h3>各语种 Logo 视觉大小</h3>
-            <small className="inline-note">以 1.00 为基准，用于修正不同语种 Logo 的视觉体量。</small>
-            <div className="language-logo-scale-grid">
-              {EXPORT_LANGUAGES.map((language) => {
-                const value = draft.logoScaleByLanguage[language] ?? 1;
-                return <label key={language} className="language-logo-scale-field">
-                  <span>{getBrandLanguageLabel(language)}</span>
-                  <input type="range" min="0.5" max="2" step="0.01" value={value} onChange={(event) => patchLanguageScale(language, Number(event.target.value))} />
-                  <input aria-label={`${getBrandLanguageLabel(language)} Logo 大小`} type="number" min="0.5" max="2" step="0.01" value={Number(value.toFixed(2))} onChange={(event) => patchLanguageScale(language, Number(event.target.value))} />
-                </label>;
-              })}
+        <div className="settings-dialog-body" role="tabpanel">
+          {activeTab === 'general' && (
+            <>
+              <div className="settings-group">
+                <h3>默认 Logo 组合</h3>
+                <label className="settings-field">
+                  <span>组合模式</span>
+                  <select
+                    value={draft.defaultLogoGroupMode}
+                    onChange={(event) => patch({ defaultLogoGroupMode: event.target.value as BrandSettingsV1['defaultLogoGroupMode'] })}
+                  >
+                    {GROUP_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>默认语种</span>
+                  <select
+                    value={draft.defaultLanguage}
+                    onChange={(event) => patch({ defaultLanguage: event.target.value as BrandLanguage })}
+                  >
+                    {BRAND_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>默认配色</span>
+                  <select
+                    value={draft.defaultColorMode}
+                    onChange={(event) => patch({ defaultColorMode: event.target.value as Exclude<BrandColorMode, 'original'> })}
+                  >
+                    {COLOR_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>默认大小</span>
+                  <select
+                    value={draft.defaultSize}
+                    onChange={(event) => patch({ defaultSize: event.target.value as BrandSize })}
+                  >
+                    {SIZE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="settings-group">
+                <h3>各版型默认位置</h3>
+                {ASPECTS.map((aspect) => (
+                  <label key={aspect} className="settings-field">
+                    <span>{aspect === 'landscape' ? '横版' : aspect === 'portrait' ? '竖版' : '方图'}</span>
+                    <select
+                      value={draft.defaultPlacementByAspect[aspect]}
+                      onChange={(event) => patchPlacement(aspect, event.target.value as Exclude<BrandPlacement, 'custom'>)}
+                    >
+                      {PLACEMENT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+
+          {activeTab === 'brand-lang' && (
+            <>
+              <div className="settings-group">
+                <h3>各语种 Logo 视觉大小</h3>
+                <small className="inline-note">以 1.00 为基准，用于修正不同语种 Logo 的视觉体量。</small>
+                <div className="language-logo-scale-grid">
+                  {EXPORT_LANGUAGES.map((language) => {
+                    const value = draft.logoScaleByLanguage[language] ?? 1;
+                    return <label key={language} className="language-logo-scale-field">
+                      <span>{getBrandLanguageLabel(language)}</span>
+                      <input type="range" min="0.5" max="2" step="0.01" value={value} onChange={(event) => patchLanguageScale(language, Number(event.target.value))} />
+                      <input aria-label={`${getBrandLanguageLabel(language)} Logo 大小`} type="number" min="0.5" max="2" step="0.01" value={Number(value.toFixed(2))} onChange={(event) => patchLanguageScale(language, Number(event.target.value))} />
+                    </label>;
+                  })}
+                </div>
+              </div>
+              <div className="settings-group">
+                <BrandResourceManager assets={assets} selectedLogoId={selectedLogoId} selectedCompanyLogoId={selectedCompanyLogoId} onSelect={onSelectResource} onReplace={onReplaceResource} onRestore={onRestoreResources} />
+              </div>
+            </>
+          )}
+
+          {activeTab === 'cpr-guides' && (
+            <>
+              <div className="settings-group">
+                <h3>预览辅助层</h3>
+                <div className="guide-grid">
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.gridVisible}
+                      onChange={(event) => patch({ gridVisible: event.target.checked })}
+                    />
+                    品牌网格
+                  </label>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.guidesVisible}
+                      onChange={(event) => patch({ guidesVisible: event.target.checked })}
+                    />
+                    中心线
+                  </label>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.safeAreaVisible}
+                      onChange={(event) => patch({ safeAreaVisible: event.target.checked })}
+                    />
+                    安全区
+                  </label>
+                  <label className="toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.snapEnabled}
+                      onChange={(event) => patch({ snapEnabled: event.target.checked })}
+                    />
+                    网格吸附
+                  </label>
+                  <label className={`range-field ${draft.snapEnabled ? '' : 'is-disabled'}`}>
+                    <span className="control-label small">吸附 {draft.snapThreshold}px</span>
+                    <input
+                      type="range"
+                      min="2"
+                      max="24"
+                      step="1"
+                      value={draft.snapThreshold}
+                      disabled={!draft.snapEnabled}
+                      onChange={(event) => patch({ snapThreshold: Number(event.target.value) })}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-group cpr-info">
+                <h3>固定 CPR 默认</h3>
+                <label className="settings-field">
+                  <span>默认位置</span>
+                  <select value={draft.defaultCprPlacement} onChange={(event) => patch({ defaultCprPlacement: event.target.value as CprPlacement })}>
+                    <option value="bottom-left">左下</option>
+                    <option value="bottom-center">底部居中</option>
+                    <option value="bottom-right">右下</option>
+                  </select>
+                </label>
+                <label className="settings-field">
+                  <span>默认颜色</span>
+                  <select value={draft.defaultCprColorMode} onChange={(event) => patch({ defaultCprColorMode: event.target.value as BrandColorMode })}>
+                    <option value="white">白色</option>
+                    <option value="black">黑色</option>
+                    <option value="original">原始色</option>
+                  </select>
+                </label>
+                <small className="cpr-sample">不提供文案、字体、字号、字重或独立坐标编辑。</small>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'updates' && (
+            <div className="settings-group">
+              <h3>关于与更新</h3>
+              <div className="update-row">
+                <span className="version-label">当前版本 {version ?? '-'}</span>
+                {onCheckUpdate ? <button type="button" onClick={onCheckUpdate}>检查更新</button> : null}
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="settings-group">
-            <h3>各版型默认位置</h3>
-            {ASPECTS.map((aspect) => (
-              <label key={aspect} className="settings-field">
-                <span>{aspect === 'landscape' ? '横版' : aspect === 'portrait' ? '竖版' : '方图'}</span>
-                <select
-                  value={draft.defaultPlacementByAspect[aspect]}
-                  onChange={(event) => patchPlacement(aspect, event.target.value as Exclude<BrandPlacement, 'custom'>)}
-                >
-                  {PLACEMENT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-
-          <div className="settings-group">
-            <h3>预览辅助层</h3>
-            <div className="guide-grid">
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.gridVisible}
-                  onChange={(event) => patch({ gridVisible: event.target.checked })}
-                />
-                品牌网格
-              </label>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.guidesVisible}
-                  onChange={(event) => patch({ guidesVisible: event.target.checked })}
-                />
-                中心线
-              </label>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.safeAreaVisible}
-                  onChange={(event) => patch({ safeAreaVisible: event.target.checked })}
-                />
-                安全区
-              </label>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={draft.snapEnabled}
-                  onChange={(event) => patch({ snapEnabled: event.target.checked })}
-                />
-                网格吸附
-              </label>
-              <label className={`range-field ${draft.snapEnabled ? '' : 'is-disabled'}`}>
-                <span className="control-label small">吸附 {draft.snapThreshold}px</span>
-                <input
-                  type="range"
-                  min="2"
-                  max="24"
-                  step="1"
-                  value={draft.snapThreshold}
-                  disabled={!draft.snapEnabled}
-                  onChange={(event) => patch({ snapThreshold: Number(event.target.value) })}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="settings-group cpr-info">
-            <h3>固定 CPR 默认</h3>
-            <label className="settings-field">
-              <span>默认位置</span>
-              <select value={draft.defaultCprPlacement} onChange={(event) => patch({ defaultCprPlacement: event.target.value as CprPlacement })}>
-                <option value="bottom-left">左下</option>
-                <option value="bottom-center">底部居中</option>
-                <option value="bottom-right">右下</option>
-              </select>
-            </label>
-            <label className="settings-field">
-              <span>默认颜色</span>
-              <select value={draft.defaultCprColorMode} onChange={(event) => patch({ defaultCprColorMode: event.target.value as BrandColorMode })}>
-                <option value="white">白色</option>
-                <option value="black">黑色</option>
-                <option value="original">原始色</option>
-              </select>
-            </label>
-            <small className="cpr-sample">不提供文案、字体、字号、字重或独立坐标编辑。</small>
-          </div>
-          <div className="settings-group">
-            <BrandResourceManager assets={assets} selectedLogoId={selectedLogoId} selectedCompanyLogoId={selectedCompanyLogoId} onSelect={onSelectResource} onReplace={onReplaceResource} onRestore={onRestoreResources} />
-          </div>
+          {activeTab === 'diagnostics' && (
+            <DiagnosticsSection />
+          )}
         </div>
 
         <div className="dialog-footer">
@@ -339,7 +389,7 @@ export function BrandSettingsDialog({
             <button type="button" onClick={onClose}>
               取消
             </button>
-            <button type="button" className="primary-button" onClick={commit} disabled={!dirty && JSON.stringify(draft) === JSON.stringify(DEFAULT_BRAND_SETTINGS)}>
+            <button type="button" className="primary-button" onClick={commit} disabled={!dirty}>
               保存
             </button>
           </div>

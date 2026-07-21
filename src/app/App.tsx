@@ -1,4 +1,5 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import type { ModuleStatus, WorkbenchModule } from '../components/ModuleNav';
 import { WorkbenchHeader } from '../components';
 import { GifCompressorPlaceholder } from '../modules/gif-compressor';
 import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
@@ -8,6 +9,18 @@ import { AppShell } from './AppShell';
 import { GlobalDialogs } from './GlobalDialogs';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 import { UncleanExitNotice } from '../diagnostics';
+
+function resolveModuleStatuses(
+  active: WorkbenchModule,
+  logoEnabled: boolean,
+  cprEnabled: boolean
+): Record<WorkbenchModule, ModuleStatus> {
+  return {
+    media: active === 'media' ? 'active' : (logoEnabled ? 'idle' : 'idle'),
+    custom: active === 'custom' ? 'active' : (logoEnabled ? 'idle' : 'disabled'),
+    gif: active === 'gif' ? 'active' : 'disabled'
+  };
+}
 
 function AppContent() {
   const {
@@ -30,11 +43,17 @@ function AppContent() {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
 
+  const moduleStatuses = useMemo(
+    () => resolveModuleStatuses(activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled),
+    [activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled]
+  );
+
   return <>
     <UncleanExitNotice />
     <AppShell
       activeModule={activeModule}
       onModuleChange={requestModuleChange}
+      moduleStatuses={moduleStatuses}
       header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} onCheckUpdate={() => void checkForUpdate(true)} />}
     >
       <MediaWorkbench active={activeModule === 'media'} />
