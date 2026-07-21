@@ -2,6 +2,22 @@
 
 ## 当前版本：0.1.29 Goal 9 Preview 自动更新
 
+## 当前版本：0.1.29 → 0.1.30 预览版过渡期
+
+### UI 正式化（已完成）
+1. [UI-大] 模块导航改为 72px 固定宽，带语义状态点（蓝=激活/绿=就绪/黄=警告/红=错误/灰=未启用），切换模块不改变布局尺寸。
+2. [UI-中] SectionHeader 使用 data-section-state 驱动状态点颜色，Logo/CPR 启用时点为蓝色。
+3. [UI-大] 设置弹窗改为 5 个 tab 分类：常规、品牌与语种、CPR与辅助、更新、诊断。切换 tab 不改变弹窗尺寸，底部固定保存栏。
+4. [UI-中] 自定义工作台：未导入图片时仅显示模块说明和导入按钮；导入后按游戏 Logo、公司 Logo、CPR、辅助显示、导出五个 section 组织。
+5. [UI-小] 缩放显示为 1.00× 格式，坐标显示整数或一位小数；高级样式显示轻量摘要（描边关·阴影开）。
+6. [UI-中] 设置与自定义面板消除横向滚动条与内容宽度溢出。
+7. [UI-小] prefers-reduced-motion 禁用所有过渡动画。
+
+### CNB 国内更新镜像（准备中）
+8. [维护-中] 创建 CNB 镜像方案文档 `docs/CNB_MIRROR_PLAN.md`，包含：多 endpoint 回退行为、验收标准、所需外部信息清单。
+9. [维护-中] 创建 CNB 镜像发布脚本 `scripts/cnb-mirror-release.sh`，实现：从 GitHub 下载资产 → 修改 manifest URL → 上传到 CNB → 验证匿名下载。
+10. [维护-小] 确认 Tauri Updater v2.10.1 在 `endpoints` 数组中按顺序回退：第一个不可达/非 200/无效 JSON/超时 → 自动尝试下一个，不产生并发下载。
+
 ### 正式产品路线
 
 - [ ] Goal 9｜Preview 自动更新：官方 Tauri Updater/Process、Preview-only manifest、提示式下载和 AppActivity 安装门禁已完成；0.1.29 统一自动/手动检查与下载 single-flight，补齐后台下载语义、本地诊断日志、异常退出提示和诊断导出。macOS arm64 本地构建已验证，Windows x64 签名产物与实机更新待发布后回归。
