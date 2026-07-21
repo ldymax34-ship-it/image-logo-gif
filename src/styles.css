@@ -58,6 +58,25 @@ select {
 }
 
 /* ── App shell & module navigation ── */
+/* ── Focus visibility (keyboard) ── */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+details summary:focus-visible {
+  outline: 2px solid #6a9fd8;
+  outline-offset: 2px;
+}
+
+/* Suppress focus ring for mouse clicks */
+button:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+details summary:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .app-shell {
   min-height: 100vh;
   padding: 16px;
