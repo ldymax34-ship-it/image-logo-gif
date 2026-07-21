@@ -436,6 +436,27 @@ describe('core 0.1.x foundation', () => {
     expect(cprLayer?.effect.shadowEnabled).toBe(false);
   });
 
+  it('carries CPR color, position, and every advanced effect into the shared board render plan', () => {
+    const cpr = DEFAULT_BRAND_ASSETS.find((candidate) => candidate.id === CPR_PRESET.assetId)!;
+    const baseline = createDefaultCprState();
+    const cprState = {
+      ...baseline,
+      colorMode: 'black' as const,
+      transform: { placement: 'bottom-left' as const, offsetX: 12, offsetY: -8 },
+      effect: { ...baseline.effect, strokeEnabled: true, strokeColor: '#ff00aa', strokeWidth: 3, glowEnabled: true, glowColor: '#00ffcc', glowBlur: 9, shadowEnabled: true, shadowColor: '#112233', shadowOpacity: .6, shadowBlur: 7, shadowOffsetX: 4, shadowOffsetY: 5 }
+    };
+    const plan = buildBoardRenderPlan({
+      asset: { id: 'image', fileName: 'hero.png', objectUrl: 'blob:hero', width: 1920, height: 1080, fileSize: 1, mimeType: 'image/png' },
+      spec: { id: 'board', name: 'board', width: 1920, height: 1080, format: 'png' },
+      previewState: { assetId: 'image', specId: 'board', fitMode: 'cover', crop: createInitialCropState({ width: 1920, height: 1080 }, { width: 1920, height: 1080 }, 'cover') },
+      brandLayer: { logoEnabled: false, cprEnabled: true, logoLanguage: 'zh-CN', cprLanguage: 'custom', logoAnchor: 'top-right', cprAnchor: 'top-right', logoSize: 'standard', cprSize: 'standard', logoEffect: DEFAULT_LOGO_EFFECT, cprEffect: DEFAULT_LOGO_EFFECT, logoGroup: createDefaultLogoGroup(), cprState },
+      cprAsset: cpr
+    });
+    const cprLayer = plan.layers.find((layer) => layer.type === 'cpr');
+    expect(cprLayer?.rect.x).toBe(42);
+    expect(cprLayer?.effect).toMatchObject({ colorEnabled: true, color: '#000000', strokeEnabled: true, strokeColor: '#ff00aa', strokeWidth: 3, glowEnabled: true, glowColor: '#00ffcc', glowBlur: 9, shadowEnabled: true, shadowColor: '#112233', shadowOpacity: .6, shadowBlur: 7, shadowOffsetX: 4, shadowOffsetY: 5 });
+  });
+
   it('creates one batch export item for every asset and board combination', () => {
     const items = createBatchExportItems(
       [

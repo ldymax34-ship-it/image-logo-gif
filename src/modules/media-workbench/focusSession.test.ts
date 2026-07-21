@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildBrandRenderPlan, createDefaultCprState, createDefaultLogoGroup } from '../../core';
 import { createFocusSession, rebaseFocusCpr, rebaseFocusLogo, updateFocusBrandLayer, updateFocusCpr, updateFocusLogo } from './focusSession';
-import { getFocusHitTarget } from './FocusWorkspace';
+import { clampFocusViewZoom, getFocusHitTarget } from './FocusWorkspace';
 
 describe('FocusSession', () => {
   it('keeps the committed board document unchanged until the session is committed', () => {
@@ -35,6 +35,12 @@ describe('FocusSession', () => {
 
 
 describe('Focus canvas hit targets', () => {
+  it('clamps the view-only zoom control without touching the board draft', () => {
+    expect(clampFocusViewZoom(0)).toBe(25);
+    expect(clampFocusViewZoom(187.6)).toBe(188);
+    expect(clampFocusViewZoom(999)).toBe(300);
+  });
+
   it('selects CPR before Logo and otherwise selects crop', () => {
     const logo = { id: 'logo', type: 'logo' as const, sourceKind: 'image' as const, name: 'logo', language: 'zh-CN' as const, aspectRatio: 2 };
     const cpr = { id: 'cpr', type: 'cpr' as const, sourceKind: 'image' as const, name: 'cpr', language: 'custom' as const, aspectRatio: 4 };
