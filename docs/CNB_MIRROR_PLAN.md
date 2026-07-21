@@ -19,7 +19,7 @@ Tauri v2 updater 在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中按数
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://cnb.example.com/org/repo/-/releases/download/preview/latest-preview.json",
+        "https://cnb.cool/org/repo/-/releases/download/preview/latest-preview.json",
         "https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/preview/latest-preview.json"
       ]
     }
@@ -49,42 +49,42 @@ Tauri v2 updater 在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中按数
 
 在 CNB 脚本和 CI 可执行之前，需要确认以下信息：
 
-1. **CNB 仓库 URL**：如 `https://cnb.cool/org-name/repo-name`
-2. **CNB 公开仓库 slug**：如 `org-name/repo-name`
-3. **CNB Release 附件直链格式**：用于构建 `latest-preview.json` 中的 `url` 字段
-4. **CNB API Token / Access Token**（Secrets 级别）：具备 Release 创建和附件上传权限
-5. **CNB 匿名下载验证**：确认附件 URL 无需登录即可直接下载
+1. **CNB 仓库 URL**：如 `https://cnb.cool/YTT_mgbox/brand-material-workbench-releases`
+2. **CNB 公开仓库 slug**：如 `YTT_mgbox/brand-material-workbench-releases`
+3. **实际 CNB Release 附件匿名直链**：不能由仓库 URL 推导；确认后才可用于构建 `latest-preview.json` 中的 `url` 字段
+4. **CNB 匿名下载验证**：确认 manifest 和所有附件 URL 无需登录即可直接下载
 
-建议在 CNB 上创建公开仓库，通过 CI 推送附件后，先用 curl 验证匿名下载是否正常。
+如未来需要自动上传，先依据 CNB 官方文档确认发布能力和认证范围；不要在本项目中保存 token，也不需要上传 Tauri 私钥。
 
-## 发布工作流变更（0.1.30 过渡版）
+## 后续发布工作流（待直链验证）
 
-0.1.30 仍由 GitHub 发布，但 `tauri.conf.json` 将 endpoints 改为 CNB-first：
+在 CNB 的实际匿名附件直链和 Range 支持都验证前，**不要**修改 `tauri.conf.json`。以下仅是获得已验证 URL 后的配置形态，URL 不是可执行的 CNB 路径猜测：
 
 ```json
 "endpoints": [
-  "https://cnb.cool/<org>/<repo>/-/releases/download/preview/latest-preview.json",
+  "<verified-CNB-anonymous-manifest-URL>",
   "https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/preview/latest-preview.json"
 ]
 ```
 
-这样 0.1.29 用户升级到 0.1.30 后就获得了 CNB-first 配置。
+只有后续版本经过完整更新回归后，才可采用 CNB-first 配置；本次不 bump、不 tag、不发布 0.1.30。
 
 ## 发布脚本设计
 
-`scripts/cnb-mirror-release.sh` 在本地或 CI 中运行，将已签名的 GitHub Release 资产同步到 CNB：
+`scripts/cnb-mirror-release.sh` 是本地 dry-run 脚本，安全完成以下步骤：
 
-1. 从 GitHub Release 下载所有资产（updater tar.gz/exe、.sig、dmg、Setup.exe、latest-preview.json）
+1. 从 GitHub Release 下载所有已签名资产（updater tar.gz/exe、.sig、dmg、Setup.exe、latest-preview.json）
 2. 验证 SHA-256 一致性
-3. 将资产上传到 CNB Release
-4. 修改 latest-preview.json 中的 url 字段为 CNB 直链
-5. 上传修改后的 latest-preview.json 到 CNB
-6. 验证 CNB 所有 URL 可匿名下载
+3. 仅在传入已验证的 `CNB_RELEASE_DOWNLOAD_BASE` 后生成 CNB 版 `latest-preview.json`（只改 URL，签名保持不变）
+4. 输出完整的手动上传指引和匿名验证命令
+
+脚本不包含任何未经验证的网络上传调用、猜测 API 路径或 CLI 命令。CNB 上传须通过 Web UI 或经过官方文档确认的 API 操作。
+CNB 仓库当前未初始化，需要先完成仓库初始化（至少一个初始提交）后才能在 web UI 创建 Release 和上传附件。
 
 ## 安全边界
 
 - **更新私钥**：`TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` **只在 GitHub Actions Secrets** 中存在。
-- **CNB Secrets**：只需 CNB API Token（具备 release 上传权限），不包含签名私钥。
+- **CNB 凭据**：若未来自动上传确有必要，应只在 CNB 的受控 Secrets 中配置最小权限凭据；本仓库不读取、打印或提交它们。
 - **公钥**：`tauri.conf.json` 中的 `pubkey` 公开不变。
 - **签名文件**：`.sig` 文件从 GitHub Release 直接复制到 CNB，不重新生成。
 
@@ -92,7 +92,6 @@ Tauri v2 updater 在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中按数
 
 - [ ] 确认 CNB 仓库位置/URL
 - [ ] 确认 CNB Release 附件直链格式
-- [ ] 创建 CNB API Token 并加入 Secrets
 - [ ] 验证匿名下载（curl 测试）
 - [ ] 验证 Range 请求支持
 - [ ] 将 CNB URL 写入 `tauri.conf.json` endpoints 首位
