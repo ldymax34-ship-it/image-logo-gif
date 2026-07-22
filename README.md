@@ -4,9 +4,9 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.29，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并通过 GitHub Actions 构建 Windows x64 与 macOS Apple Silicon 产物。
+当前项目已推进到 0.1.33，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并已发布 Windows x64 与 macOS Apple Silicon 的 `0.1.33` 签名更新产物。
 
-当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。Preview 提示式自动更新已接入并完成 macOS 本机升级回归；GIF 编解码、视频和 AI 能力尚未进入开发。
+当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。Preview 提示式自动更新已接入；2026-07-22 已完成隔离 macOS Apple Silicon `0.1.29 → 0.1.33` 更新 E2E。GIF 编解码、视频和 AI 能力尚未进入开发。
 
 当前正式工作流已收束为：固定桌面应用框架、按画板独立保存品牌状态、统一解析预览 / 聚焦 / 导出的语言资源、工作区内聚焦草稿、连续 Logo / CPR 缩放、画板级 Logo 极限构图边界、聚焦视图滚轮缩放与平移，以及“每画板自身语种 + 追加语种 / 全语种”的批量导出。PNG 超限会明确失败，JPG 可按现有策略自动压缩；导出窗口会保留逐项结果与平台实际落盘文件名。
 
@@ -108,7 +108,7 @@ npm stop
 - 0.1.x：先完成 Vite + React + TypeScript Web 工作台闭环
 - 当前：Tauri 2 桌面壳、原生目录选择和本地文件写入
 - Preview 构建：Windows 10/11 x64（NSIS）、macOS Apple Silicon（DMG / App）
-- Preview 阶段不含正式代码签名或自动更新；自动更新将使用 GitHub Release 资源，详见 [自动更新规划](docs/AUTO_UPDATE_PLAN.md)
+- Preview 阶段使用 Tauri Updater 签名验证，不包含 Windows Authenticode、macOS Developer ID 或公证；更新资源由 CNB Preview manifest 优先、GitHub Preview manifest 回退，详见 [自动更新规划](docs/AUTO_UPDATE_PLAN.md)
 
 ## 桌面 Preview 封包
 
@@ -142,6 +142,8 @@ Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macO
 更新为提示式流程：首屏后延迟检查，用户主动下载；安装前检查导出、聚焦编辑、未保存设置和确认弹窗等活动状态，并要求二次确认。当前不会读取 Stable `latest.json`。Updater 签名不等同于 Windows Authenticode、macOS Developer ID 或公证。
 
 发布到公开二进制仓库的 Actions 需要 `RELEASE_REPOSITORY_TOKEN`：该 token 必须是仅对分发仓库授予 Contents 读写权限的 fine-grained PAT。完整发布和 Windows 实机步骤见 [自动更新说明](docs/AUTO_UPDATE_PLAN.md) 与 [Windows 测试说明](docs/WINDOWS_UPDATER_TEST.md)。
+
+`0.1.33` 已完成 macOS 候选先行门禁和正式双平台 Preview 分发。仍需在交互式 macOS/Windows 桌面会话中人工回归底图裁切手势、三个固定对象的选中/拖动/缩放、四种配色的目视效果以及 PNG/JPG 导出位置；CI、Render Plan 与 updater E2E 不能替代这些视觉与手势验收。
 
 ## UI 方向
 

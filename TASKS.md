@@ -11,12 +11,14 @@
 - [x] 尺寸模式变化后三个对象复用既有 Render Plan/Fabric 约束路径重新收敛；原色/白色/黑色/自定义配色不被 Fabric 读取或改变。
 - [x] 新增/扩展纯函数回归：原图横/竖/方、手动规格保持、回切原图、共享 crop、全局放大几何边界、角落放大、Render Plan/Fabric 尺寸一致。
 - [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（214 tests / 29 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
-- [ ] 发布前 macOS/Windows 实机：原图/手动尺寸切换、底图裁切手势、三对象几何极限缩放、隐藏/资源/语种切换和导出位置一致性。
+- [x] macOS Apple Silicon 隔离 updater E2E：`0.1.29 → 0.1.33` candidate 经真实 Tauri Updater 完成检查、下载、签名校验、安装、关闭/重启与版本核验；过程日志只保存在系统临时目录，未使用用户素材。
+- [x] 正式 Preview 双平台分发：`Publish signed Preview updater` workflow `29930982002` 成功；公共 Preview manifest 为 `0.1.33`，含 macOS arm64 与 Windows x64 两个实际签名条目；CNB 优先 manifest 镜像匿名 HTTP 200，保持 GitHub 签名资产 URL。
+- [ ] 仍需人工实机：macOS/Windows 的原图/手动尺寸切换、底图裁切手势、三对象几何极限缩放、隐藏/资源/语种切换、原色/白色/黑色/自定义目视效果，以及 PNG/JPG 导出位置与像素尺寸一致性。当前无交互桌面会话，未将自动/纯函数验证表述为该项通过。
 
 - [x] “横版投放”内置套组的三个规格名称改为纯尺寸：`1920x1080`、`2560x1097`、`1600x1200`。
 - [x] 保留原有套组 ID、宽高和 JPG 格式，不改动已保存配置与导出/更新架构。
 - [x] 增加内置横版规格回归测试。
-- [ ] 完成 Preview 发布门禁与双平台分发。
+- [x] 完成 Preview 发布门禁与双平台分发；未触碰用户原有未跟踪 `artifacts/`。
 
 ### 阶段 A｜修复 Logo / CPR 自定义改色无效
 - [x] `BrandColorMode` 统一为四种：`original / white / black / custom`。
