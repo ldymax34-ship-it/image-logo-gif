@@ -1,12 +1,10 @@
 # 任务看板
 
-## 当前版本：0.1.29 Goal 9 Preview 自动更新
-
-## 当前版本：0.1.29 → 0.1.30 预览版过渡期
+## 当前版本：0.1.30 Goal 9 Preview 自动更新桥接版
 
 ### 自动更新发布门禁（强制）
 
-- [ ] `0.1.30` 采用 GitHub 桥接：`0.1.29` 的 manifest 与安装包均由 GitHub 提供；`0.1.30` 才内置已验证 CNB manifest first、GitHub fallback。
+- [x] `0.1.30` 采用 GitHub 桥接：`0.1.29` 的 manifest 与安装包均由 GitHub 提供；`0.1.30` 内置已验证 CNB manifest first、GitHub fallback。
 - [ ] CI 可并行构建 macOS arm64 / Windows x64，但发布必须先完成 macOS 候选实机更新验证；Windows 在此之前不得出现在公共 Preview 清单中。
 - [ ] macOS 候选通过后，才生成含两个真实平台条目的公共 Preview 清单，并继续完成 Windows 真实 `0.1.29 → 0.1.30` 验证。
 - [ ] 发布细则见 `docs/UPDATE_RELEASE_GATES.md`；不得用删平台字段、旧版包或占位包绕过阶段门禁。

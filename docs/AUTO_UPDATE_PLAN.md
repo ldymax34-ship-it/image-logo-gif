@@ -2,11 +2,14 @@
 
 ## 当前频道
 
-客户端当前只读取 Preview：
+`0.1.30` 安装后的客户端按顺序读取 Preview：
 
 ```text
+https://cnb.cool/YTT_mgbox/brand-material-workbench-releases/-/releases/download/preview/latest-preview.json
 https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/preview/latest-preview.json
 ```
+
+`0.1.30` 本身仍由 GitHub 清单与 GitHub 安装包完整桥接交付；CNB 不参与 `0.1.29 → 0.1.30` 的下载。
 
 不会读取 `latest.json`；Stable 频道尚未启用。源码仓库保持私有，公开仓库只存安装包、updater artifacts、`.sig`、清单和 Release notes。
 

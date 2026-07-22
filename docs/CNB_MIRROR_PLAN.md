@@ -51,23 +51,25 @@ Tauri v2 updater 在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中按数
 
 1. **CNB 仓库 URL**：如 `https://cnb.cool/YTT_mgbox/brand-material-workbench-releases`
 2. **CNB 公开仓库 slug**：如 `YTT_mgbox/brand-material-workbench-releases`
-3. **实际 CNB Release 附件匿名直链**：不能由仓库 URL 推导；确认后才可用于构建 `latest-preview.json` 中的 `url` 字段
+3. **实际 CNB Release 附件匿名直链**：已验证公开 Web 路径为 `https://cnb.cool/YTT_mgbox/brand-material-workbench-releases/-/releases/download/<tag>/<filename>`；`api.cnb.cool` 同路径需要认证，不可用于客户端
 4. **CNB 匿名下载验证**：确认 manifest 和所有附件 URL 无需登录即可直接下载
 
-如未来需要自动上传，先依据 CNB 官方文档确认发布能力和认证范围；不要在本项目中保存 token，也不需要上传 Tauri 私钥。
+2026-07-22 已使用临时 smoke Release 验证：公开 Web 路径匿名下载最终 HTTP 200，Range 请求经 302 跳转后返回 206；smoke Release 随后删除。正式 Preview 清单路径为 `https://cnb.cool/YTT_mgbox/brand-material-workbench-releases/-/releases/download/preview/latest-preview.json`。
 
-## 后续发布工作流（待直链验证）
+自动上传只能使用 CNB 官方 Release 流程和最小 `repo-release:rw` 权限；不要在本项目中保存 token，也不需要上传 Tauri 私钥。
 
-在 CNB 的实际匿名附件直链和 Range 支持都验证前，**不要**修改 `tauri.conf.json`。以下仅是获得已验证 URL 后的配置形态，URL 不是可执行的 CNB 路径猜测：
+## 后续发布工作流
+
+`0.1.30` 使用已经过匿名下载与 Range 验证的 CNB 清单地址优先，GitHub 清单回退：
 
 ```json
 "endpoints": [
-  "<verified-CNB-anonymous-manifest-URL>",
+  "https://cnb.cool/YTT_mgbox/brand-material-workbench-releases/-/releases/download/preview/latest-preview.json",
   "https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/preview/latest-preview.json"
 ]
 ```
 
-只有后续版本经过完整更新回归后，才可采用 CNB-first 配置；本次不 bump、不 tag、不发布 0.1.30。
+`0.1.30` 只桥接端点配置；`0.1.31` 才首次通过 CNB 下载 updater 包，并在此前完成大附件与签名一致性验收。
 
 ## 发布脚本设计
 

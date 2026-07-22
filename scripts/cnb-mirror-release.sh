@@ -8,7 +8,7 @@ set -euo pipefail
 GITHUB_RELEASE_REPO="${GITHUB_RELEASE_REPO:-ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases}"
 GITHUB_TAG="${GITHUB_TAG:-preview}"
 CNB_SLUG="${CNB_SLUG:-YTT_mgbox/brand-material-workbench-releases}"
-VERSION="${VERSION:-$(node -p "require('./package.json').version" 2>/dev/null || echo '0.1.29')}"
+VERSION="${VERSION:-$(node -p "require('./package.json').version" 2>/dev/null || echo '0.1.30')}"
 OUTPUT_DIR="${OUTPUT_DIR:-$PWD/dist/cnb-mirror-${VERSION}}"
 
 # Do not infer this from a CNB repository URL. Set it only after an actual
