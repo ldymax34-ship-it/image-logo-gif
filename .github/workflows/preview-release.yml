@@ -12,7 +12,35 @@ env:
   PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      staging_tag: ${{ steps.staging.outputs.tag }}
+    steps:
+      - name: Require release repository token
+        shell: bash
+        env:
+          RELEASE_REPOSITORY_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+        run: |
+          test -n "$RELEASE_REPOSITORY_TOKEN" || { echo 'RELEASE_REPOSITORY_TOKEN is required to publish to the public binary repository'; exit 1; }
+      - name: Create temporary draft release
+        id: staging
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="preview-staging-${GITHUB_RUN_ID}"
+          gh release create "$TAG" \
+            --repo "$PREVIEW_RELEASE_REPOSITORY" \
+            --target main \
+            --title "Preview staging ${GITHUB_RUN_ID}" \
+            --notes "Temporary signed updater staging area. Safe to delete." \
+            --draft
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -78,14 +106,19 @@ jobs:
           fi
           cp "$PACKAGE" "$UPDATER"
           cp "$SIG" "$UPDATER.sig"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: release/*
-          if-no-files-found: error
+      - name: Upload assets to temporary draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+          STAGING_TAG: ${{ needs.prepare.outputs.staging_tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$STAGING_TAG" release/* \
+            --repo "$PREVIEW_RELEASE_REPOSITORY" \
+            --clobber
 
   release:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -95,10 +128,18 @@ jobs:
           RELEASE_REPOSITORY_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
         run: |
           test -n "$RELEASE_REPOSITORY_TOKEN" || { echo 'RELEASE_REPOSITORY_TOKEN is required to publish to the public binary repository'; exit 1; }
-      - uses: actions/download-artifact@v4
-        with:
-          path: release
-          merge-multiple: true
+      - name: Download staged updater assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+          STAGING_TAG: ${{ needs.prepare.outputs.staging_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh release download "$STAGING_TAG" \
+            --repo "$PREVIEW_RELEASE_REPOSITORY" \
+            --pattern 'BrandMaterialWorkbench_*' \
+            --dir release
       - name: Generate Preview manifest and validate updater assets
         shell: bash
         run: |
@@ -121,3 +162,21 @@ jobs:
           overwrite_files: true
           body: Signed Preview updater artifacts for macOS Apple Silicon and Windows x64.
           files: release/*
+
+  cleanup:
+    if: always()
+    needs: [prepare, build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove temporary draft release and tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPOSITORY_TOKEN }}
+          STAGING_TAG: ${{ needs.prepare.outputs.staging_tag }}
+        run: |
+          if [ -n "$STAGING_TAG" ]; then
+            gh release delete "$STAGING_TAG" \
+              --repo "$PREVIEW_RELEASE_REPOSITORY" \
+              --cleanup-tag \
+              --yes
+          fi
