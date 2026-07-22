@@ -8,6 +8,7 @@ export type BrandSize = 'small' | 'standard' | 'large' | 'xl';
 export type CompanyLogoScale = 'small' | 'match' | 'large';
 
 export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right' | 'custom';
+export type CprConstraintMode = 'safe-area' | 'canvas';
 
 export type CprTransform = {
   placement: CprPlacement;
@@ -24,6 +25,8 @@ export type CprState = {
   /** Continuous visual scale; legacy records default to 1. */
   scale?: number;
   transform: CprTransform;
+  /** Standard boards remain inside the CPR safety margin; custom composition may use the full canvas. */
+  constraintMode?: CprConstraintMode;
   colorMode: BrandColorMode;
   effect: BrandEffectState;
 };

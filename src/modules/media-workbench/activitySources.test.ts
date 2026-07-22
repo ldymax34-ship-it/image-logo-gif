@@ -17,7 +17,7 @@ describe('workbench activity sources', () => {
     expect(updateFocusLogo(session, { ...logo, scale: 1.2 }).dirty).toBe(true);
     expect(isCustomWorkbenchDirty(asset)).toBe(true);
     expect(isCustomWorkbenchDirty()).toBe(false);
-    const customInitial = { gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, gameOffset: { x: 1, y: 1 }, companyOffset: { x: 2, y: 2 }, cprEnabled: true, gameEffect: cpr.effect, companyEffect: cpr.effect, cprEffect: cpr.effect, format: 'png' as const, gameLanguage: 'zh-CN' as const, guidesVisible: true, snapEnabled: true } satisfies CustomWorkbenchDirtySnapshot;
+    const customInitial = { gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, cprScale: 1, gameOffset: { x: 1, y: 1 }, companyOffset: { x: 2, y: 2 }, cprOffset: { x: 0, y: 0 }, cprEnabled: true, gameEffect: cpr.effect, companyEffect: cpr.effect, cprEffect: cpr.effect, format: 'png' as const, gameLanguage: 'zh-CN' as const, guidesVisible: true, snapEnabled: true } satisfies CustomWorkbenchDirtySnapshot;
     expect(isCustomWorkbenchDirty(undefined, customInitial, { ...customInitial, gameScale: 1.1 })).toBe(true);
     expect(isBrandSettingsDirty(DEFAULT_BRAND_SETTINGS, { ...DEFAULT_BRAND_SETTINGS, snapEnabled: !DEFAULT_BRAND_SETTINGS.snapEnabled })).toBe(true);
     expect(CUSTOM_LOGO_MAX_SCALE).toBe(3);

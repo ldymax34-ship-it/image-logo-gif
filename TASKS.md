@@ -29,7 +29,27 @@
 - [x] `cargo fmt --check` / `cargo check` / `cargo test`：通过（Rust 无改动，发布前一致性检查）。
 - [ ] Logo / CPR 四模式配色（original / white / black / custom）需在 Tauri 桌面端实机目视确认渲染效果。
 - [ ] CustomWorkbench 现有改色路径需在自定义构图模块实机确认。
-- [ ] 阶段 B（Fabric.js 固定对象交互）待来源任务验收阶段 A 后再开始。
+- [x] 阶段 B（Fabric.js 固定对象交互）已按固定对象边界完成代码接入，待总控与桌面实机验收。
+
+### 阶段 B｜Fabric.js 固定对象交互
+- [x] 阶段 A checkpoint：`e1869cb fix: unify logo and cpr color modes`；提交后工作区仅保留用户 `artifacts/`。
+- [x] 新增本地 `fabric@7.4.0`（MIT）；仅动态加载在自定义构图交互层，不使用 CDN、远程 API、sidecar 或额外运行时。
+- [x] Fabric 仅创建游戏 Logo、公司 Logo、CPR 三个透明固定对象；底图与裁切不进入 Fabric。
+- [x] Fabric 对象 bounds 直接来自 `buildBoardRenderPlan().layers[].rect`，不再使用固定 `128×80` 命中框；隐藏对象保留位置/scale 状态与 bounds。
+- [x] 禁用旋转、多选与边中控制柄，仅保留四角等比缩放；点击空白取消选择。
+- [x] 删除自定义构图的手写 Pointer capture 与 `custom-drag-layer`；位置日常由画布操作完成，属性区仅显示当前对象的 X/Y/缩放、显示、复位和既有高级样式。
+- [x] CPR 增加自由拖动、等比缩放、X/Y/scale 与复位，写回最小 `cprOffset / cprScale` 状态；游戏/公司 Logo 继续写回既有 offset / scale。
+- [x] 手势转换冻结完整 baseline（初始 rect / scale / 范围 / 画布 / previewScale）；缩放中 React 更新 Render Plan 后，后续 Fabric 事件仍按初始手势计算，避免累计缩放。
+- [x] 固定对象 reconciliation 按每次 Render Plan 更新创建缺失对象、更新资源替换后的 rect、移除真正失效对象；隐藏仅释放 Fabric 选框并保留领域状态。
+- [x] X/Y 输入显示实际 Render Plan rect，缩放与数值精调共享 canvas 边界约束和状态写回；不再使用硬编码坐标上限。
+- [x] CPR 新增兼容 `constraintMode`：标准画板与旧数据默认 `safe-area`；仅自定义构图使用 `canvas`，可贴画布边但不越界。
+- [x] Fabric 动态导入失败捕获为非阻塞状态提示，预览与正式导出仍不依赖 Fabric。
+- [x] Fabric 不读取/修改 `colorMode` 或 effect；正式预览与导出仍走 `BoardCanvas + Render Plan + renderBoardToCanvas/exportBoardImageWithinLimit`，未使用 Fabric 导出 API。
+- [x] 新增纯函数与状态测试：25/100/300% previewScale、高 DPI、边界 clamp、三对象状态写回、四角限制/禁用多选、隐藏状态、Render Plan bounds、语种切换位置稳定、Fabric 回写到 Render Plan。
+- [x] 前端 `dist`：856 KB → 1,140 KB（约 +284 KB）；Fabric 动态 chunk 282.9 KB（gzip 88.8 KB）。正式 macOS/Windows 包体差值待平台构建。
+- [x] 阶段 B 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（201 tests / 28 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）均通过。
+- [ ] Tauri macOS/Windows 实机：三对象选中/拖动/缩放、空白取消、隐藏再显示、资源/语种替换后的选框、数值精调/右下边界、CPR 四边贴合、动态加载失败降级与导出位置一致性待验收。
+- [ ] 不提交阶段 B 改动，等待总控验收。
 
 ## 当前版本：0.1.31 画板状态、同步与正式导出模型收口
 

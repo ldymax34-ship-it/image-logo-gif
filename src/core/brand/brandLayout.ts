@@ -2,7 +2,7 @@ import type { BrandAsset } from './brandAsset';
 import { DEFAULT_BRAND_EFFECT, normalizeLogoGroup, resolveColorEffect } from './brandDefaults';
 import { createBrandGrid, getBrandGuideLines, getGridSafeArea } from './brandGrid';
 import { CPR_PRESET } from './cprPreset';
-import type { BrandRenderPlan, BrandPlacement, CprState, LogoConstraintMode, LogoGroupState } from './brandTypes';
+import type { BrandRenderPlan, BrandPlacement, CprConstraintMode, CprState, LogoConstraintMode, LogoGroupState } from './brandTypes';
 import { classifyAspect, type CanvasSize, type LayoutRect } from '../layout/layoutProfile';
 
 export function getLogoLanguageScale(canvas: CanvasSize, group: LogoGroupState, game?: BrandAsset): number {
@@ -114,11 +114,16 @@ export type BuildBrandRenderOptions = {
  * 计算 CPR 独立位置：固定尺寸、固定 SVG，底部三档对齐，均离底边和侧边 1 格。
  * 此函数为纯函数，预览与导出共用，确保结果一致。
  */
-export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState['transform'], scale = 1): LayoutRect {
+export function computeCprPlacementRect(
+  canvas: CanvasSize,
+  transform: CprState['transform'],
+  scale = 1,
+  constraintMode: CprConstraintMode = 'safe-area'
+): LayoutRect {
   const grid = createBrandGrid(canvas);
   const cprWidth = grid.unit * 5.5 * scale;
   const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
-  const safeMargin = grid.unit * .25;
+  const safeMargin = constraintMode === 'canvas' ? 0 : grid.unit * .25;
   const recommendedMargin = grid.unit * .5;
   const placement = transform.placement === 'custom' ? 'bottom-right' : transform.placement;
   const baseY = canvas.height - recommendedMargin - cprHeight;
@@ -136,7 +141,7 @@ export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState[
 }
 
 function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRenderPlan['cpr']> {
-  const rect = computeCprPlacementRect(canvas, cpr.transform, cpr.scale ?? 1);
+  const rect = computeCprPlacementRect(canvas, cpr.transform, cpr.scale ?? 1, cpr.constraintMode ?? 'safe-area');
   const effect = resolveColorEffect(cpr.colorMode, cpr.effect);
   return { id: 'cpr:fixed', kind: 'cpr', rect, color: effect.colorEnabled ? effect.color : '#ffffff', effect };
 }

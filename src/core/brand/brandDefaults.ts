@@ -19,6 +19,7 @@ export const DEFAULT_CPR_STATE: CprState = {
   enabled: true,
   scale: 1,
   transform: { placement: 'bottom-right', offsetX: 0, offsetY: 0 },
+  constraintMode: 'safe-area',
   colorMode: 'white',
   effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
 };
@@ -47,6 +48,7 @@ export function createDefaultCprState(): CprState {
     enabled: true,
     scale: 1,
     transform: { placement: 'bottom-right', offsetX: 0, offsetY: 0 },
+    constraintMode: 'safe-area',
     colorMode: 'white',
     effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
   };
@@ -119,6 +121,7 @@ export function resolveCprState(layer: BrandLayerState): CprState {
     return {
       ...layer.cprState,
       scale: layer.cprState.scale ?? 1,
+      constraintMode: layer.cprState.constraintMode ?? 'safe-area',
       colorMode: resolveBrandColorMode(layer.cprState.colorMode, layer.cprState.effect)
     };
   }
@@ -126,6 +129,7 @@ export function resolveCprState(layer: BrandLayerState): CprState {
     enabled: layer.cprEnabled,
     scale: 1,
     transform: { placement: mapLegacyCprAnchor(layer.cprAnchor), offsetX: 0, offsetY: 0 },
+    constraintMode: 'safe-area',
     colorMode: deriveBrandColorMode(layer.cprEffect),
     effect: { ...layer.cprEffect }
   };

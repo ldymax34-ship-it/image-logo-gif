@@ -12,6 +12,14 @@
 8. [兼容-中] `CustomWorkbench`：Logo 组和 CPR 的 `colorMode` 从硬编码 `'white'` 改为 `deriveBrandColorMode(effect)` 动态推导，保留其 BrandEffectControls 独立改色能力。
 9. [测试-中] 新增 `src/core/brand/colorResolve.test.ts`（22 tests）与 `CprControls.test.ts`（3 tests），并扩展 `uiPolish.test.tsx`：覆盖四模式、缺失 `colorMode` 的旧 JSON、CPR 自定义色往返、Logo 样式预览与 Render Plan 一致性，以及 Logo/CPR 统一的“原色/白色/黑色/自定义”选项顺序；总测试数 153 → 181（新增 28 tests）。
 10. [测试-小] 增加内置横版规格的名称与 JPG 格式回归测试，并将应用版本统一更新为 0.1.32。
+11. [交互-大] 自定义构图接入本地 `fabric@7.4.0`（MIT）透明交互层：仅支持游戏 Logo、公司 Logo、CPR 的选中、拖动、四角等比缩放与画布边界约束；移除手写 Pointer 拖动与固定 `128×80` 命中框，命中 bounds 改由实际 Render Plan layer.rect 提供。
+12. [交互-中] 自定义构图属性区收为当前选中对象：保留显示、语种（游戏 Logo）、X/Y/缩放数值精调、复位和既有高级样式；CPR 增加独立 offset / scale、拖动、缩放和复位。
+13. [边界-高] Fabric 不负责最终视觉、改色/描边/发光/阴影或导出；正式预览与导出继续使用 `BoardCanvas`、Render Plan 与既有 Canvas 导出流程。旋转、多选、图层、文字、额外图片、复制粘贴、工程文件等仍未实现。
+14. [维护-中] 完成 Fabric 接入前后前端包体审计：`dist` 856 KB → 1,140 KB（约 +284 KB），Fabric 动态 chunk 282.9 KB（gzip 88.8 KB）；历史 macOS 0.1.19 产物不可作为 0.1.32 发布包体结论，双平台正式产物待发布前实机审计。
+15. [稳定性-高] Fabric 手势在 `before:transform` 冻结完整 Render Plan baseline，缩放中即使 React 已更新 rect/scale，后续事件仍按手势起点计算；固定对象会随资源或语种变化增删和更新 bounds，隐藏仅释放选框而不丢失状态。
+16. [边界-中] 自定义构图 X/Y 数值显示实际 Render Plan 坐标，并与 Fabric 共用按实际尺寸计算的画布边界约束；CPR 新增兼容边界模式，标准画板保持安全边距，只有自定义构图可贴画布边但不越界。
+17. [兼容-中] Fabric 动态加载失败会显示非阻塞提示，正式预览和导出仍继续使用 Render Plan；不依赖 Fabric 导出。
+18. [测试-中] 扩展 Fabric 纯函数/状态测试，覆盖缩放 baseline、reconcile 增删/隐藏、资源 rect 替换、数值右下边界和 CPR 安全区/画布边界；总测试数 181 → 201（新增 20 tests）。
 
 ## 0.1.31（画板状态、同步与正式导出模型收口）
 
