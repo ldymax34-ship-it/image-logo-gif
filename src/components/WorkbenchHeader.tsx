@@ -13,7 +13,7 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
       <span>{boardCount} 个画板</span>
       <span>{previewCount} 个预览状态</span>
       {hasPendingSpecChanges ? <span>尺寸待应用</span> : null}
-      {onCheckUpdate ? <button type="button" className="settings-button" onClick={onCheckUpdate} title="检查更新">检查更新</button> : null}{onOpenSettings ? <button type="button" className="settings-button" onClick={onOpenSettings} title="打开品牌设置与关于信息">设置</button> : null}
+      {onCheckUpdate ? <button type="button" className="settings-button" onClick={onCheckUpdate} title="检查更新">检查更新</button> : null}{onOpenSettings ? <button type="button" className="settings-button" onClick={onOpenSettings} title="打开 Logo 设置与关于信息">设置</button> : null}
     </div>
   </header>;
 }

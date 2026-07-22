@@ -28,8 +28,8 @@ export function BrandResourceManager({
     ?? logos.find((asset) => asset.language === 'custom');
   const games = GAME_LANGUAGES.map((language) => ({ language, asset: logos.find((asset) => asset.language === language) }));
 
-  return <section className="brand-resource-manager" aria-label="品牌资源">
-    <div className="brand-resource-manager-heading"><div><h3>品牌资源</h3><small>替换后仅保存在当前工作区</small></div><button type="button" onClick={onRestore}>恢复内置资源</button></div>
+  return <section className="brand-resource-manager" aria-label="Logo 资源">
+    <div className="brand-resource-manager-heading"><div><h3>Logo 资源</h3><small>替换后仅保存在当前工作区</small></div><button type="button" onClick={onRestore}>恢复内置资源</button></div>
     <div className="brand-resource-row">
       <ResourcePreview asset={company} />
       <div><strong>公司 Logo</strong><small>{company?.name ?? '未设置'}</small></div>

@@ -1,6 +1,97 @@
 # 任务看板
 
-## 当前版本：0.1.30 Goal 9 Preview 自动更新桥接版
+## 当前版本：0.1.31 画板状态、同步与正式导出模型收口
+
+### Goal 1｜逐画板语言与不可变 ExportJob 模型
+- [x] 默认导出按每画板自身已保存语种展开，不再被当前选中画板语种覆盖。
+- [x] 追加语种：在各画板自身语种上追加并去重。
+- [x] 全语言：每画板展开为全部已支持语种（当前 5 种：zh-CN / zh-TW / ja-JP / ko-KR / en-US）。德/法/西/泰/葡仅有命名码映射，不在无资源时硬扩功能。
+- [x] 建立不可变 ExportJob 模型，冻结 boardKey、画板快照、requestedLanguage、resolvedLogoLanguage、resolvedLogoAssetId、计划文件名；`actualFileName` 不在 ExportJob 上，由 BatchItemOutcome 携带。
+- [x] requestedLanguage 与 resolvedLogoLanguage 不一致或缺资源时阻止导出，禁止静默回退。
+- [x] 导出预览和最终渲染消费同一份解析结果。
+- [x] 聚焦草稿只有保存后才进入导出；放弃后仍导出旧快照。
+- [x] 新增回归测试：services/export/exportJob.test.ts。
+
+### Goal 2｜正式命名
+- [x] 提供“源图片名 / 自定义名称”模式；自定义名称替代源名，不是额外前缀。
+- [x] 默认去掉序号、material 批次前缀、规格名称。
+- [x] 语言码取最终实际解析语种；无语言含义（Logo 关闭或仅公司 Logo）时不伪造语种。
+- [x] 多素材自定义名各不相同时不追加源图片名；仅当计划文件名真实冲突时才追加 `_2`、`_3` 确定性避让。
+- [x] 记录并展示平台实际落盘名称 actualFileName：由 `exportMediaBatch` 写入 `BatchItemOutcome`，UI 从 outcome 读取，不写回 ExportJob。
+- [x] 桌面端真重名时仍由 Tauri save_export_file 稳定追加 _2、_3，禁止覆盖。
+
+### Goal 3｜统一 Logo/CPR 同步引擎
+- [x] “同尺寸”语义改为按 width×height 匹配，不受格式、大小限制、specId 影响。
+- [x] “同素材”语义保持为当前素材的其他尺寸。
+- [x] 抽出纯目标解析函数 modules/media-workbench/syncScope.ts。
+- [x] 打开确认时冻结来源快照与目标集合；确认后使用单一原子 dispatch（sync-logo-scope / sync-cpr-scope）完成来源/目标写入。
+- [x] 目标未初始化时阻止整次操作并提示真实缺失数。
+- [x] Logo 同步覆盖：语种、资源、组合、位置、大小、边界模式、显示、高级效果。
+- [x] CPR 同步覆盖：开关、位置、偏移、大小、颜色、高级效果。
+- [x] 聚焦 rebase 只在同步成功后发生。
+- [x] focusEditorDirty 改为从 focusSession.dirty 派生，移除独立状态。
+- [x] 确认文案明确目标范围和会覆盖的内容。
+- [x] 新增回归测试：modules/media-workbench/syncScope.test.ts、boardBrandReducer 同步测试。
+
+### Goal 4｜图片裁切同步
+- [x] 新增“同素材·同尺寸”裁切同步入口（聚焦工作区裁切工具面板）。
+- [x] 只对 assetId 相同且 width×height 相同的其他画板复制 fitMode 与 crop 快照。
+- [x] 不把裁切同步到不同素材或不同版型。
+- [x] 多语言 ExportJob 天然复用所属画板同一份裁切。
+- [x] 操作需要二次确认、真实目标数量及原子更新。
+
+### Goal 5｜Logo 极限构图边界
+- [x] 统一安全区定义：brandLayout.getLogoPlacementBounds 与 placeGroup 共用同一 bounds。
+- [x] 返工：删除 BoardCanvas CSS `.safe-area` 的 `inset: 8%`，改为从 `plan.safeArea`（核心 1U）渲染；BrandOverlay 不再重复绘制安全区。
+- [x] LogoGroupState 增加 constraintMode：safe-area（默认，兼容旧画板）/ canvas（可越安全线，但 Logo 完整留在画布内）。
+- [x] UI 在自定义位置附近显示“位置边界：[安全区内/画布内]”。
+- [x] 超出安全区时保留虚线并轻微提示，不阻止保存。
+- [x] 切回安全区时通过重新 placeGroup 收回最近合法位置。
+- [x] 支持方向键 1px、Shift+方向键 10px 微调 Logo 自定义位置。
+- [x] 吸附与位置边界独立；两种模式下吸附开关均正确。
+- [x] 预览、聚焦选择框、最终导出共用同一 Render Plan（buildBrandRenderPlan）。
+- [x] CPR 越界仍保持禁止。
+- [x] 新增回归测试：modules/media-workbench/focusBounds.test.ts。
+
+### Goal 6｜聚焦视图滚轮缩放与平移
+- [x] 保留 25%-300% 查看倍率滑块、加减按钮、适合窗口。
+- [x] 增加鼠标滚轮围绕指针缩放查看视图。
+- [x] 增加 Space+左键拖动和鼠标中键拖动平移视口。
+- [x] 不使用 Ctrl+左键作为默认平移。
+- [x] 设置中增加滚轮缩放灵敏度：低/标准/高。
+- [x] ViewportState（zoom/pan）独立于 BoardDocument/FocusSession dirty；只影响查看，不影响裁切和导出。
+- [x] UI 文案区分“查看倍率/视口平移”与“素材缩放/裁切位移”。
+- [x] 放大后能平移到四角检查 Logo/CPR。
+- [x] 保留可键盘操作的按钮/滑块。
+
+### 本轮验证记录
+- [x] 0.1.31 返工后验证：npm run verify:core、npm test、npm run build 均通过；152 tests / 23 files。
+- [ ] Tauri 桌面端实机导出、同名避让、聚焦滚轮/平移手势需在 Preview 发布前实机回归。
+- [ ] 多素材自定义名与同尺寸裁切同步需在真实物料上人工复核。
+
+### 0.1.31 UI 收口（发布前轻量优化）
+- [x] 聚焦顶部操作提示：标题与操作按钮之间新增单行低强调度提示栏（36px），随 session.tool 动态切换裁切/Logo/CPR 文案，容器固定不抖动；小型 SVG 帮助图标 aria-hidden；aria-label="聚焦操作提示"。
+- [x] Logo/CPR 分区：改为同级独立 section 卡片（轻微背景差 + 1px 边线 + 4px 圆角），区块间 14px 间距、区块内 8px gap、10–12px 内边距；无大阴影或嵌套卡片。
+- [x] 文案统一：除软件标题"品宣物料工作台"外，用户可见文案不再出现"品牌/品宣"，统一使用 Logo/CPR/素材直接名称；仅修改面向用户文字，不重命名类型或领域模型。
+- [x] 补 `uiPolish.test.tsx`（6 tests）：三种工具提示文案、Logo/CPR 独立 section、用户可见文案无品牌/品宣。
+- [x] git diff --check、verify:core、npm test（152/152）、npm run build 均通过。
+- [ ] 1100×720 实机视觉检查：顶部提示不挤压保存按钮、长文不换行不抖动、Logo/CPR 分区明显但不厚重。
+
+### 0.1.31 返工（定向修复验收项）
+- [x] 安全区双框：删除 BoardCanvas CSS 8%，改用 plan.safeArea 统一渲染；BrandOverlay 不再重复绘制。
+- [x] 聚焦 pan/zoom 坐标：抽出 `focusCoords.ts` 纯函数（pointerToCanvasPoint / computeZoomViewport），改用 stage-frame 稳定坐标系；补无 pan/有 pan/缩放/连续滚轮不漂移测试。
+- [x] 自定义导出命名：多素材不同自定义名不追加源图名；仅真实冲突时 `_2` 确定性避让；补不同名/同名测试。
+- [x] 无语种意义收敛：Logo 关闭或 company-only 时 append/all 每画板只生成一个任务且文件名不带语言码；补 disabled / company-only 测试。
+- [x] ExportJob 不可变：删除 ExportJob.actualFileName，移入 BatchItemOutcome；exportMediaBatch 不再写 job；补不可变测试。
+- [x] 同步模型收口：resolveCropSyncScope 改用 previewStates 判断初始化；same-size 文案改为"所有其他同尺寸画板"；same-asset 跨尺寸同步 Logo/CPR 自定义位置按源/目标画板归一化映射；补横→竖/不同分辨率/边界 clamp 测试。
+- [x] 语言范围与文档：明确当前实际支持 5 种语言（简中/繁中/日/韩/英），德/法/西/泰/葡仅命名码映射；修正 TASKS/CHANGELOG/README 描述与代码一致。
+- [x] 清理：删除 exportJob.ts 未使用的 requestedGameLogo；保留 artifacts/。
+
+### 待继续（未进入）
+- [ ] 自动更新、GIF、视频、AI 等新业务功能保持冻结。
+- [ ] 复核清单模块 reviewReport.ts 与 TXT/CSV 导出后续专项补齐。
+
+## 历史版本：0.1.30 Goal 9 Preview 自动更新桥接版
 
 ### 自动更新发布门禁（强制）
 

@@ -4,3 +4,23 @@ export function updateBoardCrop(states: Record<string, BoardPreviewState>, next:
 export function updateBoardLogo(states: BoardBrandStateMap, key: string, logo: LogoGroupState) { return states[key] ? { ...states, [key]: { ...states[key], logo } } : states; }
 export function updateBoardCpr(states: BoardBrandStateMap, key: string, cpr: CprState) { return states[key] ? { ...states, [key]: { ...states[key], cpr } } : states; }
 export function applyBoardBrand(states: BoardBrandStateMap, keys: string[], source: BoardBrandState) { const next = { ...states }; for (const key of keys) if (next[key]) next[key] = { logo: { ...source.logo }, cpr: { ...source.cpr, transform: { ...source.cpr.transform }, effect: { ...source.cpr.effect } } }; return next; }
+
+export function applyCropScope(
+  previewStates: Record<string, BoardPreviewState>,
+  sourceKey: string,
+  targetKeys: string[]
+): Record<string, BoardPreviewState> {
+  const source = previewStates[sourceKey];
+  if (!source) return previewStates;
+  const next = { ...previewStates };
+  for (const key of targetKeys) {
+    if (!next[key]) continue;
+    const [assetId, specId] = key.split(':');
+    next[key] = {
+      ...next[key],
+      fitMode: source.fitMode,
+      crop: { ...source.crop }
+    };
+  }
+  return next;
+}

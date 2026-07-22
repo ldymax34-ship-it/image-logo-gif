@@ -100,7 +100,7 @@ export function GlobalDialogs() {
       }}
       onRestoreResources={() => {
         setBrandAssets(DEFAULT_BRAND_ASSETS);
-        notifyBrandResourceMessage('已恢复内置品牌资源');
+        notifyBrandResourceMessage('已恢复内置 Logo 资源');
       }}
       onDirtyChange={setSettingsDirty}
       onClose={() => setSettingsDialogOpen(false)}

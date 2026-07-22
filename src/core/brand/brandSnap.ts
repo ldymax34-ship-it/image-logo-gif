@@ -1,5 +1,7 @@
 import type { CanvasSize, LayoutRect } from '../layout/layoutProfile';
 import { createBrandGrid } from './brandGrid';
+import { getLogoPlacementBounds } from './brandLayout'
+import type { LogoConstraintMode } from './brandTypes';
 
 export type SnapResult = {
   x: number;
@@ -22,23 +24,26 @@ export function snapLogoGroupPosition(
   canvas: CanvasSize,
   rect: Pick<LayoutRect, 'width' | 'height'>,
   position: { x: number; y: number },
-  threshold: number
+  threshold: number,
+  constraintMode: LogoConstraintMode = 'safe-area'
 ): SnapResult {
+  const bounds = getLogoPlacementBounds(canvas, rect, constraintMode);
+  const clampedX = Math.min(bounds.maxX, Math.max(bounds.minX, position.x));
+  const clampedY = Math.min(bounds.maxY, Math.max(bounds.minY, position.y));
   const grid = createBrandGrid(canvas);
-  const maxX = Math.max(grid.unit, canvas.width - grid.unit - rect.width);
-  const maxY = Math.max(grid.unit, canvas.height - grid.unit - rect.height);
-  const clampedX = Math.min(maxX, Math.max(grid.unit, position.x));
-  const clampedY = Math.min(maxY, Math.max(grid.unit, position.y));
-  const xTarget = nearest(clampedX, [
-    { value: grid.unit, name: 'left' },
+  const isCanvas = constraintMode === 'canvas';
+  const xTargets = [
+    { value: bounds.minX, name: isCanvas ? 'left' : 'left' },
     { value: (canvas.width - rect.width) / 2, name: 'center' },
-    { value: canvas.width - grid.unit - rect.width, name: 'right' }
-  ], threshold);
-  const yTarget = nearest(clampedY, [
-    { value: grid.unit, name: 'top' },
+    { value: bounds.maxX, name: isCanvas ? 'right' : 'right' }
+  ];
+  const yTargets = [
+    { value: bounds.minY, name: 'top' },
     { value: (canvas.height - rect.height) / 2, name: 'center' },
-    { value: canvas.height - grid.unit - rect.height, name: 'bottom-safe' }
-  ], threshold);
+    { value: bounds.maxY, name: isCanvas ? 'bottom' : 'bottom-safe' }
+  ];
+  const xTarget = nearest(clampedX, xTargets, threshold);
+  const yTarget = nearest(clampedY, yTargets, threshold);
   return {
     x: xTarget.value,
     y: yTarget.value,

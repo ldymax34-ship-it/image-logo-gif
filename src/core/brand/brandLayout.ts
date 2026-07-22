@@ -2,7 +2,7 @@ import type { BrandAsset } from './brandAsset';
 import { DEFAULT_BRAND_EFFECT, getCprRenderColor } from './brandDefaults';
 import { createBrandGrid, getBrandGuideLines, getGridSafeArea } from './brandGrid';
 import { CPR_PRESET, getBrandColor } from './cprPreset';
-import type { BrandRenderPlan, BrandPlacement, CprState, LogoGroupState } from './brandTypes';
+import type { BrandRenderPlan, BrandPlacement, CprState, LogoConstraintMode, LogoGroupState } from './brandTypes';
 import { classifyAspect, type CanvasSize, type LayoutRect } from '../layout/layoutProfile';
 
 export function getLogoLanguageScale(canvas: CanvasSize, group: LogoGroupState, game?: BrandAsset): number {
@@ -45,11 +45,57 @@ function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupS
   return { width, height: gameHeight, gameHeight, companyHeight: gameHeight * companyHeightMultiplier, gap };
 }
 
-function placeGroup(canvas: CanvasSize, width: number, height: number, placement: BrandPlacement, offset?: { x: number; y: number }): LayoutRect {
+export type LogoPlacementBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  mode: LogoConstraintMode;
+};
+
+export function getLogoPlacementBounds(
+  canvas: CanvasSize,
+  rect: Pick<LayoutRect, 'width' | 'height'>,
+  constraintMode: LogoConstraintMode = 'safe-area'
+): LogoPlacementBounds {
+  const grid = createBrandGrid(canvas);
+  if (constraintMode === 'canvas') {
+    return {
+      minX: 0,
+      minY: 0,
+      maxX: Math.max(0, canvas.width - rect.width),
+      maxY: Math.max(0, canvas.height - rect.height),
+      mode: 'canvas'
+    };
+  }
+  return {
+    minX: grid.unit,
+    minY: grid.unit,
+    maxX: Math.max(grid.unit, canvas.width - grid.unit - rect.width),
+    maxY: Math.max(grid.unit, canvas.height - grid.unit - rect.height),
+    mode: 'safe-area'
+  };
+}
+
+function clampPosition(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function placeGroup(
+  canvas: CanvasSize,
+  width: number,
+  height: number,
+  placement: BrandPlacement,
+  offset?: { x: number; y: number },
+  constraintMode?: LogoConstraintMode
+): LayoutRect {
   const grid = createBrandGrid(canvas); const margin = grid.unit;
   if (placement === 'center') return { x: (canvas.width - width) / 2, y: (canvas.height - height) / 2, width, height };
   if (placement === 'corner-left') return { x: margin, y: margin, width, height };
-  if (placement === 'custom' && offset) return { x: Math.max(margin, Math.min(canvas.width - width - margin, offset.x)), y: Math.max(margin, Math.min(canvas.height - height - margin, offset.y)), width, height };
+  if (placement === 'custom' && offset) {
+    const bounds = getLogoPlacementBounds(canvas, { width, height }, constraintMode ?? 'safe-area');
+    return { x: clampPosition(offset.x, bounds.minX, bounds.maxX), y: clampPosition(offset.y, bounds.minY, bounds.maxY), width, height };
+  }
   return { x: canvas.width - width - margin, y: margin, width, height };
 }
 
@@ -102,7 +148,8 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
   const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;
   if (!hasCompany && !hasGame) return { grid, logoItems: [], cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
-  const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo); const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset);
+  const dimensions = groupDimensions(canvas, grid.unit, group, options.companyLogo, options.gameLogo);
+  const rect = placeGroup(canvas, dimensions.width, dimensions.height, group.placement, group.manualOffset, group.constraintMode);
   const items = [] as BrandRenderPlan['logoItems'];
   if (hasCompany && hasGame) {
     const gap = dimensions.gap ?? grid.unit * group.gapUnits;

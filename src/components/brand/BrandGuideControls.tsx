@@ -24,7 +24,7 @@ export function BrandGuideControls({
             checked={settings.gridVisible}
             onChange={(event) => patch({ gridVisible: event.target.checked })}
           />
-          品牌网格
+          构图网格
         </label>
         <label className="toggle">
           <input

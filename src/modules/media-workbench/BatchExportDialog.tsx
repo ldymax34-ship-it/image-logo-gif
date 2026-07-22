@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  DEFAULT_MAX_SIZE_KB, EXPORT_LANGUAGES, applyLanguageLogoScale, buildOutputFileName, estimateExportBytes, formatMegabytes, getBoardPreviewKey, getEffectiveMaxSizeKb, getBrandLanguageLabel, resolveBoardBrandAssets, resolveCprState,
-  type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage, type BrandLayerState, type BrandSettingsV1, type CprState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec
+  DEFAULT_MAX_SIZE_KB,
+  EXPORT_LANGUAGES,
+  getBoardPreviewKey,
+  getBrandLanguageLabel,
+  normalizeLogoGroup,
+  type BoardBrandStateMap,
+  type BoardPreviewState,
+  type BrandAsset,
+  type BrandLanguage,
+  type BrandLayerState,
+  type BrandSettingsV1,
+  type MaterialAsset,
+  type MaterialFormat,
+  type MaterialSpec
 } from '../../core';
-import { buildExportMatrixForLanguages, getSelectedExportLanguages, resolveExportLanguages, type ExportLanguageSelection, type ExportSizePolicy, type MediaExportRow } from '../../services/export';
+import { buildExportJobs, type ExportJob, type ExportLanguageMode, type ExportNamingMode, type ExportSizePolicy } from '../../services/export';
 import { ExportDialog } from '../../components/ExportDialog';
 import { BoardCanvas } from '../../components/canvas';
 import { useBatchExportController } from './useBatchExportController';
@@ -16,7 +28,6 @@ export function BatchExportDialog({
   brandLayer,
   brandSettings,
   boardBrandStates,
-  baseLanguage,
   onClose,
   onComplete,
   onExportingChange
@@ -28,77 +39,77 @@ export function BatchExportDialog({
   brandLayer: BrandLayerState;
   brandSettings: BrandSettingsV1;
   boardBrandStates: BoardBrandStateMap;
-  baseLanguage: BrandLanguage;
   onClose: () => void;
   onComplete: (message: string) => void;
   onExportingChange?: (exporting: boolean) => void;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
-  const [exportAllLanguages, setExportAllLanguages] = useState(false);
+  const [languageMode, setLanguageMode] = useState<ExportLanguageMode>('default');
   const [additionalLanguages, setAdditionalLanguages] = useState<BrandLanguage[]>([]);
-  const languageResolutions = useMemo(() => resolveExportLanguages(brandAssets), [brandAssets]);
-  const languageSelection = useMemo<ExportLanguageSelection>(() => ({
-    baseLanguage,
-    additionalLanguages: exportAllLanguages ? EXPORT_LANGUAGES.filter((language) => language !== baseLanguage) : additionalLanguages
-  }), [additionalLanguages, baseLanguage, exportAllLanguages]);
-  const selectedLanguages = useMemo(() => getSelectedExportLanguages(languageSelection), [languageSelection]);
-  const items = useMemo(() => buildExportMatrixForLanguages(assets, specs, languageSelection), [assets, specs, languageSelection]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(items.map((item) => item.id)));
-  const [activeItemId, setActiveItemId] = useState(items[0]?.id);
+  const [namingMode, setNamingMode] = useState<ExportNamingMode>('source-name');
+  const [customNameByAsset, setCustomNameByAsset] = useState<Record<string, string>>({});
+  const [batchName, setBatchName] = useState('');
   const [format, setFormat] = useState<MaterialFormat>('png');
   const [quality, setQuality] = useState(0.9);
-  const [sizePolicy, setSizePolicy] = useState<ExportSizePolicy>({ mode: 'default-limit', maxSizeKb: 8192 });
+  const [sizePolicy, setSizePolicy] = useState<ExportSizePolicy>({ mode: 'default-limit', maxSizeKb: DEFAULT_MAX_SIZE_KB });
   const [autoCompressJpeg, setAutoCompressJpeg] = useState(true);
-  const [batchName, setBatchName] = useState('material');
+
+  const jobs = useMemo(() => buildExportJobs({
+    assets,
+    specs,
+    previewStates,
+    boardBrandStates,
+    brandAssets,
+    brandLayer,
+    brandSettings,
+    format,
+    quality,
+    sizePolicy,
+    languageMode,
+    additionalLanguages,
+    namingMode,
+    customNameByAsset,
+    batchName
+  }), [assets, specs, previewStates, boardBrandStates, brandAssets, brandLayer, brandSettings, format, quality, sizePolicy, languageMode, additionalLanguages, namingMode, customNameByAsset, batchName]);
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set(jobs.map((job) => job.id)));
+  const [activeJobId, setActiveJobId] = useState(jobs[0]?.id);
 
   useEffect(() => {
-    setSelectedIds(new Set(items.map((item) => item.id)));
-    setActiveItemId(items[0]?.id);
-  }, [items]);
+    setSelectedIds(new Set(jobs.map((job) => job.id)));
+    setActiveJobId(jobs[0]?.id);
+  }, [jobs]);
 
-  const activeItem = items.find((item) => item.id === activeItemId) ?? items[0];
-  const activeAsset = assets.find((asset) => asset.id === activeItem?.assetId);
-  const activeSpec = specs.find((spec) => spec.id === activeItem?.specId);
-  const activePreviewState = activeAsset && activeSpec
-    ? previewStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]
-    : undefined;
-  const activeBoardLogoGroup = activeAsset && activeSpec
-    ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.logo
-    : undefined;
-  const activeLanguage = (activeItem && 'language' in activeItem ? activeItem.language : baseLanguage) as BrandLanguage;
-  const activeCprState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)]?.cpr ?? resolveCprState(brandLayer) : resolveCprState(brandLayer);
-  const activeBoardState = activeAsset && activeSpec ? boardBrandStates[getBoardPreviewKey(activeAsset.id, activeSpec.id)] : undefined;
-  const activeLayer = activeBoardState ? { ...brandLayer, logoEnabled: activeBoardState.logoEnabled ?? brandLayer.logoEnabled, logoEffect: activeBoardState.logoEffect ?? brandLayer.logoEffect } : brandLayer;
-  const activeAssets = activeBoardLogoGroup
-    ? resolveBoardBrandAssets({ boardBrandState: { logo: activeBoardLogoGroup, cpr: activeCprState, logoEnabled: activeBoardState?.logoEnabled, logoEffect: activeBoardState?.logoEffect }, brandCatalog: brandAssets, brandLayer: activeLayer, languageOverride: activeLanguage })
-    : undefined;
-  const activeLanguageLogoGroup = activeBoardLogoGroup
-    ? { ...applyLanguageLogoScale(activeBoardLogoGroup, activeLanguage, brandSettings), gameLogoId: activeAssets?.gameLogo?.id }
-    : undefined;
+  const activeJob = jobs.find((job) => job.id === activeJobId) ?? jobs[0];
+  const activeAsset = activeJob ? assets.find((asset) => asset.id === activeJob.assetId) : undefined;
+  const activeSpec = activeJob ? specs.find((spec) => spec.id === activeJob.specId) : undefined;
+  const activePreviewState = activeJob?.previewSnapshot;
 
-  const rows = items.map((item, index) => {
-    const asset = assets.find((candidate) => candidate.id === item.assetId);
-    const spec = specs.find((candidate) => candidate.id === item.specId);
-    if (!asset || !spec) return undefined;
-    const estimatedBytes = estimateExportBytes(asset, spec, format, quality);
-    const fileName = buildOutputFileName(
-      { ...spec, format },
-      {
-        batchName,
-        sourceName: asset.fileName.replace(/\.[^.]+$/g, ''),
-        language: brandLayer.logoEnabled ? (('language' in item ? item.language : baseLanguage) as BrandLanguage) : undefined,
-        index
-      }
-    );
-    const effectiveMaxSizeKb = sizePolicy.mode === 'unlimited'
-      ? Number.MAX_SAFE_INTEGER
-      : getEffectiveMaxSizeKb(spec, sizePolicy.mode === 'custom' ? sizePolicy.maxSizeKb : sizePolicy.maxSizeKb || DEFAULT_MAX_SIZE_KB);
-    return { item, asset, spec, estimatedBytes, effectiveMaxSizeKb, fileName };
-  }).filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const activeLayer = useMemo(() => {
+    if (!activeJob) return brandLayer;
+    return {
+      ...brandLayer,
+      logoEnabled: activeJob.brandSnapshot.logoEnabled ?? brandLayer.logoEnabled,
+      logoEffect: activeJob.brandSnapshot.logoEffect ?? brandLayer.logoEffect,
+      logoGroup: normalizeLogoGroup(activeJob.brandSnapshot.logo),
+      cprState: activeJob.brandSnapshot.cpr,
+      cprEnabled: activeJob.brandSnapshot.cpr.enabled
+    };
+  }, [activeJob, brandLayer]);
 
-  const selectedRows = rows.filter((row) => selectedIds.has(row.item.id));
-  const allSelected = rows.length > 0 && selectedRows.length === rows.length;
-  type ExportRow = MediaExportRow;
+  const activeResolvedAssets = useMemo(() => {
+    if (!activeJob) return undefined;
+    return {
+      gameLogo: activeJob.resolvedLogoAssetId ? brandAssets.find((asset) => asset.id === activeJob.resolvedLogoAssetId) : undefined,
+      companyLogo: activeJob.resolvedCompanyLogoAssetId ? brandAssets.find((asset) => asset.id === activeJob.resolvedCompanyLogoAssetId) : undefined,
+      cpr: activeJob.resolvedCprAssetId ? brandAssets.find((asset) => asset.id === activeJob.resolvedCprAssetId) : undefined
+    };
+  }, [activeJob, brandAssets]);
+
+  const selectedJobs = jobs.filter((job) => selectedIds.has(job.id));
+  const allSelected = jobs.length > 0 && selectedJobs.length === jobs.length;
+  const hasMissingSelection = selectedJobs.some((job) => job.missing);
+
   const controller = useBatchExportController();
   const { exporting, progress, errorMessage, result: batchResult } = controller;
 
@@ -131,24 +142,23 @@ export function BatchExportDialog({
     };
   }, [exporting, onClose]);
 
-  function toggleItem(itemId: string) {
+  function toggleJob(jobId: string) {
     setSelectedIds((previous) => {
       const next = new Set(previous);
-      if (next.has(itemId)) next.delete(itemId);
-      else next.add(itemId);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
       return next;
     });
   }
 
   function toggleAll() {
-    setSelectedIds(allSelected ? new Set() : new Set(rows.map((row) => row.item.id)));
+    setSelectedIds(allSelected ? new Set() : new Set(jobs.map((job) => job.id)));
   }
 
   async function exportSelectedFiles() {
-    if (!selectedRows.length || exporting) return;
+    if (!selectedJobs.length || exporting) return;
     const completed = await controller.run({
-      rows: selectedRows,
-      previewStates,
+      jobs: selectedJobs,
       boardBrandStates,
       brandAssets,
       brandLayer,
@@ -183,24 +193,26 @@ export function BatchExportDialog({
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                 全选
               </label>
-              <span>{selectedRows.length} / {rows.length}</span>
+              <span>{selectedJobs.length} / {jobs.length}</span>
             </div>
             <div className="export-file-list">
-              {rows.map((row) => {
-                const overLimit = row.estimatedBytes > row.effectiveMaxSizeKb * 1024;
+              {jobs.map((job) => {
+                const overLimit = job.estimatedBytes > job.effectiveMaxSizeKb * 1024;
                 return (
-                  <div key={row.item.id} className={`export-file-row ${row.item.id === activeItem?.id ? 'active' : ''}`}>
+                  <div key={job.id} className={`export-file-row ${job.id === activeJob?.id ? 'active' : ''} ${job.missing ? 'is-missing' : ''}`}>
                     <input
                       type="checkbox"
-                      checked={selectedIds.has(row.item.id)}
-                      onChange={() => toggleItem(row.item.id)}
-                      aria-label={`选择 ${row.fileName}`}
+                      checked={selectedIds.has(job.id)}
+                      onChange={() => toggleJob(job.id)}
+                      aria-label={`选择 ${job.plannedFileName}`}
+                      disabled={job.missing}
                     />
-                    <button type="button" onClick={() => setActiveItemId(row.item.id)}>
-                      <strong>{row.fileName}</strong>
-                      <span>{row.spec.width} x {row.spec.height}</span>
+                    <button type="button" onClick={() => setActiveJobId(job.id)}>
+                      <strong>{job.plannedFileName}</strong>
+                      <span>{job.specSnapshot.width} x {job.specSnapshot.height}</span>
                       <small className={overLimit ? 'size-warning' : ''}>
-                        预计 {formatMegabytes(row.estimatedBytes)}{overLimit ? format === 'jpg' ? ` · 超限，将压缩至 ${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB` : ' · PNG 超限' : ''}
+                        预计 {Math.round(job.estimatedBytes / 1024)} KB{overLimit ? format === 'jpg' ? ` · 超限，将压缩至 ${(job.effectiveMaxSizeKb / 1024).toFixed(job.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB` : ' · PNG 超限' : ''}
+                        {job.missing ? ` · ${job.missingReason}` : ''}
                       </small>
                     </button>
                   </div>
@@ -220,16 +232,11 @@ export function BatchExportDialog({
                   asset={activeAsset}
                   spec={activeSpec}
                   previewState={activePreviewState}
-                  logoAsset={activeAssets?.gameLogo}
-                  cprAsset={activeAssets?.cpr}
-                  brandLayer={{
-                    ...activeLayer,
-                    logoGroup: activeLanguageLogoGroup,
-                    cprState: activeCprState,
-                    cprEnabled: activeCprState.enabled
-                  }}
-                  overlayCompanyLogo={activeAssets?.companyLogo}
-                  overlayGameLogo={activeAssets?.gameLogo}
+                  logoAsset={activeResolvedAssets?.gameLogo}
+                  cprAsset={activeResolvedAssets?.cpr}
+                  brandLayer={activeLayer}
+                  overlayCompanyLogo={activeResolvedAssets?.companyLogo}
+                  overlayGameLogo={activeResolvedAssets?.gameLogo}
                   scale={previewScale}
                 />
               ) : (
@@ -249,8 +256,32 @@ export function BatchExportDialog({
               <span>导出设置</span>
             </div>
             <label className="export-field">
-              <span>批次名</span>
-              <input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="material" />
+              <span>命名模式</span>
+              <select value={namingMode} onChange={(event) => setNamingMode(event.target.value as ExportNamingMode)}>
+                <option value="source-name">源图片名</option>
+                <option value="custom-name">自定义名称</option>
+              </select>
+            </label>
+            {namingMode === 'custom-name' ? (
+              <div className="export-field">
+                <span>自定义名</span>
+                <div className="custom-name-list">
+                  {assets.map((asset) => (
+                    <label key={asset.id} className="custom-name-row">
+                      <small>{asset.fileName}</small>
+                      <input
+                        value={customNameByAsset[asset.id] ?? ''}
+                        onChange={(event) => setCustomNameByAsset((previous) => ({ ...previous, [asset.id]: event.target.value }))}
+                        placeholder="替代源图片名"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <label className="export-field">
+              <span>批次名（可选）</span>
+              <input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="不输则不加入文件名" />
             </label>
             <div className="export-field">
               <span>格式</span>
@@ -265,20 +296,31 @@ export function BatchExportDialog({
                 <input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} />
               </label>
             ) : null}
-            <label className="export-field"><span>体积策略</span><select value={sizePolicy.mode} onChange={(event) => setSizePolicy(event.target.value === 'unlimited' ? { mode: 'unlimited' } : event.target.value === 'custom' ? { mode: 'custom', maxSizeKb: 8192 } : { mode: 'default-limit', maxSizeKb: 8192 })}><option value="default-limit">规格 / 默认 8MB</option><option value="custom">自定义上限</option><option value="unlimited">不限制</option></select></label>
+            <label className="export-field"><span>体积策略</span><select value={sizePolicy.mode} onChange={(event) => setSizePolicy(event.target.value === 'unlimited' ? { mode: 'unlimited' } : event.target.value === 'custom' ? { mode: 'custom', maxSizeKb: DEFAULT_MAX_SIZE_KB } : { mode: 'default-limit', maxSizeKb: DEFAULT_MAX_SIZE_KB })}><option value="default-limit">规格 / 默认 8MB</option><option value="custom">自定义上限</option><option value="unlimited">不限制</option></select></label>
             {sizePolicy.mode === 'custom' ? <label className="export-field"><span>指定</span><div className="export-limit-input"><input aria-label="指定 MB" type="number" min="0.1" max="100" step="0.1" value={sizePolicy.maxSizeKb / 1024} onChange={(event) => setSizePolicy({ mode: 'custom', maxSizeKb: Math.round(Math.min(100, Math.max(0.1, Number(event.target.value) || 8)) * 1024) })} /><small>MB</small></div></label> : null}
             {format === 'jpg' ? <label className="toggle"><input type="checkbox" checked={autoCompressJpeg} onChange={(event) => setAutoCompressJpeg(event.target.checked)} />JPG 超限时自动压缩</label> : null}
-          <div className="export-summary-box">
-            <span>已选 {selectedRows.length} 个文件</span>
-            {batchResult ? <div className="export-result-list" aria-live="polite">{batchResult.outcomes.map(({ item, outcome }) => {
-              const row = item as ExportRow;
-              return <span key={row.item.id} className={`export-result is-${outcome.result}`}>{row.fileName} · {outcome.result === 'failed' ? `失败：${outcome.reason}` : outcome.result === 'compressed' ? `已压缩 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB` : `完成 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB`}</span>;
-            })}</div> : null}
-          </div>
-          <div className="export-language-list"><span>当前语种（锁定）</span><span>{getBrandLanguageLabel(baseLanguage)}</span></div>
-          <label className="toggle"><input type="checkbox" checked={exportAllLanguages} onChange={(event) => setExportAllLanguages(event.target.checked)} />全部语种分别导出（5 种）</label>
-          {!exportAllLanguages ? <div className="export-language-list"><div className="export-language-heading"><span>追加语种</span><span><button type="button" onClick={() => setAdditionalLanguages(EXPORT_LANGUAGES.filter((language) => language !== baseLanguage))}>全选</button><button type="button" onClick={() => setAdditionalLanguages([])}>清空</button></span></div>{EXPORT_LANGUAGES.filter((language) => language !== baseLanguage).map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...new Set([...previous, language])] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}</div> : null}
-          {selectedLanguages.some((language) => languageResolutions.find((item) => item.language === language)?.missing) ? <p className="size-warning">缺少资源：{selectedLanguages.filter((language) => languageResolutions.find((item) => item.language === language)?.missing).map(getBrandLanguageLabel).join('、')}。补齐后才能导出。</p> : null}
+
+            <div className="export-language-section">
+              <span className="control-label">语种导出</span>
+              <label className="radio"><input type="radio" name="language-mode" value="default" checked={languageMode === 'default'} onChange={() => setLanguageMode('default')} />每画板使用自身已保存语种</label>
+              <label className="radio"><input type="radio" name="language-mode" value="append" checked={languageMode === 'append'} onChange={() => setLanguageMode('append')} />追加其他语种</label>
+              <label className="radio"><input type="radio" name="language-mode" value="all" checked={languageMode === 'all'} onChange={() => setLanguageMode('all')} />全部语种分别导出</label>
+            </div>
+            {languageMode === 'append' ? (
+              <div className="export-language-list">
+                <div className="export-language-heading"><span>追加语种</span><span><button type="button" onClick={() => setAdditionalLanguages([...EXPORT_LANGUAGES])}>全选</button><button type="button" onClick={() => setAdditionalLanguages([])}>清空</button></span></div>
+                {EXPORT_LANGUAGES.map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...new Set([...previous, language])] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}
+              </div>
+            ) : null}
+
+            <div className="export-summary-box">
+              <span>已选 {selectedJobs.length} 个文件</span>
+              {batchResult ? <div className="export-result-list" aria-live="polite">{batchResult.outcomes.map(({ item, outcome }) => {
+              const job = item;
+                const fileName = outcome.result === 'failed' ? job.plannedFileName : outcome.actualFileName ?? job.plannedFileName;
+                return <span key={job.id} className={`export-result is-${outcome.result}`}>{fileName} · {outcome.result === 'failed' ? `失败：${outcome.reason}` : outcome.result === 'compressed' ? `已压缩 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB` : `完成 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB`}</span>;
+              })}</div> : null}
+            </div>
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>
         </div>
@@ -290,8 +332,8 @@ export function BatchExportDialog({
           </div>
           <div className="dialog-actions">
             <button type="button" onClick={onClose} disabled={exporting}>取消</button>
-            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedRows.length || exporting || selectedLanguages.some((language) => languageResolutions.find((item) => item.language === language)?.missing)}>
-              {exporting ? '正在导出...' : `导出 ${selectedRows.length} 个文件`}
+            <button type="button" className="primary-button" onClick={() => void exportSelectedFiles()} disabled={!selectedJobs.length || exporting || hasMissingSelection}>
+              {exporting ? '正在导出...' : `导出 ${selectedJobs.length} 个文件`}
             </button>
           </div>
         </div>

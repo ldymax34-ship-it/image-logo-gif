@@ -37,6 +37,8 @@ export type BrandGrid = {
   rows: number;
 };
 
+export type LogoConstraintMode = 'safe-area' | 'canvas';
+
 export type LogoGroupState = {
   mode: LogoGroupMode;
   companyLogoId?: string;
@@ -54,6 +56,8 @@ export type LogoGroupState = {
   placement: BrandPlacement;
   lastExplicitPlacement?: Exclude<BrandPlacement, 'custom'>;
   manualOffset?: { x: number; y: number };
+  /** 0.1.31: whether the logo group is constrained to the brand safe-area or may reach the canvas edge. */
+  constraintMode?: LogoConstraintMode;
 };
 
 export type BoardBrandState = {
@@ -83,6 +87,8 @@ export type BrandSettingsV1 = {
   guidesVisible: boolean;
   snapEnabled: boolean;
   snapThreshold: number;
+  /** 0.1.31: focus workspace wheel zoom sensitivity. */
+  focusWheelSensitivity?: 'low' | 'standard' | 'high';
 };
 
 export type BrandGuideLine = { axis: 'x' | 'y'; position: number; kind: 'grid' | 'half-grid' | 'center' | 'safe' | 'anchor' | 'cpr' };

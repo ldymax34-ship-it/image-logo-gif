@@ -1,5 +1,48 @@
 # 更新日志
 
+## 0.1.31（画板状态、同步与正式导出模型收口）
+
+### 导出模型
+1. [重构-大] `src/services/export/exportJob.ts`：建立不可变 ExportJob 模型，默认导出按每画板自身已保存语种展开；追加/全语言模式也在每画板自身语种基础上展开并去重。
+2. [问题修复-大] `src/modules/media-workbench/BatchExportDialog.tsx`：修复“当前画板 baseLanguage 覆盖全部画板”问题；requestedLanguage 与 resolvedLogoLanguage 不一致或缺资源时阻止导出，不再静默回退。
+3. [功能调整-中] `src/core/export/fileNaming.ts`：默认文件名改为 `源图片名_ja_300x300.png`；新增源图片名 / 自定义名称模式、disambiguation 避让；语言码只在 Logo 有实际语种含义时输出。
+4. [体验-中] `src/services/export/exportBatch.ts`：导出结果通过 `BatchItemOutcome.actualFileName` 记录平台实际落盘名称，UI 从 outcome 读取展示，不写回不可变 ExportJob。
+
+### 同步引擎
+5. [重构-大] `src/modules/media-workbench/syncScope.ts`：抽出纯目标解析函数；“同尺寸”改为按 width×height 匹配，忽略格式与 specId；“同素材”保持当前素材的其他尺寸。
+6. [重构-大] `src/modules/media-workbench/boardBrandReducer.ts`：新增单一原子 dispatch `sync-logo-scope` / `sync-cpr-scope`，一次完成来源与目标写入。
+7. [新需求-中] `src/modules/media-workbench/mediaWorkbenchActions.ts`：新增 `applyCropScope`，支持“同素材·同尺寸”裁切同步，仅复制 fitMode 与 crop 快照。
+8. [体验-中] `src/modules/media-workbench/MediaWorkbench.tsx`：同步确认前冻结目标集合，提示真实 applied / missing 数；Logo 同步覆盖组合/位置/大小/边界模式/显示/效果，CPR 同步覆盖开关/位置/偏移/大小/颜色/效果。
+
+### Logo 极限构图边界
+9. [重构-大] `src/core/brand/brandLayout.ts`：统一安全区与画布边界为 `getLogoPlacementBounds`；`placeGroup` 按 constraintMode 约束自定义位置。
+10. [修复-中] `src/components/canvas/BoardCanvas.tsx`、`src/components/canvas/BrandOverlay.tsx`：删除 CSS 8% 旧安全区入口，改从 `plan.safeArea`（核心 1U）统一渲染，消除双框。
+11. [修复-大] `src/modules/media-workbench/FocusWorkspace.tsx`、`src/modules/media-workbench/focusCoords.ts`：抽出可测试坐标纯函数，修复 pan/zoom 坐标系问题；采用 BoardCanvas 自身 rect（含 place-items:center 居中偏移），不再以 stage-frame 左上角为画布原点。
+12. [修复-中] `src/services/export/exportJob.ts`：多素材不同自定义名不再追加源图名；仅真实冲突时追加 `_2`、`_3` 确定性避让。
+13. [修复-中] `src/services/export/exportJob.ts`：Logo 关闭或 company-only 时 append/all 收敛为每画板一个任务，文件名不带语言码。
+14. [修复-中] `src/services/export/exportJob.ts`、`exportBatch.ts`：ExportJob 删除可写 `actualFileName`，移入 `BatchItemOutcome`；`exportMediaBatch` 不再修改输入 job。
+15. [修复-大] `src/modules/media-workbench/syncScope.ts`、`boardBrandReducer.ts`：resolveCropSyncScope 改用 previewStates 判断初始化；same-asset 跨尺寸同步 Logo/CPR 自定义位置按归一化映射，保持相对构图一致并满足各自边界。
+16. [文档-中] TASKS/CHANGELOG/README 修正：当前实际支持 5 种语言（zh-CN/zh-TW/ja-JP/ko-KR/en-US），德/法/西/泰/葡仅命名码映射；删除未使用变量 `requestedGameLogo`。
+17. [新需求-中] `src/core/brand/brandTypes.ts`、`src/core/brand/brandDefaults.ts`：LogoGroupState 新增 `constraintMode`（safe-area / canvas），旧数据默认 safe-area。
+18. [体验-中] `src/components/brand/LogoGroupControls.tsx`：自定义位置时显示位置边界切换（安全区内 / 画布内）。
+19. [体验-中] `src/modules/media-workbench/FocusWorkspace.tsx`：聚焦选择框旁显示当前位置边界；支持方向键 1px、Shift+方向键 10px 微调 Logo。
+
+### 聚焦视图滚轮缩放与平移
+20. [新需求-大] `src/modules/media-workbench/FocusWorkspace.tsx`：新增 ViewportState，支持滚轮围绕指针缩放、Space+左键/中键拖动平移；视口状态不影响 BoardDocument dirty。
+21. [新需求-中] `src/core/brand/brandDefaults.ts`、`src/components/brand/BrandSettingsDialog.tsx`：设置中新增“聚焦滚轮缩放灵敏度”选项（低/标准/高）。
+22. [体验-中] `src/components/canvas/BoardCanvas.tsx`：传递 onWheel 事件以支持聚焦滚轮缩放。
+
+### 工程与文档
+23. [维护-中] `AGENTS.md`：清理失效的 .env/模型调度规则，明确本仓库不再依赖外部模型或远程 API。
+24. [维护-中] `TASKS.md`、`CHANGELOG.md`、`README.md`：同步本轮产品与行为变更。
+25. [维护-小] `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`：版本统一为 0.1.31。
+26. [测试-中] 新增 `focusCoords.test.ts`（9 tests，含居中布局模拟）、exportJob 命名/语言收敛/不可变测试（7 tests）、syncScope 归一化/文案测试（8 tests）；总测试数 122 → 146。
+27. [测试-中] 新增 `uiPolish.test.tsx`（6 tests：聚焦操作提示文案、Logo/CPR 独立 section、用户可见文案无品牌/品宣）；总测试数 146 → 152。
+
+### UI 收口（发布前轻量优化）
+28. [体验-中] `FocusWorkspace.tsx`：聚焦标题与操作按钮之间新增单行低强调度操作提示栏（32–40px），随当前工具（裁切/Logo/CPR）动态切换文案，容器尺寸固定不抖动；左侧小型线性 SVG 帮助图标，`aria-hidden`；提示容器 `aria-label="聚焦操作提示"`。
+29. [体验-中] `BrandControlsPanel`：Logo 与 CPR 改为同级独立 section 卡片（轻微背景差 + 1px 低对比边线 + 4px 圆角），区块间 14px 间距、区块内 8px gap、10–12px 内边距；不使用大阴影或嵌套卡片堆叠。
+30. [文案-中] 全量清理用户可见文案中的"品牌"/"品宣"：BrandPanel aria-label 改为"Logo 与 CPR 设置"；CPR 描述改为"固定 SVG 图层"；资源管理器标题改为"Logo 资源"；设置弹窗标题改为"Logo 设置"；网格开关改为"构图网格"；同步提示、删除确认和聚焦说明统一使用 Logo/CPR 直接名称。仅保留软件标题"品宣物料工作台"。仅修改面向用户文字，不重命名 Brand* 类型、变量或领域模型。
 ## 0.1.30 (UI 收口 + CNB 桥接)
 
 1. [UI-中] 正式化模块导航、状态点、功能区层级、设置分类和自定义构图空状态，并补齐全局键盘焦点反馈。

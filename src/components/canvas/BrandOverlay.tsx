@@ -47,17 +47,7 @@ export function BrandOverlay({ canvas, settings, group, companyLogo, gameLogo, c
           })
         : null}
 
-      {settings.safeAreaVisible ? (
-        <span
-          className="brand-overlay-safe"
-          style={{
-            left: plan.safeArea.x * scale,
-            top: plan.safeArea.y * scale,
-            width: plan.safeArea.width * scale,
-            height: plan.safeArea.height * scale
-          }}
-        />
-      ) : null}
+      {/* Safe area is drawn by BoardCanvas from the same Render Plan to avoid duplicate boxes. */}
 
       {plan.logoGroupRect ? (
         <span

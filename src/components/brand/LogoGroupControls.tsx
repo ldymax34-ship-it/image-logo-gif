@@ -1,4 +1,4 @@
-import type { BrandColorMode, BrandLanguage, BrandPlacement, BrandSize, CompanyLogoScale, LogoGroupMode, LogoGroupState } from '../../core';
+import type { BrandColorMode, BrandLanguage, BrandPlacement, BrandSize, CompanyLogoScale, LogoConstraintMode, LogoGroupMode, LogoGroupState } from '../../core';
 
 const GROUP_MODE_OPTIONS: Array<{ value: LogoGroupMode; label: string }> = [
   { value: 'game-only', label: '仅游戏 Logo' },
@@ -25,6 +25,10 @@ const COMPANY_SCALE_OPTIONS: Array<{ value: CompanyLogoScale; label: string }> =
   { value: 'large', label: '较大' }
 ];
 
+const CONSTRAINT_OPTIONS: Array<{ value: LogoConstraintMode; label: string }> = [
+  { value: 'safe-area', label: '安全区内' },
+  { value: 'canvas', label: '画布内' }
+];
 const PLACEMENT_OPTIONS: Array<{ value: Exclude<BrandPlacement, 'custom'>; label: string }> = [
   { value: 'corner-left', label: '左上' },
   { value: 'center', label: '居中' },
@@ -134,7 +138,13 @@ export function LogoGroupControls({
           {COMPANY_SCALE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </div> : null}
-      <p className="inline-note">位置与大小按当前画板保存；CPR 在底部独立设置。</p>
+            {group.placement === 'custom' ? <div className="toolbar-line compact">
+        <label className="control-label small">位置边界</label>
+        <select value={group.constraintMode ?? 'safe-area'} onChange={(event) => patch({ constraintMode: event.target.value as LogoConstraintMode })}>
+          {CONSTRAINT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </div> : null}
+<p className="inline-note">位置与大小按当前画板保存；CPR 在底部独立设置。</p>
     </div>
   );
 }

@@ -72,7 +72,7 @@ assert.ok(brand.layers[1].layout.rect.width > 0, 'cpr width should be computed')
 
 assert.equal(sanitizeFileNamePart('CON'), '_CON');
 assert.equal(sanitizeFileNamePart('中文/文件:名*测试'), '中文_文件_名_测试');
-assert.match(buildOutputFileName(parsed.specs[0], { batchName: '批次A', sourceName: '主视觉', index: 0 }), /^01_批次A_主视觉_/);
+assert.match(buildOutputFileName(parsed.specs[0], { batchName: '批次A', sourceName: '主视觉', index: 0, includeIndex: true, includeSpecName: true }), /^01_批次A_主视觉_/);
 
 const cover = computeFitRect({ width: 1000, height: 500 }, { width: 300, height: 300 }, 'cover');
 assert.equal(cover.width, 600);

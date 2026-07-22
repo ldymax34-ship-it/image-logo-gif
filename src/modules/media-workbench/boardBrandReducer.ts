@@ -1,4 +1,5 @@
-import type { BoardBrandState, BoardBrandStateMap, CprState, LogoGroupState } from '../../core';
+import type { BoardBrandState, BoardBrandStateMap, CanvasSize, CprState, LogoGroupState } from '../../core';
+import { normalizeCprForTarget, normalizeLogoForTarget } from './syncScope';
 
 function cloneLogo(logo: LogoGroupState): LogoGroupState {
   return { ...logo, manualOffset: logo.manualOffset ? { ...logo.manualOffset } : undefined };
@@ -22,7 +23,9 @@ export type BoardBrandAction =
   | { type: 'apply-brand'; keys: string[]; source: BoardBrandState }
   | { type: 'apply-logo-to-scope'; keys: string[]; logo: LogoGroupState }
   | { type: 'apply-cpr-to-scope'; keys: string[]; cpr: CprState }
-  | { type: 'apply-logo-visual-to-scope'; keys: string[]; logoEnabled: boolean; logoEffect: import('../../core').BrandEffectState };
+  | { type: 'apply-logo-visual-to-scope'; keys: string[]; logoEnabled: boolean; logoEffect: import('../../core').BrandEffectState }
+  | { type: 'sync-logo-scope'; sourceKey: string; targetKeys: string[]; logo: LogoGroupState; logoEnabled: boolean; logoEffect: import('../../core').BrandEffectState; sourceCanvas: CanvasSize; targetCanvases: Record<string, CanvasSize> }
+  | { type: 'sync-cpr-scope'; sourceKey: string; targetKeys: string[]; cpr: CprState; sourceCanvas: CanvasSize; targetCanvases: Record<string, CanvasSize> };
 
 export function boardBrandReducer(state: BoardBrandStateMap, action: BoardBrandAction): BoardBrandStateMap {
   switch (action.type) {
@@ -61,6 +64,28 @@ export function boardBrandReducer(state: BoardBrandStateMap, action: BoardBrandA
     case 'apply-cpr-to-scope': {
       const next = { ...state };
       for (const key of action.keys) if (next[key]) next[key] = { ...next[key], cpr: cloneCpr(action.cpr) };
+      return next;
+    }
+    case 'sync-logo-scope': {
+      const next = { ...state };
+      if (next[action.sourceKey]) {
+        next[action.sourceKey] = { ...next[action.sourceKey], logo: cloneLogo(action.logo), logoEnabled: action.logoEnabled, logoEffect: { ...action.logoEffect } };
+      }
+    for (const key of action.targetKeys) {
+      if (!next[key]) continue;
+      const targetCanvas = action.targetCanvases[key] ?? action.sourceCanvas;
+      next[key] = { ...next[key], logo: cloneLogo(normalizeLogoForTarget(action.logo, action.sourceCanvas, targetCanvas)), logoEnabled: action.logoEnabled, logoEffect: { ...action.logoEffect } };
+    }
+    return next;
+  }
+  case 'sync-cpr-scope': {
+    const next = { ...state };
+    if (next[action.sourceKey]) next[action.sourceKey] = { ...next[action.sourceKey], cpr: cloneCpr(action.cpr) };
+    for (const key of action.targetKeys) {
+      if (!next[key]) continue;
+      const targetCanvas = action.targetCanvases[key] ?? action.sourceCanvas;
+      next[key] = { ...next[key], cpr: cloneCpr(normalizeCprForTarget(action.cpr, action.sourceCanvas, targetCanvas)) };
+    }
       return next;
     }
   }

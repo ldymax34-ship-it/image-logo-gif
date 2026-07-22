@@ -1171,7 +1171,6 @@ code {
 
 .safe-area {
   position: absolute;
-  inset: 8%;
   border: 1px dashed rgba(151, 194, 232, 0.72);
   pointer-events: none;
 }

@@ -30,7 +30,8 @@ export function BoardCanvas({
   overlayGameLogo,
   onPointerDown,
   onPointerMove,
-  onPointerUp
+  onPointerUp,
+  onWheel
 }: {
   asset: MaterialAsset | undefined;
   spec: MaterialSpec;
@@ -49,6 +50,7 @@ export function BoardCanvas({
   onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
+  onWheel?: (event: React.WheelEvent<HTMLDivElement>) => void;
 }) {
   const plan = asset && previewState
     ? buildBoardRenderPlan({
@@ -73,6 +75,7 @@ export function BoardCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onWheel={onWheel}
     >
       {plan ? (
         <>
@@ -88,7 +91,14 @@ export function BoardCanvas({
               height: plan.image.rect.height * scale
             }}
           /> : null}
-          {showImage && brandSettings?.safeAreaVisible !== false ? <div className="safe-area" /> : null}
+          {showImage && brandSettings?.safeAreaVisible !== false ? (
+            <div className="safe-area" style={{
+              left: plan.safeArea.x * scale,
+              top: plan.safeArea.y * scale,
+              width: plan.safeArea.width * scale,
+              height: plan.safeArea.height * scale
+            }} />
+          ) : null}
           {plan.layers.map((layer) => (
             <div
               key={layer.id}

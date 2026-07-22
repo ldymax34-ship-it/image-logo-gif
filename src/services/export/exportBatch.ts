@@ -1,26 +1,22 @@
 import {
   formatMegabytes,
-  applyLanguageLogoScale,
-  getBoardPreviewKey,
   getBrandLanguageLabel,
-  resolveBoardBrandAssets,
   type BoardBrandStateMap,
   type BoardPreviewState,
   type BrandAsset,
   type BrandLanguage,
-  type BrandSettingsV1,
   type BrandLayerState,
-  type MaterialAsset,
-  type MaterialFormat,
-  type MaterialSpec
+  type BrandSettingsV1,
+  type MaterialFormat
 } from '../../core';
 import { saveBlobToOutputTarget, type OutputTarget } from '../../platform/fileSystem';
 import { exportBoard } from './exportBoard';
 import { logDiagnostic } from '../../diagnostics';
+import type { ExportJob, ResolvedExportAssets } from './exportJob';
 
 export type BatchProgress = { current: number; total: number };
 export type BatchFailure<T> = { item: T; message: string };
-export type BatchItemOutcome = { result: 'success' | 'compressed'; beforeBytes?: number; outputBytes: number };
+export type BatchItemOutcome = { result: 'success' | 'compressed'; beforeBytes?: number; outputBytes: number; actualFileName?: string };
 export type BatchOutcome<T> = { item: T; outcome: BatchItemOutcome | { result: 'failed'; reason: string } };
 export type BatchResult<T> = { completed: number; failures: BatchFailure<T>[]; outcomes: BatchOutcome<T>[] };
 
@@ -48,19 +44,9 @@ export async function exportSequentially<T>(
   return { completed, failures, outcomes };
 }
 
-export type MediaExportRow = {
-  item: { id: string; language?: BrandLanguage };
-  asset: MaterialAsset;
-  spec: MaterialSpec;
-  effectiveMaxSizeKb: number;
-  fileName: string;
-  estimatedBytes: number;
-};
-
 export type MediaExportRequest = {
-  rows: MediaExportRow[];
+  jobs: ExportJob[];
   outputTarget: OutputTarget;
-  previewStates: Record<string, BoardPreviewState>;
   boardBrandStates: BoardBrandStateMap;
   brandAssets: BrandAsset[];
   brandLayer: BrandLayerState;
@@ -71,42 +57,58 @@ export type MediaExportRequest = {
   onProgress?: (progress: BatchProgress) => void;
 };
 
+function resolveAssetsFromJob(job: ExportJob, brandAssets: BrandAsset[]): ResolvedExportAssets {
+  return {
+    gameLogo: job.resolvedLogoAssetId ? brandAssets.find((asset) => asset.id === job.resolvedLogoAssetId && asset.type === 'logo') : undefined,
+    companyLogo: job.resolvedCompanyLogoAssetId ? brandAssets.find((asset) => asset.id === job.resolvedCompanyLogoAssetId && asset.type === 'logo') : undefined,
+    cpr: job.resolvedCprAssetId ? brandAssets.find((asset) => asset.id === job.resolvedCprAssetId && asset.type === 'cpr') : undefined,
+    missingGameLogo: job.missing && !!job.missingReason?.includes('Logo'),
+    missingCpr: job.missing && job.missingReason === '缺少 CPR 资源'
+  };
+}
+
+function buildBrandLayerForJob(job: ExportJob, brandLayer: BrandLayerState, brandSettings: BrandSettingsV1): BrandLayerState {
+  return {
+    ...brandLayer,
+    logoEnabled: job.brandSnapshot.logoEnabled ?? brandLayer.logoEnabled,
+    logoEffect: job.brandSnapshot.logoEffect ?? brandLayer.logoEffect,
+    logoGroup: job.brandSnapshot.logo,
+    cprState: job.brandSnapshot.cpr,
+    cprEnabled: job.brandSnapshot.cpr.enabled
+  };
+}
+
 /** Executes the complete render-and-write flow outside React UI. */
-export async function exportMediaBatch(request: MediaExportRequest): Promise<BatchResult<MediaExportRow>> {
-  return exportSequentially(request.rows, async (row) => {
-    const previewState = request.previewStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
-    if (!previewState) throw new Error(`${row.fileName}：缺少画板预览状态`);
-    const boardBrandState = request.boardBrandStates[getBoardPreviewKey(row.asset.id, row.spec.id)];
-    if (!boardBrandState) throw new Error(`${row.fileName}：缺少画板品牌状态`);
-    const exportLanguage = row.item.language ?? boardBrandState.logo.gameLogoLanguage;
-    const boardLayer = { ...request.brandLayer, logoEnabled: boardBrandState.logoEnabled ?? request.brandLayer.logoEnabled, logoEffect: boardBrandState.logoEffect ?? request.brandLayer.logoEffect };
-    const boardAssets = resolveBoardBrandAssets({ boardBrandState, brandCatalog: request.brandAssets, brandLayer: boardLayer, languageOverride: exportLanguage });
-    if (boardAssets.missingGameLogo) throw new Error(`缺少 ${getBrandLanguageLabel(exportLanguage)} Logo 资源`);
-    if (boardAssets.missingCpr) throw new Error('缺少 CPR 资源');
-    const languageGroup = { ...applyLanguageLogoScale(boardBrandState.logo, exportLanguage, request.brandSettings), gameLogoId: boardAssets.gameLogo?.id };
+export async function exportMediaBatch(request: MediaExportRequest): Promise<BatchResult<ExportJob>> {
+  return exportSequentially(request.jobs, async (job) => {
+    if (job.missing) {
+      throw new Error(job.missingReason ?? '导出资源缺失');
+    }
+    const assets = resolveAssetsFromJob(job, request.brandAssets);
+    const layer = buildBrandLayerForJob(job, request.brandLayer, request.brandSettings);
     const result = await exportBoard({
-      asset: row.asset,
-      spec: row.spec,
-      previewState,
-      brandLayer: { ...boardLayer, logoLanguage: exportLanguage, logoGroup: languageGroup, cprState: boardBrandState.cpr, cprEnabled: boardBrandState.cpr.enabled },
-      logoAsset: boardAssets.gameLogo,
-      cprAsset: boardAssets.cpr,
-      companyLogoAsset: boardAssets.companyLogo,
-      gameLogoAsset: boardAssets.gameLogo,
+      asset: job.assetSnapshot,
+      spec: job.specSnapshot,
+      previewState: job.previewSnapshot,
+      brandLayer: layer,
+      logoAsset: assets.gameLogo,
+      cprAsset: assets.cpr,
+      companyLogoAsset: assets.companyLogo,
+      gameLogoAsset: assets.gameLogo,
       format: request.format,
       quality: request.quality,
-      maxBytes: row.effectiveMaxSizeKb * 1024,
+      maxBytes: job.effectiveMaxSizeKb * 1024,
       autoCompressJpeg: request.autoCompressJpeg,
       minJpegQuality: 0.4
     });
     if (!result.ok) {
-      const maxLabel = `${(row.effectiveMaxSizeKb / 1024).toFixed(row.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB`;
+      const maxLabel = `${(job.effectiveMaxSizeKb / 1024).toFixed(job.effectiveMaxSizeKb % 1024 === 0 ? 0 : 1)}MB`;
       throw new Error(result.reason === 'png-over-limit' ? `PNG 实际为 ${formatMegabytes(result.size)}，超过 ${maxLabel}；请改用 JPG 或调整尺寸` : `在保持当前尺寸时无法压缩到 ${maxLabel} 以下，请降低尺寸或调整内容`);
     }
-    await saveBlobToOutputTarget(request.outputTarget, row.fileName, result.blob);
+    const actualFileName = await saveBlobToOutputTarget(request.outputTarget, job.plannedFileName, result.blob);
     if (request.outputTarget.kind === 'downloads') await new Promise((resolve) => setTimeout(resolve, 180));
     return result.compressed
-      ? { result: 'compressed' as const, beforeBytes: row.estimatedBytes, outputBytes: result.blob.size }
-      : { result: 'success' as const, outputBytes: result.blob.size };
+      ? { result: 'compressed' as const, beforeBytes: job.estimatedBytes, outputBytes: result.blob.size, actualFileName }
+      : { result: 'success' as const, outputBytes: result.blob.size, actualFileName };
   }, request.onProgress);
 }

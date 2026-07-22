@@ -62,6 +62,12 @@ export type FileNameOptions = {
   language?: string;
   index?: number;
   maxBaseLength?: number;
+  /** 0.1.31: include the spec name (e.g. "横版") in the file name. */
+  includeSpecName?: boolean;
+  /** 0.1.31: include the numeric index prefix. */
+  includeIndex?: boolean;
+  /** 0.1.31: append a disambiguation suffix for same-name collisions across assets. */
+  disambiguation?: string;
 };
 
 export function sanitizeFileNamePart(input: string, fallback = 'untitled', maxLength = 80): string {
@@ -79,15 +85,18 @@ export function sanitizeFileNamePart(input: string, fallback = 'untitled', maxLe
 }
 
 export function buildOutputFileName(spec: MaterialSpec, options: FileNameOptions = {}): string {
-  const index = options.index == null ? '' : String(options.index + 1).padStart(2, '0');
+  const index = options.includeIndex && options.index != null ? String(options.index + 1).padStart(2, '0') : '';
+  const specName = options.includeSpecName ? spec.name || undefined : undefined;
+  const language = options.language ? getOutputLanguageCode(options.language) : undefined;
   const parts = [
     index,
     options.batchName,
     options.sourceName,
-    options.language ? getOutputLanguageCode(options.language) : undefined,
-    spec.name || `${spec.width}x${spec.height}`,
-    `${spec.width}x${spec.height}`
-  ].filter(Boolean);
+    language,
+    specName,
+    `${spec.width}x${spec.height}`,
+    options.disambiguation
+  ].filter((part): part is string => Boolean(part));
   const base = sanitizeFileNamePart(parts.join('_'), 'material', options.maxBaseLength ?? 120);
   return `${base}.${spec.format}`;
 }

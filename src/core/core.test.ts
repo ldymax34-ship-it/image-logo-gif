@@ -288,14 +288,16 @@ describe('core 0.1.x foundation', () => {
   it('sanitizes output file names for cross-platform use', () => {
     const fileName = buildOutputFileName(
       { id: '1', name: 'CON/测试', width: 900, height: 383, format: 'jpg' },
-      { batchName: '批次:A', index: 0 }
+      { batchName: '批次:A', index: 0, includeIndex: true, includeSpecName: true }
     );
     expect(fileName).toBe('01_批次_A_CON_测试_900x383.jpg');
   });
 
   it('uses the production language codes in exported file names', () => {
     expect(['zh-CN', 'zh-TW', 'en-US', 'ja-JP', 'ko-KR', 'de-DE', 'fr-FR', 'es-ES', 'th-TH', 'pt-PT'].map(getOutputLanguageCode)).toEqual(['zh', 'tw', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'th', 'PT']);
-    expect(buildOutputFileName({ id: '1', name: '横版', width: 1920, height: 1080, format: 'png' }, { language: 'zh-CN' })).toBe('zh_横版_1920x1080.png');
+    expect(buildOutputFileName({ id: '1', name: '横版', width: 1920, height: 1080, format: 'png' }, { language: 'zh-CN' })).toBe('zh_1920x1080.png');
+    expect(buildOutputFileName({ id: '1', name: '横版', width: 1920, height: 1080, format: 'png' }, { language: 'zh-CN', includeSpecName: true })).toBe('zh_横版_1920x1080.png');
+    expect(buildOutputFileName({ id: '1', name: '横版', width: 1920, height: 1080, format: 'png' }, { language: 'zh-CN', includeIndex: true, includeSpecName: true, index: 0 })).toBe('01_zh_横版_1920x1080.png');
   });
 
   it('keeps manual Logo scaling while applying per-language visual correction', () => {
@@ -415,6 +417,10 @@ describe('core 0.1.x foundation', () => {
     expect(plan.canvas).toEqual({ width: 300, height: 300 });
     expect(plan.image.rect.width).toBe(600);
     expect(plan.layers).toHaveLength(1);
+    expect(plan.safeArea).toBeDefined();
+    // safe area is 1 grid unit inset: unit = 300/18 ≈ 16.67
+    expect(plan.safeArea.x).toBeCloseTo(300 / 18, 5);
+    expect(plan.safeArea.width).toBeCloseTo(300 - 2 * (300 / 18), 5);
   });
 
   it('renders the fixed CPR SVG at the bottom when a logo group is active', () => {

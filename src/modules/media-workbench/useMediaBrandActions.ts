@@ -27,7 +27,7 @@ export function useMediaBrandActions(input: {
     const family = classifyAspect({ width: input.focusSpec.width, height: input.focusSpec.height });
     const keys = input.assets.flatMap((asset) => input.specs.filter((spec) => classifyAspect({ width: spec.width, height: spec.height }) === family).map((spec) => getBoardPreviewKey(asset.id, spec.id)));
     const source = input.boardBrandStates[input.focusPreviewKey ?? '']; if (source) input.dispatchBoardBrand({ type: 'apply-brand', keys, source: { ...source, logo: nextLogoGroup } });
-    input.setMessage(`已将品牌位置应用到 ${keys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
+    input.setMessage(`已将 Logo 位置应用到 ${keys.length} 个${family === 'landscape' ? '横版' : family === 'portrait' ? '竖版' : '方图'}画板`);
   }
   function changeBrandLanguage(language: BrandLanguage, scale?: number) {
     const selectedId = resolvePreferredBrandAssetId(input.brandAssets, 'logo', language, input.brandLayer.selectedLogoId);

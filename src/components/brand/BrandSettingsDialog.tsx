@@ -44,7 +44,7 @@ type SettingsTab = 'general' | 'brand-lang' | 'cpr-guides' | 'updates' | 'diagno
 
 const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: 'general', label: '常规' },
-  { id: 'brand-lang', label: '品牌与语种' },
+  { id: 'brand-lang', label: 'Logo 与语种' },
   { id: 'cpr-guides', label: 'CPR与辅助' },
   { id: 'updates', label: '更新' },
   { id: 'diagnostics', label: '诊断' }
@@ -166,7 +166,7 @@ export function BrandSettingsDialog({
       >
         <div className="dialog-header">
           <div>
-            <span className="dialog-kicker">品牌设置</span>
+            <span className="dialog-kicker">Logo 设置</span>
             <h2 id="brand-settings-title">默认配置</h2>
             <small>默认组合影响新画板；语种大小用于语种切换和多语言导出</small>
           </div>
@@ -301,7 +301,7 @@ export function BrandSettingsDialog({
                       checked={draft.gridVisible}
                       onChange={(event) => patch({ gridVisible: event.target.checked })}
                     />
-                    品牌网格
+                    构图网格
                   </label>
                   <label className="toggle">
                     <input
@@ -345,6 +345,14 @@ export function BrandSettingsDialog({
               <div className="settings-group cpr-info">
                 <h3>固定 CPR 默认</h3>
                 <label className="settings-field">
+                  <span>聚焦滚轮缩放灵敏度</span>
+                  <select value={draft.focusWheelSensitivity ?? 'standard'} onChange={(event) => patch({ focusWheelSensitivity: event.target.value as 'low' | 'standard' | 'high' })}>
+                    <option value="low">低</option>
+                    <option value="standard">标准</option>
+                    <option value="high">高</option>
+                  </select>
+                </label>
+<label className="settings-field">
                   <span>默认位置</span>
                   <select value={draft.defaultCprPlacement} onChange={(event) => patch({ defaultCprPlacement: event.target.value as CprPlacement })}>
                     <option value="bottom-left">左下</option>

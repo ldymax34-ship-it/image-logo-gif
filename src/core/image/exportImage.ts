@@ -1,6 +1,6 @@
 import { exportJpegWithinLimit, type JpegLimitResult } from '../export/sizeLimit';
-import { buildBrandRenderPlan, DEFAULT_CPR_EFFECT, getBrandAssetUrl, resolveCprState, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
-import { renderBrandLayer } from '../layout';
+import { buildBrandRenderPlan, createBrandGrid, DEFAULT_CPR_EFFECT, getBrandAssetUrl, getGridSafeArea, resolveCprState, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
+import { renderBrandLayer, type LayoutRect } from '../layout';
 import { computeCropTransform, type BoardPreviewState } from './crop';
 import type { MaterialAsset } from './imageMeta';
 import type { MaterialFormat, MaterialSpec } from '../spec/specParser';
@@ -37,6 +37,7 @@ export type BoardRenderPlan = {
     };
   };
   layers: BoardRenderLayer[];
+  safeArea: LayoutRect;
 };
 
 export type BoardRenderInput = {
@@ -123,9 +124,11 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
       image: {
         src: input.asset.objectUrl,
         alt: input.asset.fileName,
-        rect: { x: transform.offsetX, y: transform.offsetY, width: transform.width, height: transform.height }
+      rect: { x: transform.offsetX, y: transform.offsetY, width: transform.width, height: transform.height }
       },
       layers
+      ,
+      safeArea: grouped.safeArea,
     };
   }
   const brandPreview = renderBrandLayer({
@@ -168,7 +171,9 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
           effect: layer.type === 'logo' ? input.brandLayer.logoEffect : DEFAULT_CPR_EFFECT
         } satisfies BoardRenderLayer;
       })
-      .filter((layer): layer is BoardRenderLayer => Boolean(layer))
+     .filter((layer): layer is BoardRenderLayer => Boolean(layer))
+,
+    safeArea: getGridSafeArea(createBrandGrid({ width: input.spec.width, height: input.spec.height }))
   };
 }
 

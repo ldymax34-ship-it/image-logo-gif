@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { WorkbenchModule } from '../components/ModuleNav';
 import {
   DEFAULT_BRAND_ASSETS,
+  DEFAULT_BRAND_LAYER,
   DEFAULT_CPR_EFFECT,
   DEFAULT_LOGO_EFFECT,
   loadBrandSettings,
@@ -12,18 +13,7 @@ import {
 } from '../core';
 import { AppActivityContext, IDLE_APP_ACTIVITY, type AppActivity } from './appActivity';
 
-export const DEFAULT_BRAND_LAYER: BrandLayerState = {
-  logoEnabled: true,
-  cprEnabled: true,
-  logoLanguage: 'zh-CN',
-  cprLanguage: 'zh-CN',
-  logoAnchor: 'top-right',
-  cprAnchor: 'top-right',
-  logoSize: 'standard',
-  cprSize: 'standard',
-  logoEffect: DEFAULT_LOGO_EFFECT,
-  cprEffect: DEFAULT_CPR_EFFECT
-};
+
 
 export type MediaHeaderState = {
   assetCount: number;

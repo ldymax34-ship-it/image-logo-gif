@@ -22,10 +22,9 @@ export function useMediaWorkbenchState() {
   const [customPresets, setCustomPresets] = useState<PresetTemplate[]>(() => loadCustomPresetTemplates());
   const [presetApplyMode, setPresetApplyMode] = useState<PresetApplyMode>('replace');
   const [focusAssetId, setFocusAssetId] = useState<string>(); const [focusSpecId, setFocusSpecId] = useState<string>();
-  const [focusSession, setFocusSession] = useState<FocusSession>();
-  const [focusEditorDirty, setFocusEditorDirty] = useState(false); const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>();
+  const [focusSession, setFocusSession] = useState<FocusSession>(); const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation>();
   const [newPresetName, setNewPresetName] = useState(''); const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState(''); const [importFailures, setImportFailures] = useState<string[]>([]);
-  return { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusSession, setFocusSession, focusEditorDirty, setFocusEditorDirty, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures };
+  return { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusSession, setFocusSession, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures };
 }

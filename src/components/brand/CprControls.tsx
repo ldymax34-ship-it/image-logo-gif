@@ -29,7 +29,7 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
 
   return (
     <section className="brand-control-group" aria-labelledby="cpr-controls-title">
-      <SectionHeader id="cpr-controls-title" title="CPR" description="固定 SVG 品牌组件" state={sectionState ?? (state.enabled ? 'idle' : 'disabled')}>
+      <SectionHeader id="cpr-controls-title" title="CPR" description="固定 SVG 图层" state={sectionState ?? (state.enabled ? 'idle' : 'disabled')}>
         <label className="toggle compact-toggle">
           <input type="checkbox" checked={state.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />
           显示

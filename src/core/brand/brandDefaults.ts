@@ -6,7 +6,7 @@ export const DEFAULT_BRAND_SETTINGS: BrandSettingsV1 = {
   logoScaleByLanguage: { 'zh-CN': 1, 'zh-TW': 1, 'ja-JP': 1, 'ko-KR': 1, 'en-US': 1, custom: 1 },
   defaultPlacementByAspect: { landscape: 'corner-right', square: 'corner-right', portrait: 'corner-right' },
   cprEnabled: true, defaultCprPlacement: 'bottom-right', defaultCprColorMode: 'white',
-  gridVisible: false, safeAreaVisible: true, guidesVisible: true, snapEnabled: true, snapThreshold: 8
+  gridVisible: false, safeAreaVisible: true, guidesVisible: true, snapEnabled: true, snapThreshold: 8, focusWheelSensitivity: 'standard'
 };
 
 export const DEFAULT_BRAND_EFFECT: BrandEffectState = { ...DEFAULT_LOGO_EFFECT, colorEnabled: true, color: '#ffffff', strokeEnabled: false, glowEnabled: false, shadowEnabled: false };
@@ -23,8 +23,22 @@ export const DEFAULT_CPR_STATE: CprState = {
   effect: { ...DEFAULT_CPR_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false }
 };
 
+
+export const DEFAULT_BRAND_LAYER: BrandLayerState = {
+  logoEnabled: true,
+  cprEnabled: true,
+  logoLanguage: 'zh-CN',
+  cprLanguage: 'zh-CN',
+  logoAnchor: 'top-right',
+  cprAnchor: 'top-right',
+  logoSize: 'standard',
+  cprSize: 'standard',
+  logoEffect: DEFAULT_LOGO_EFFECT,
+  cprEffect: DEFAULT_CPR_EFFECT
+};
+
 export function createDefaultLogoGroup(language: BrandLanguage = 'zh-CN'): LogoGroupState {
-  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', scale: 1, companyLogoScale: 'match', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right' };
+  return { mode: 'game-only', gameLogoLanguage: language, colorMode: 'white', sizePreset: 'standard', scale: 1, companyLogoScale: 'match', gapUnits: 0.5, placement: 'corner-right', lastExplicitPlacement: 'corner-right', constraintMode: 'safe-area' };
 }
 
 /** 创建一份独立的 CPR 默认状态（返回新对象，调用方可安全修改）。 */
