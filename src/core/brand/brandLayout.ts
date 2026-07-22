@@ -1,7 +1,7 @@
 import type { BrandAsset } from './brandAsset';
-import { DEFAULT_BRAND_EFFECT, getCprRenderColor } from './brandDefaults';
+import { DEFAULT_BRAND_EFFECT, normalizeLogoGroup, resolveColorEffect } from './brandDefaults';
 import { createBrandGrid, getBrandGuideLines, getGridSafeArea } from './brandGrid';
-import { CPR_PRESET, getBrandColor } from './cprPreset';
+import { CPR_PRESET } from './cprPreset';
 import type { BrandRenderPlan, BrandPlacement, CprState, LogoConstraintMode, LogoGroupState } from './brandTypes';
 import { classifyAspect, type CanvasSize, type LayoutRect } from '../layout/layoutProfile';
 
@@ -137,13 +137,13 @@ export function computeCprPlacementRect(canvas: CanvasSize, transform: CprState[
 
 function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRenderPlan['cpr']> {
   const rect = computeCprPlacementRect(canvas, cpr.transform, cpr.scale ?? 1);
-  const color = getCprRenderColor(cpr.colorMode) ?? '#ffffff';
-  return { id: 'cpr:fixed', kind: 'cpr', rect, color, effect: { ...cpr.effect, colorEnabled: cpr.colorMode !== 'original', color } };
+  const effect = resolveColorEffect(cpr.colorMode, cpr.effect);
+  return { id: 'cpr:fixed', kind: 'cpr', rect, color: effect.colorEnabled ? effect.color : '#ffffff', effect };
 }
 
 export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, options: BuildBrandRenderOptions = {}): BrandRenderPlan {
-  group = { ...group, companyLogoScale: group.companyLogoScale ?? 'match' };
-  const grid = createBrandGrid(canvas); const color = getBrandColor(group.colorMode) ?? '#ffffff';
+  group = normalizeLogoGroup(group);
+  const grid = createBrandGrid(canvas); const logoEffect = resolveColorEffect(group.colorMode, options.effect ?? DEFAULT_BRAND_EFFECT); const color = logoEffect.colorEnabled ? logoEffect.color : '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
   const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;
@@ -159,11 +159,11 @@ export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, 
     const gameWidth = gameHeight * (options.gameLogo!.aspectRatio ?? 1.5) * (group.gameLogoScale ?? 1);
     const actualWidth = companyWidth + gap + gameWidth;
     const offsetX = rect.x + Math.max(0, (rect.width - actualWidth) / 2);
-    items.push({ id: `logo:${options.companyLogo!.id}`, kind: 'logo', rect: { x: offsetX, y: rect.y + (rect.height - companyHeight) / 2, width: companyWidth, height: companyHeight }, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
-    items.push({ id: `logo:${options.gameLogo!.id}`, kind: 'logo', rect: { x: offsetX + companyWidth + gap, y: rect.y + (rect.height - gameHeight) / 2, width: gameWidth, height: gameHeight }, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
+    items.push({ id: `logo:${options.companyLogo!.id}`, kind: 'logo', rect: { x: offsetX, y: rect.y + (rect.height - companyHeight) / 2, width: companyWidth, height: companyHeight }, color, effect: logoEffect });
+    items.push({ id: `logo:${options.gameLogo!.id}`, kind: 'logo', rect: { x: offsetX + companyWidth + gap, y: rect.y + (rect.height - gameHeight) / 2, width: gameWidth, height: gameHeight }, color, effect: logoEffect });
   } else {
     const asset = hasCompany ? options.companyLogo! : options.gameLogo!;
-    items.push({ id: `logo:${asset.id}`, kind: 'logo', rect, color, effect: options.effect ?? DEFAULT_BRAND_EFFECT });
+    items.push({ id: `logo:${asset.id}`, kind: 'logo', rect, color, effect: logoEffect });
   }
   return { grid, logoGroupRect: rect, logoItems: items, cpr, safeArea: getGridSafeArea(grid), guideLines: getBrandGuideLines(grid) };
 }

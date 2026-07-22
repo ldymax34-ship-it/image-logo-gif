@@ -15,7 +15,7 @@ import {
 import { BrandResourceManager } from './BrandResourceManager';
 import { DiagnosticsSection } from '../../diagnostics';
 
-const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original'>; label: string }> = [
+const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original' | 'custom'>; label: string }> = [
   { value: 'white', label: '白色' },
   { value: 'black', label: '黑色' }
 ];
@@ -223,7 +223,7 @@ export function BrandSettingsDialog({
                   <span>默认配色</span>
                   <select
                     value={draft.defaultColorMode}
-                    onChange={(event) => patch({ defaultColorMode: event.target.value as Exclude<BrandColorMode, 'original'> })}
+                    onChange={(event) => patch({ defaultColorMode: event.target.value as Exclude<BrandColorMode, 'original' | 'custom'> })}
                   >
                     {COLOR_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>

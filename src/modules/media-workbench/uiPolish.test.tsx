@@ -63,6 +63,36 @@ describe('BrandControlsPanel section structure', () => {
   });
 });
 
+describe('Logo style preview color resolution', () => {
+  const gameLogoAsset = {
+    id: 'preview-logo', type: 'logo' as const, sourceKind: 'image' as const,
+    name: 'preview-logo', language: 'zh-CN' as const, sourceUrl: '/preview-logo.png', aspectRatio: 3
+  };
+
+  it('uses custom mode color in the Logo style preview', () => {
+    const html = renderToStaticMarkup(
+      <BrandControlsPanel {...defaultProps()} gameLogoAsset={gameLogoAsset} logoGroup={{ ...createDefaultLogoGroup(), colorMode: 'custom' }} brandLayer={{ ...DEFAULT_BRAND_LAYER, logoEffect: { ...DEFAULT_BRAND_LAYER.logoEffect, color: '#12abef' } }} />
+    );
+    expect(html).toContain('background-color:#12abef');
+  });
+
+  it('uses resolved white instead of the stored custom color in the Logo style preview', () => {
+    const html = renderToStaticMarkup(
+      <BrandControlsPanel {...defaultProps()} gameLogoAsset={gameLogoAsset} logoGroup={{ ...createDefaultLogoGroup(), colorMode: 'white' }} brandLayer={{ ...DEFAULT_BRAND_LAYER, logoEffect: { ...DEFAULT_BRAND_LAYER.logoEffect, color: '#12abef' } }} />
+    );
+    expect(html).toContain('background-color:#ffffff');
+    expect(html).not.toContain('background-color:#12abef');
+  });
+
+  it('uses the original asset in original mode', () => {
+    const html = renderToStaticMarkup(
+      <BrandControlsPanel {...defaultProps()} gameLogoAsset={gameLogoAsset} logoGroup={{ ...createDefaultLogoGroup(), colorMode: 'original' }} />
+    );
+    expect(html).toContain('<img');
+    expect(html).not.toContain('brand-mask');
+  });
+});
+
 describe('User-visible text unification', () => {
   it('does not contain 品牌 or 品宣 in BrandControlsPanel output', () => {
     const html = renderToStaticMarkup(

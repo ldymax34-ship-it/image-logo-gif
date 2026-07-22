@@ -3,7 +3,7 @@ import type { BrandLanguage, BrandEffectState } from './brandAsset';
 
 export type LogoGroupMode = 'game-only' | 'company-only' | 'company-and-game';
 export type BrandPlacement = 'corner-left' | 'center' | 'corner-right' | 'custom';
-export type BrandColorMode = 'white' | 'black' | 'original';
+export type BrandColorMode = 'white' | 'black' | 'original' | 'custom';
 export type BrandSize = 'small' | 'standard' | 'large' | 'xl';
 export type CompanyLogoScale = 'small' | 'match' | 'large';
 
@@ -76,7 +76,7 @@ export type BrandSettingsV1 = {
   defaultLanguage: BrandLanguage;
   /** Per-language visual correction applied when switching or exporting Logo resources. */
   logoScaleByLanguage: Record<BrandLanguage, number>;
-  defaultColorMode: Exclude<BrandColorMode, 'original'>;
+  defaultColorMode: Exclude<BrandColorMode, 'original' | 'custom'>;
   defaultSize: BrandSize;
   defaultPlacementByAspect: Record<AspectFamily, Exclude<BrandPlacement, 'custom'>>;
   defaultCprPlacement: CprPlacement;

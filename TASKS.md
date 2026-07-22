@@ -7,6 +7,30 @@
 - [x] 增加内置横版规格回归测试。
 - [ ] 完成 Preview 发布门禁与双平台分发。
 
+### 阶段 A｜修复 Logo / CPR 自定义改色无效
+- [x] `BrandColorMode` 统一为四种：`original / white / black / custom`。
+- [x] 新增 `resolveColorEffect(colorMode, effect)` 纯函数，Logo 与 CPR 共用同一解析入口。
+- [x] `buildBrandRenderPlan` 产生最终 `BrandEffectState`；`buildBoardRenderPlan` 只消费 `item.effect`，不再二次覆盖颜色。
+- [x] original：`colorEnabled=false`，保留素材原色；white：`#ffffff`；black：`#000000`；custom：保留 `effect.color`。
+- [x] `LogoGroupControls`、`CprControls` 配色选项增加"自定义"，选择后显示颜色选择器并直接更新 `effect.color`。
+- [x] `BrandEffectControls` 新增 `hideColorControls` prop，删除 Logo/CPR 重复的"改色"开关和颜色输入（描边、发光、阴影保留）。
+- [x] `CustomWorkbench`：`colorMode` 从硬编码 `'white'` 改为 `deriveBrandColorMode(effect)` 动态推导，保留其独立改色能力。
+- [x] 旧数据兼容：`deriveBrandColorMode` 对非黑白自定义色返回 `custom`；运行时旧 JSON 缺失或非法 `colorMode` 时，由 effect 明确推导安全模式。
+- [x] CPR 配色模式切换不再重写 `effect.color`；从自定义色切换白色/原色后回到自定义，仍保留原色值。
+- [x] Logo 单项样式预览使用按 `colorMode` 解析后的 effect，与画布 Render Plan 一致。
+- [x] 预览、聚焦预览、缩略图、单张导出、批量导出共用同一 Render Plan。
+- [x] 未修改 updater、导出压缩、Logo/CPR 布局、同步范围。
+
+### 阶段 A 验证记录
+- [x] `git diff --check`：通过。
+- [x] `npm run verify:core`：通过。
+- [x] `npm test -- --run`：通过，181 tests / 25 files（原 153 → 181，新增 28 tests）。
+- [x] `npm run build`：通过。
+- [x] `cargo fmt --check` / `cargo check` / `cargo test`：通过（Rust 无改动，发布前一致性检查）。
+- [ ] Logo / CPR 四模式配色（original / white / black / custom）需在 Tauri 桌面端实机目视确认渲染效果。
+- [ ] CustomWorkbench 现有改色路径需在自定义构图模块实机确认。
+- [ ] 阶段 B（Fabric.js 固定对象交互）待来源任务验收阶段 A 后再开始。
+
 ## 当前版本：0.1.31 画板状态、同步与正式导出模型收口
 
 ### Goal 1｜逐画板语言与不可变 ExportJob 模型

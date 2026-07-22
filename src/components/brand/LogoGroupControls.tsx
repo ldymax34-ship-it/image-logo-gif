@@ -7,9 +7,10 @@ const GROUP_MODE_OPTIONS: Array<{ value: LogoGroupMode; label: string }> = [
 ];
 
 const COLOR_MODE_OPTIONS: Array<{ value: BrandColorMode; label: string }> = [
+  { value: 'original', label: '原色' },
   { value: 'white', label: '白色' },
   { value: 'black', label: '黑色' },
-  { value: 'original', label: '原色' }
+  { value: 'custom', label: '自定义' }
 ];
 
 const SIZE_OPTIONS: Array<{ value: BrandSize; label: string }> = [
@@ -39,12 +40,16 @@ export function LogoGroupControls({
   group,
   language,
   onLanguageChange,
-  onChange
+  onChange,
+  effectColor,
+  onEffectColorChange
 }: {
   group: LogoGroupState;
   language: BrandLanguage;
   onLanguageChange: (language: BrandLanguage) => void;
   onChange: (next: LogoGroupState) => void;
+  effectColor?: string;
+  onEffectColorChange?: (color: string) => void;
 }) {
   function patch(next: Partial<LogoGroupState>) {
     onChange({ ...group, ...next });
@@ -92,6 +97,7 @@ export function LogoGroupControls({
           ))}
         </select>
       </div>
+      {group.colorMode === 'custom' && onEffectColorChange ? <label className="control-row"><span>颜色</span><input className="color-input" type="color" value={effectColor ?? '#ffffff'} onChange={(event) => onEffectColorChange(event.target.value)} aria-label="Logo 自定义颜色" /></label> : null}
       <div className="toolbar-line compact">
         <label className="control-label small">位置</label>
         <select

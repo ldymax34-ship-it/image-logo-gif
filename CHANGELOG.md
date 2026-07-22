@@ -4,7 +4,14 @@
 
 1. [体验-小] `src/core/spec/presetTemplates.ts`：“横版投放”内置套组的三个名称精简为 `1920x1080`、`2560x1097`、`1600x1200`；套用后草稿中每行也只显示尺寸，不再附加比例、基准宽度前缀或 JPG 文字。
 2. [兼容-小] 规格宽高、JPG 格式与稳定套组 ID 保持不变；未改动导出和自动更新架构。
-3. [测试-小] 增加内置横版规格的名称与 JPG 格式回归测试，并将应用版本统一更新为 0.1.32。
+3. [修复-大] `src/core/brand/brandDefaults.ts`：新增 `resolveColorEffect(colorMode, effect)`、`deriveBrandColorMode(effect)` 与运行时模式校验，统一配色解析；`BrandColorMode` 扩展为 `white / black / original / custom` 四种。旧 JSON 缺失或非法 `colorMode` 时按 effect 推导，非黑白自定义色正确解析为 `custom`。Logo 与 CPR 共用同一解析入口，禁止各写一套分支。
+4. [修复-大] `src/core/brand/brandLayout.ts`：`buildBrandRenderPlan` 对 Logo 和 CPR 均使用 `resolveColorEffect` 产生最终 `BrandEffectState`；`buildCprItem` 不再二次覆盖颜色。
+5. [修复-大] `src/core/image/exportImage.ts`：`buildBoardRenderPlan` 不再手动覆盖 `colorEnabled`/`color`，改为传递原始 effect 给 `buildBrandRenderPlan` 解析；Logo 层消费 `item.effect`，CPR 层消费 `grouped.cpr.effect`；旧路径（无 logoGroup）也改用 `resolveColorEffect`。
+6. [体验-中] `LogoGroupControls`、`CprControls`：配色选项增加"自定义"；选择后显示颜色选择器并直接更新 `effect.color`；切换原色/白色/黑色只改变模式，不丢失已保存的自定义色；`BrandEffectControls` 新增 `hideColorControls` prop，Logo/CPR 不再重复显示"改色"开关和颜色输入（描边、发光、阴影保留）。
+7. [修复-中] `BrandControlsPanel`：Logo 单项样式预览改为使用按当前 `colorMode` 解析后的最终 effect，白色/原色/自定义预览与画布 Render Plan 一致。
+8. [兼容-中] `CustomWorkbench`：Logo 组和 CPR 的 `colorMode` 从硬编码 `'white'` 改为 `deriveBrandColorMode(effect)` 动态推导，保留其 BrandEffectControls 独立改色能力。
+9. [测试-中] 新增 `src/core/brand/colorResolve.test.ts`（22 tests）与 `CprControls.test.ts`（3 tests），并扩展 `uiPolish.test.tsx`：覆盖四模式、缺失 `colorMode` 的旧 JSON、CPR 自定义色往返、Logo 样式预览与 Render Plan 一致性，以及 Logo/CPR 统一的“原色/白色/黑色/自定义”选项顺序；总测试数 153 → 181（新增 28 tests）。
+10. [测试-小] 增加内置横版规格的名称与 JPG 格式回归测试，并将应用版本统一更新为 0.1.32。
 
 ## 0.1.31（画板状态、同步与正式导出模型收口）
 

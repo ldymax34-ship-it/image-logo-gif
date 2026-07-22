@@ -1,5 +1,5 @@
 import { exportJpegWithinLimit, type JpegLimitResult } from '../export/sizeLimit';
-import { buildBrandRenderPlan, createBrandGrid, DEFAULT_CPR_EFFECT, getBrandAssetUrl, getGridSafeArea, resolveCprState, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
+import { buildBrandRenderPlan, createBrandGrid, deriveBrandColorMode, getBrandAssetUrl, getGridSafeArea, resolveColorEffect, resolveCprState, toBrandSvgAsset, type BrandAsset, type BrandEffectState, type BrandLayerState } from '../brand';
 import { renderBrandLayer, type LayoutRect } from '../layout';
 import { computeCropTransform, type BoardPreviewState } from './crop';
 import type { MaterialAsset } from './imageMeta';
@@ -76,12 +76,6 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
   const transform = computeCropTransform(input.asset, input.spec, input.previewState.crop);
   const brandGroup = input.brandLayer.logoGroup;
   if (brandGroup) {
-    const groupColor = brandGroup.colorMode === 'black' ? '#000000' : '#ffffff';
-    const groupEffect: BrandEffectState = {
-      ...input.brandLayer.logoEffect,
-      colorEnabled: brandGroup.colorMode !== 'original',
-      color: groupColor
-    };
     const grouped = buildBrandRenderPlan(
       { width: input.spec.width, height: input.spec.height },
       brandGroup,
@@ -92,7 +86,7 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
           ...resolveCprState(input.brandLayer),
           enabled: input.brandLayer.cprEnabled && Boolean(input.cprAsset)
         },
-        effect: groupEffect
+        effect: input.brandLayer.logoEffect
       }
     );
     const assetsByLayerId = new Map<string, BrandAsset>();
@@ -105,7 +99,7 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
     const layers: BoardRenderLayer[] = [
       ...(!input.brandLayer.logoEnabled ? [] : grouped.logoItems).map((item, index) => {
         const asset = assetsByLayerId.get(item.id);
-        return asset ? { id: item.id, type: 'logo' as const, asset, rect: item.rect, zIndex: 20 + index, effect: groupEffect } : undefined;
+        return asset ? { id: item.id, type: 'logo' as const, asset, rect: item.rect, zIndex: 20 + index, effect: item.effect } : undefined;
       }),
       grouped.cpr && input.cprAsset
         ? {
@@ -168,7 +162,10 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
           asset,
           rect: layer.layout.rect,
           zIndex: layer.zIndex,
-          effect: layer.type === 'logo' ? input.brandLayer.logoEffect : DEFAULT_CPR_EFFECT
+          effect: resolveColorEffect(
+            deriveBrandColorMode(layer.type === 'logo' ? input.brandLayer.logoEffect : input.brandLayer.cprEffect),
+            layer.type === 'logo' ? input.brandLayer.logoEffect : input.brandLayer.cprEffect
+          )
         } satisfies BoardRenderLayer;
       })
      .filter((layer): layer is BoardRenderLayer => Boolean(layer))

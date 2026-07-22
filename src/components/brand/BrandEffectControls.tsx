@@ -5,12 +5,14 @@ export function BrandEffectControls({
   title,
   effect,
   onChange,
-  preview
+  preview,
+  hideColorControls
 }: {
   title: string;
   effect: BrandEffectState;
   onChange: (effect: BrandEffectState) => void;
   preview?: ReactNode;
+  hideColorControls?: boolean;
 }) {
   function patch(next: Partial<BrandEffectState>) {
     onChange({ ...effect, ...next });
@@ -22,21 +24,25 @@ export function BrandEffectControls({
         <summary>{title} 高级样式</summary>
         {preview ? <div className="effect-preview">{preview}</div> : null}
         <div className="effect-grid">
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={effect.colorEnabled}
-              onChange={(event) => patch({ colorEnabled: event.target.checked })}
-            />
-            改色
-          </label>
-          <input
-            className="color-input"
-            type="color"
-            value={effect.color}
-            onChange={(event) => patch({ color: event.target.value })}
-            aria-label={`${title} 颜色`}
-          />
+          {hideColorControls ? null : (
+            <>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={effect.colorEnabled}
+                  onChange={(event) => patch({ colorEnabled: event.target.checked })}
+                />
+                改色
+              </label>
+              <input
+                className="color-input"
+                type="color"
+                value={effect.color}
+                onChange={(event) => patch({ color: event.target.value })}
+                aria-label={`${title} 颜色`}
+              />
+            </>
+          )}
 
           <label className="toggle">
             <input

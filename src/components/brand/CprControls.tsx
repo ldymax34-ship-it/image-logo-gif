@@ -10,22 +10,23 @@ const PLACEMENTS: Array<{ value: CprPlacement; label: string }> = [
 ];
 
 const COLORS: Array<{ value: BrandColorMode; label: string }> = [
-  { value: 'white', label: '白' },
-  { value: 'black', label: '黑' },
-  { value: 'original', label: '原始' }
+  { value: 'original', label: '原色' },
+  { value: 'white', label: '白色' },
+  { value: 'black', label: '黑色' },
+  { value: 'custom', label: '自定义' }
 ];
+
+/** Keeps the custom color value intact while the selected render mode changes. */
+export function setCprColorMode(state: CprState, colorMode: BrandColorMode): CprState {
+  return { ...state, colorMode };
+}
 
 export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset, sectionState }: { state: CprState; onChange: (state: CprState) => void; onApplySameSpec?: () => void; onApplySameAsset?: () => void; sectionState?: 'active' }) {
   const patch = (next: Partial<CprState>) => onChange({ ...state, ...next });
   const patchTransform = (next: Partial<CprState['transform']>) => patch({ transform: { ...state.transform, ...next } });
-  const setColor = (colorMode: BrandColorMode) => patch({
-    colorMode,
-    effect: {
-      ...state.effect,
-      colorEnabled: colorMode !== 'original',
-      color: colorMode === 'black' ? '#000000' : '#ffffff'
-    }
-  });
+  // colorMode controls the resolved render color. effect.color stores the user's
+  // custom color so switching away from and back to custom never discards it.
+  const setColor = (colorMode: BrandColorMode) => onChange(setCprColorMode(state, colorMode));
 
   return (
     <section className="brand-control-group" aria-labelledby="cpr-controls-title">
@@ -57,7 +58,8 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
           {COLORS.map((item) => <button key={item.value} type="button" className={state.colorMode === item.value ? 'active' : ''} onClick={() => setColor(item.value)}>{item.label}</button>)}
         </div>
       </div>
-      <BrandEffectControls title="CPR" effect={state.effect} onChange={(effect) => patch({ effect })} />
+      {state.colorMode === 'custom' ? <label className="control-row"><span>颜色</span><input className="color-input" type="color" value={state.effect.color} onChange={(event) => patch({ effect: { ...state.effect, color: event.target.value } })} aria-label="CPR 自定义颜色" /></label> : null}
+      <BrandEffectControls title="CPR" effect={state.effect} onChange={(effect) => patch({ effect })} hideColorControls />
       {onApplySameSpec || onApplySameAsset ? <div className="brand-apply-actions"><span>应用范围</span>{onApplySameSpec ? <button type="button" onClick={onApplySameSpec}>同尺寸</button> : null}{onApplySameAsset ? <button type="button" onClick={onApplySameAsset}>同素材</button> : null}</div> : null}
     </section>
   );

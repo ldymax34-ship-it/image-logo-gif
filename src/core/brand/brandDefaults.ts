@@ -59,11 +59,54 @@ export function mapLegacyCprAnchor(anchor: BrandLayerState['cprAnchor']): CprPla
   return 'bottom-center';
 }
 
-/** 从旧 BrandEffectState 反推 CPR 配色档位。 */
-export function deriveCprColorMode(effect: BrandEffectState): BrandColorMode {
-  if (!effect.colorEnabled) return 'original';
-  if (effect.color.toLowerCase() === '#000000') return 'black';
-  return 'white';
+/**
+ * 从 BrandEffectState 反推配色档位，用于兼容缺少 colorMode 的旧 JSON。
+ * - colorEnabled=false → original
+ * - color=#000000 → black
+ * - color=#ffffff → white
+ * - 其他颜色 → custom
+ */
+export function deriveBrandColorMode(effect: Pick<BrandEffectState, 'colorEnabled' | 'color'> | null | undefined): BrandColorMode {
+  if (!effect?.colorEnabled) return 'original';
+  const color = effect.color?.toLowerCase();
+  if (color === '#000000') return 'black';
+  if (color === '#ffffff') return 'white';
+  return 'custom';
+}
+
+/** @deprecated Use deriveBrandColorMode. Kept for existing CPR integrations. */
+export const deriveCprColorMode = deriveBrandColorMode;
+
+function isBrandColorMode(value: unknown): value is BrandColorMode {
+  return value === 'original' || value === 'white' || value === 'black' || value === 'custom';
+}
+
+/** Resolves missing or invalid runtime colorMode values from the persisted effect. */
+export function resolveBrandColorMode(
+  colorMode: unknown,
+  effect: Pick<BrandEffectState, 'colorEnabled' | 'color'> | null | undefined
+): BrandColorMode {
+  return isBrandColorMode(colorMode) ? colorMode : deriveBrandColorMode(effect);
+}
+
+/**
+ * 统一配色解析：把 colorMode + effect 解析为最终 BrandEffectState。
+ * Logo 与 CPR 共用此函数，禁止各写一套分支。
+ *
+ * - original: colorEnabled=false，保留素材原色
+ * - white: colorEnabled=true，渲染 #ffffff
+ * - black: colorEnabled=true，渲染 #000000
+ * - custom: colorEnabled=true，渲染 effect.color（用户自定义色）
+ *
+ * 返回的 effect 已是最终效果，渲染层不得再次覆盖颜色。
+ */
+export function resolveColorEffect(colorMode: unknown, effect: BrandEffectState): BrandEffectState {
+  switch (resolveBrandColorMode(colorMode, effect)) {
+    case 'original': return { ...effect, colorEnabled: false };
+    case 'white': return { ...effect, colorEnabled: true, color: '#ffffff' };
+    case 'black': return { ...effect, colorEnabled: true, color: '#000000' };
+    case 'custom': return { ...effect, colorEnabled: true };
+  }
 }
 
 /**
@@ -72,12 +115,18 @@ export function deriveCprColorMode(effect: BrandEffectState): BrandColorMode {
  * 不再继承 Logo custom 坐标。
  */
 export function resolveCprState(layer: BrandLayerState): CprState {
-  if (layer.cprState) return { ...layer.cprState, scale: layer.cprState.scale ?? 1 };
+  if (layer.cprState) {
+    return {
+      ...layer.cprState,
+      scale: layer.cprState.scale ?? 1,
+      colorMode: resolveBrandColorMode(layer.cprState.colorMode, layer.cprState.effect)
+    };
+  }
   return {
     enabled: layer.cprEnabled,
     scale: 1,
     transform: { placement: mapLegacyCprAnchor(layer.cprAnchor), offsetX: 0, offsetY: 0 },
-    colorMode: deriveCprColorMode(layer.cprEffect),
+    colorMode: deriveBrandColorMode(layer.cprEffect),
     effect: { ...layer.cprEffect }
   };
 }
@@ -100,11 +149,4 @@ export function applyLanguageLogoScale(group: LogoGroupState, language: BrandLan
     gameLogoLanguage: language,
     scale: ((group.scale ?? 1) / sourceScale) * targetScale
   };
-}
-
-/** 把当前 CPR 配色档位转成渲染用的纯色（original 返回 undefined 表示保留原色）。 */
-export function getCprRenderColor(colorMode: BrandColorMode): string | undefined {
-  if (colorMode === 'white') return '#ffffff';
-  if (colorMode === 'black') return '#000000';
-  return undefined;
 }

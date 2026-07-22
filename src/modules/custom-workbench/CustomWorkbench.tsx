@@ -1,6 +1,6 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
-import { buildBoardRenderPlan, canvasToBlob, createInitialCropState, createMaterialAsset, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, renderBoardToCanvas, snapLogoGroupPosition, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
+import { buildBoardRenderPlan, canvasToBlob, createInitialCropState, createMaterialAsset, deriveBrandColorMode, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, renderBoardToCanvas, snapLogoGroupPosition, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { BoardCanvas } from '../../components/canvas';
 
@@ -61,11 +61,12 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     return () => onDirtyChange?.(false);
   }, [asset, companyEffect, companyEnabled, companyOffset, companyScale, cprEffect, cprEnabled, format, gameEffect, gameEnabled, gameLanguage, gameOffset, gameScale, guidesVisible, onDirtyChange, snapEnabled]);
 
-  const group = { mode: 'game-only' as const, gameLogoLanguage: brandLayer.logoLanguage, colorMode: 'white' as const, sizePreset: 'xl' as const, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'center' as const, lastExplicitPlacement: 'center' as const };
-  const customCprState = { enabled: cprEnabled, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: cprEffect };
+  const group = { mode: 'game-only' as const, gameLogoLanguage: brandLayer.logoLanguage, colorMode: deriveBrandColorMode(gameEffect), sizePreset: 'xl' as const, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'center' as const, lastExplicitPlacement: 'center' as const };
+  const customCprState = { enabled: cprEnabled, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: deriveBrandColorMode(cprEffect), effect: cprEffect };
   const gameGroup = {
     ...group,
     mode: 'game-only' as const,
+    colorMode: deriveBrandColorMode(gameEffect),
     sizePreset: 'standard' as const,
     scale: gameScale,
     manualOffset: gameOffset,
@@ -76,6 +77,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const companyGroup = {
     ...group,
     mode: 'company-only' as const,
+    colorMode: deriveBrandColorMode(companyEffect),
     sizePreset: 'standard' as const,
     scale: companyScale,
     manualOffset: companyOffset,
