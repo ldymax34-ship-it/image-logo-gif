@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultCprState, createDefaultLogoGroup, createInitialCropState, type BoardPreviewState } from '../../core';
-import { CUSTOM_LOGO_MAX_SCALE, isCustomWorkbenchDirty, type CustomWorkbenchDirtySnapshot } from '../custom-workbench/CustomWorkbench';
+import { isCustomWorkbenchDirty, type CustomWorkbenchDirtySnapshot } from '../custom-workbench/CustomWorkbench';
 import { createFocusSession, isFocusSessionDirty, updateFocusLogo } from './focusSession';
 import { DEFAULT_BRAND_SETTINGS } from '../../core';
 import { isBrandSettingsDirty } from '../../components/brand/BrandSettingsDialog';
@@ -17,9 +17,8 @@ describe('workbench activity sources', () => {
     expect(updateFocusLogo(session, { ...logo, scale: 1.2 }).dirty).toBe(true);
     expect(isCustomWorkbenchDirty(asset)).toBe(true);
     expect(isCustomWorkbenchDirty()).toBe(false);
-    const customInitial = { gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, cprScale: 1, gameOffset: { x: 1, y: 1 }, companyOffset: { x: 2, y: 2 }, cprOffset: { x: 0, y: 0 }, cprEnabled: true, gameEffect: cpr.effect, companyEffect: cpr.effect, cprEffect: cpr.effect, format: 'png' as const, gameLanguage: 'zh-CN' as const, guidesVisible: true, snapEnabled: true } satisfies CustomWorkbenchDirtySnapshot;
+    const customInitial = { canvasSelection: { mode: 'source' as const }, gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, cprScale: 1, gameOffset: { x: 1, y: 1 }, companyOffset: { x: 2, y: 2 }, cprOffset: { x: 0, y: 0 }, cprEnabled: true, gameEffect: cpr.effect, companyEffect: cpr.effect, cprEffect: cpr.effect, format: 'png' as const, gameLanguage: 'zh-CN' as const, guidesVisible: true, snapEnabled: true } satisfies CustomWorkbenchDirtySnapshot;
     expect(isCustomWorkbenchDirty(undefined, customInitial, { ...customInitial, gameScale: 1.1 })).toBe(true);
     expect(isBrandSettingsDirty(DEFAULT_BRAND_SETTINGS, { ...DEFAULT_BRAND_SETTINGS, snapEnabled: !DEFAULT_BRAND_SETTINGS.snapEnabled })).toBe(true);
-    expect(CUSTOM_LOGO_MAX_SCALE).toBe(3);
   });
 });

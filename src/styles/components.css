@@ -263,6 +263,7 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 .custom-stage { display: grid; place-items: center; background: var(--color-canvas); }
 .custom-canvas-stack { position: relative; display: grid; place-items: center; }
 .custom-canvas-stack > .preview-canvas { grid-area: 1 / 1; }
+.custom-canvas-stack > .preview-canvas.is-transparent { pointer-events: none; }
 .custom-number-field { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 8px; align-items: center; }
 .custom-number-field input[type='number'] { width: 72px; min-height: 32px; padding: 4px 6px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-panel-muted); color: var(--color-text); }
 .custom-object-selector { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -277,6 +278,7 @@ textarea:disabled { opacity: .42; cursor: not-allowed; }
 .custom-fabric-overlay .lower-canvas,
 .custom-fabric-overlay .upper-canvas { width: 100% !important; height: 100% !important; }
 .custom-fabric-overlay .upper-canvas { touch-action: none; }
+.custom-fabric-overlay.is-disabled { pointer-events: none; }
 
 .focus-workspace { position: relative; grid-column: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; background: var(--color-border); }
 .focus-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 8px 12px; background: var(--color-panel); border-bottom: 1px solid var(--color-border); }

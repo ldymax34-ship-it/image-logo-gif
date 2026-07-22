@@ -21,7 +21,11 @@ function getGroupWidth(canvas: CanvasSize, gridUnit: number, group: LogoGroupSta
   // continuous: changing scale never switches to a different sizing formula.
   const presetScale = group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : group.sizePreset === 'xl' ? 1.45 : 1;
   const width = gridUnit * (group.placement === 'center' ? 4 : 2) * presetScale * (group.scale ?? 1) * languageScale;
-  return Math.min(canvas.width - gridUnit * 2, width);
+  // Standard layout keeps its historical preset behavior. The custom
+  // workbench resolves its own geometric scale before building this plan.
+  return group.placement === 'custom' && group.constraintMode === 'canvas'
+    ? width
+    : Math.min(canvas.width - gridUnit * 2, width);
 }
 
 function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
@@ -43,6 +47,26 @@ function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupS
   const companyAspect = company.aspectRatio ?? 4;
   const gameHeight = Math.max(1, (width - gap) / (gameAspect * (group.gameLogoScale ?? 1) + companyAspect * companyHeightMultiplier));
   return { width, height: gameHeight, gameHeight, companyHeight: gameHeight * companyHeightMultiplier, gap };
+}
+
+/** Custom composition may grow until its actual group geometry meets the canvas edge. */
+function constrainCustomCanvasLogoGroup(
+  canvas: CanvasSize,
+  gridUnit: number,
+  group: LogoGroupState,
+  company?: BrandAsset,
+  game?: BrandAsset
+): LogoGroupState {
+  if (group.placement !== 'custom' || group.constraintMode !== 'canvas') return group;
+  const dimensions = groupDimensions(canvas, gridUnit, group, company, game);
+  const geometricMultiplier = Math.min(
+    1,
+    canvas.width / Math.max(1, dimensions.width),
+    canvas.height / Math.max(1, dimensions.height)
+  );
+  return geometricMultiplier < 1
+    ? { ...group, scale: (group.scale ?? 1) * geometricMultiplier }
+    : group;
 }
 
 export type LogoPlacementBounds = {
@@ -121,9 +145,9 @@ export function computeCprPlacementRect(
   constraintMode: CprConstraintMode = 'safe-area'
 ): LayoutRect {
   const grid = createBrandGrid(canvas);
+  const safeMargin = constraintMode === 'canvas' ? 0 : grid.unit * .25;
   const cprWidth = grid.unit * 5.5 * scale;
   const cprHeight = cprWidth / (CPR_PRESET.viewBox.width / CPR_PRESET.viewBox.height);
-  const safeMargin = constraintMode === 'canvas' ? 0 : grid.unit * .25;
   const recommendedMargin = grid.unit * .5;
   const placement = transform.placement === 'custom' ? 'bottom-right' : transform.placement;
   const baseY = canvas.height - recommendedMargin - cprHeight;
@@ -148,7 +172,9 @@ function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRende
 
 export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, options: BuildBrandRenderOptions = {}): BrandRenderPlan {
   group = normalizeLogoGroup(group);
-  const grid = createBrandGrid(canvas); const logoEffect = resolveColorEffect(group.colorMode, options.effect ?? DEFAULT_BRAND_EFFECT); const color = logoEffect.colorEnabled ? logoEffect.color : '#ffffff';
+  const grid = createBrandGrid(canvas);
+  group = constrainCustomCanvasLogoGroup(canvas, grid.unit, group, options.companyLogo, options.gameLogo);
+  const logoEffect = resolveColorEffect(group.colorMode, options.effect ?? DEFAULT_BRAND_EFFECT); const color = logoEffect.colorEnabled ? logoEffect.color : '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
   const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);
   const cpr = cprState?.enabled ? buildCprItem(canvas, cprState) : undefined;

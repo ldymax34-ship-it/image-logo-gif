@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTransformBaseline, fromFabricFrame, fromFabricFrameWithBaseline, getCustomTransformBounds, toConstrainedFabricFrame, toFabricFrame } from './customFabricCoords';
+import { createTransformBaseline, fromFabricFrame, fromFabricFrameWithBaseline, getCustomObjectScaleLimits, getCustomTransformBounds, toConstrainedFabricFrame, toFabricFrame } from './customFabricCoords';
 
 const RECT = { x: 460, y: 216, width: 320, height: 96 };
 const CANVAS = { width: 1920, height: 1080 };
@@ -90,5 +90,31 @@ describe('CustomWorkbench Fabric coordinate mapping', () => {
     );
     expect(smaller).toEqual({ x: 960, y: 792, scale: 1.5 });
     expect(getCustomTransformBounds(RECT, 1, CANVAS, 3)).toMatchObject({ maxX: 960, maxY: 792 });
+  });
+
+  it.each([
+    [{ width: 1920, height: 1080 }, 6],
+    [{ width: 1080, height: 1920 }, 3.375],
+    [{ width: 1200, height: 1200 }, 3.75]
+  ] as const)('uses only the canvas geometry as the maximum scale for %o', (canvas, expectedMax) => {
+    expect(getCustomObjectScaleLimits({ x: 0, y: 0, width: 320, height: 96 }, 1, canvas)).toMatchObject({ minScale: .01, maxScale: expectedMax });
+    const result = fromFabricFrame(
+      { left: 9999, top: 9999, width: 320, height: 96, scaleX: 99, scaleY: 99 },
+      { x: 0, y: 0, width: 320, height: 96 }, 1, 1, canvas, .01, 3
+    );
+    expect(result.scale).toBe(expectedMax);
+    expect(result.x + 320 * result.scale).toBeCloseTo(canvas.width);
+    expect(result.y + 96 * result.scale).toBeLessThanOrEqual(canvas.height);
+  });
+
+  it('repositions a corner object while allowing it to reach the global geometric maximum', () => {
+    const result = fromFabricFrame(
+      { left: 1600, top: 900, width: 320, height: 96, scaleX: 99, scaleY: 99 },
+      RECT, 1, 1, CANVAS, .01, 3
+    );
+    expect(result.scale).toBe(6);
+    expect(result).toMatchObject({ x: 0, y: 504 });
+    expect(result.x + RECT.width * result.scale).toBe(CANVAS.width);
+    expect(result.y + RECT.height * result.scale).toBe(CANVAS.height);
   });
 });

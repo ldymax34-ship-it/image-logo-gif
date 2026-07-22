@@ -142,7 +142,8 @@ export function CustomFabricOverlay({
   onSelectedIdChange,
   onTransformChange,
   onSnapTransform,
-  onError
+  onError,
+  disabled = false
 }: {
   canvas: { width: number; height: number };
   previewScale: number;
@@ -152,6 +153,8 @@ export function CustomFabricOverlay({
   onTransformChange: (id: CustomFabricObjectId, transform: CustomObjectTransform) => void;
   onSnapTransform?: (id: CustomFabricObjectId, transform: CustomObjectTransform, item: CustomFabricOverlayItem) => CustomObjectTransform;
   onError?: (message: string) => void;
+  /** Crop mode leaves pointer events to BoardCanvas; object state remains reconciled. */
+  disabled?: boolean;
 }) {
   const elementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
@@ -267,7 +270,15 @@ export function CustomFabricOverlay({
     if (result.selectedId !== selectedId) onSelectedIdChange(result.selectedId);
   }, [canvas, items, onSelectedIdChange, previewScale, selectedId]);
 
-  return <div className="custom-fabric-overlay" aria-label="固定对象交互层"><canvas ref={elementRef} /></div>;
+  useEffect(() => {
+    if (!disabled) return;
+    const instance = fabricCanvasRef.current;
+    if (!instance) return;
+    instance.discardActiveObject();
+    instance.requestRenderAll();
+  }, [disabled]);
+
+  return <div className={`custom-fabric-overlay ${disabled ? 'is-disabled' : ''}`} aria-label="固定对象交互层"><canvas ref={elementRef} /></div>;
 }
 
 export { createInteractionObject, reconcileObjects };

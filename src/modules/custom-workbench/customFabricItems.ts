@@ -1,4 +1,4 @@
-import type { CanvasRect } from './customFabricCoords';
+import { getCustomObjectScaleLimits, type CanvasRect } from './customFabricCoords';
 
 export type CustomFabricObjectId = 'game' | 'company' | 'cpr';
 
@@ -36,7 +36,7 @@ export function resolveCustomFabricItems({
   gameScale,
   companyScale,
   cprScale,
-  logoMaxScale
+  canvas
 }: {
   gamePlan?: RenderPlanLike;
   companyPlan?: RenderPlanLike;
@@ -46,16 +46,25 @@ export function resolveCustomFabricItems({
   gameScale: number;
   companyScale: number;
   cprScale: number;
-  logoMaxScale: number;
+  canvas: { width: number; height: number };
 }): CustomFabricOverlayItem[] {
   const gameRect = gamePlan?.layers.find((item) => item.type === 'logo')?.rect;
   const companyRect = companyPlan?.layers.find((item) => item.type === 'logo')?.rect;
   const cprRect = gamePlan?.layers.find((item) => item.type === 'cpr')?.rect;
 
+  const toItem = (id: CustomFabricObjectId, rect: CanvasRect, visible: boolean, currentScale: number, minScale: number): CustomFabricOverlayItem => ({
+    id,
+    rect,
+    visible,
+    currentScale,
+    minScale,
+    maxScale: getCustomObjectScaleLimits(rect, currentScale, canvas, minScale).maxScale
+  });
+
   return [
-    gameRect ? { id: 'game' as const, rect: gameRect, visible: gameEnabled, currentScale: gameScale, minScale: .6, maxScale: logoMaxScale } : undefined,
-    companyRect ? { id: 'company' as const, rect: companyRect, visible: companyEnabled, currentScale: companyScale, minScale: .6, maxScale: logoMaxScale } : undefined,
-    cprRect ? { id: 'cpr' as const, rect: cprRect, visible: cprEnabled, currentScale: cprScale, minScale: .5, maxScale: 2 } : undefined
+    gameRect ? toItem('game', gameRect, gameEnabled, gameScale, .01) : undefined,
+    companyRect ? toItem('company', companyRect, companyEnabled, companyScale, .01) : undefined,
+    cprRect ? toItem('cpr', cprRect, cprEnabled, cprScale, .01) : undefined
   ].filter((item): item is CustomFabricOverlayItem => Boolean(item));
 }
 

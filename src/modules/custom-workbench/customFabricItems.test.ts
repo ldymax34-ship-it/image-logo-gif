@@ -25,7 +25,7 @@ describe('resolveCustomFabricItems', () => {
       gameScale: 1,
       companyScale: 1.2,
       cprScale: .8,
-      logoMaxScale: 3
+      canvas: { width: 1920, height: 1080 }
     });
 
     expect(items).toEqual([
@@ -33,6 +33,7 @@ describe('resolveCustomFabricItems', () => {
       expect.objectContaining({ id: 'company', rect: companyRect, visible: false }),
       expect.objectContaining({ id: 'cpr', rect: cprRect, visible: true })
     ]);
+    expect(items.find((candidate) => candidate.id === 'game')?.maxScale).toBeCloseTo(1920 / 358);
   });
 
   it('keeps the game Logo custom transform stable when switching between supported languages', () => {
@@ -49,6 +50,16 @@ describe('resolveCustomFabricItems', () => {
     );
 
     expect(jaPlan.logoGroupRect).toEqual(zhPlan.logoGroupRect);
+  });
+
+  it('does not apply the standard layout-profile width cap to a custom canvas Logo', () => {
+    const plan = buildBrandRenderPlan(
+      { width: 1920, height: 1080 },
+      { ...createDefaultLogoGroup(), placement: 'custom', constraintMode: 'canvas', manualOffset: { x: 9999, y: 9999 }, scale: 16 },
+      { gameLogo: { id: 'game', type: 'logo', sourceKind: 'image', name: 'game', language: 'zh-CN', sourceUrl: '/game.png', aspectRatio: 3 } }
+    );
+
+    expect(plan.logoGroupRect).toMatchObject({ x: 0, y: 440, width: 1920, height: 640 });
   });
 
   it('creates late-arriving company/CPR objects and updates resource geometry from the latest Render Plan', () => {

@@ -1,5 +1,5 @@
 import type { CustomFabricObjectId } from './customFabricItems';
-import type { CustomObjectTransform } from './customFabricCoords';
+import { constrainCustomTransform, type CanvasRect, type CustomObjectTransform } from './customFabricCoords';
 
 export type CustomFabricTransformPatch = {
   gameOffset?: { x: number; y: number };
@@ -9,6 +9,20 @@ export type CustomFabricTransformPatch = {
   cprOffset?: { x: number; y: number };
   cprScale?: number;
 };
+
+/**
+ * Reuses the Fabric geometry rule after a canvas-size change so all fixed
+ * objects remain fully inside the newly selected custom canvas.
+ */
+export function constrainCustomCanvasObjectTransform(
+  transform: CustomObjectTransform,
+  rect: CanvasRect,
+  currentScale: number,
+  canvas: { width: number; height: number },
+  minScale = .01
+): CustomObjectTransform {
+  return constrainCustomTransform(transform, rect, currentScale, canvas, minScale, Number.POSITIVE_INFINITY);
+}
 
 /** Converts Fabric interaction output into existing CustomWorkbench domain fields. */
 export function toCustomFabricTransformPatch(

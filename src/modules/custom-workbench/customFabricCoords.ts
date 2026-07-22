@@ -75,15 +75,30 @@ export function fromFabricFrame(
 }
 
 /** Applies the same scale-aware bounds constraint for Fabric and numeric edits. */
+export function getCustomObjectScaleLimits(
+  baseRect: CanvasRect,
+  currentScale: number,
+  canvas: { width: number; height: number },
+  minScale = .01
+): { minScale: number; maxScale: number } {
+  const baseWidth = Math.max(Number.EPSILON, baseRect.width / Math.max(Number.EPSILON, currentScale));
+  const baseHeight = Math.max(Number.EPSILON, baseRect.height / Math.max(Number.EPSILON, currentScale));
+  return {
+    minScale: Math.max(.01, minScale),
+    maxScale: Math.max(.01, Math.min(canvas.width / baseWidth, canvas.height / baseHeight))
+  };
+}
+
 export function constrainCustomTransform(
   transform: CustomObjectTransform,
   baseRect: CanvasRect,
   currentScale: number,
   canvas: { width: number; height: number },
   minScale: number,
-  maxScale: number
+  _maxScale: number
 ): CustomObjectTransform {
-  const nextScale = clamp(finite(transform.scale, currentScale), minScale, maxScale);
+  const limits = getCustomObjectScaleLimits(baseRect, currentScale, canvas, minScale);
+  const nextScale = clamp(finite(transform.scale, currentScale), limits.minScale, limits.maxScale);
   const bounds = getCustomTransformBounds(baseRect, currentScale, canvas, nextScale);
 
   return {

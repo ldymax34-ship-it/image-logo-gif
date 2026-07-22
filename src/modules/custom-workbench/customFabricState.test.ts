@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildBoardRenderPlan, computeCprPlacementRect, createDefaultCprState, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT } from '../../core';
 import { CUSTOM_FABRIC_CANVAS_OPTIONS, CUSTOM_FABRIC_CORNER_CONTROLS } from './CustomFabricOverlay';
-import { toCustomFabricTransformPatch } from './customFabricState';
+import { constrainCustomCanvasObjectTransform, toCustomFabricTransformPatch } from './customFabricState';
 
 describe('Fabric interaction domain writes', () => {
   it('writes game, company, and CPR transforms into their independent existing fields', () => {
@@ -65,5 +65,18 @@ describe('Fabric interaction domain writes', () => {
 
     const cpr = createDefaultCprState();
     expect(cpr.constraintMode).toBe('safe-area');
+  });
+
+  it('reconstrains an existing fixed object when a source-following canvas becomes smaller', () => {
+    const result = constrainCustomCanvasObjectTransform(
+      { x: 1550, y: 900, scale: 4 },
+      { x: 0, y: 0, width: 1600, height: 480 },
+      4,
+      { width: 1080, height: 1920 }
+    );
+
+    expect(result).toEqual({ x: 0, y: 900, scale: 2.7 });
+    expect(result.x + 1600 * (result.scale / 4)).toBe(1080);
+    expect(result.y + 480 * (result.scale / 4)).toBeLessThanOrEqual(1920);
   });
 });
