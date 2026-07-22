@@ -177,6 +177,5 @@ jobs:
           if [ -n "$STAGING_TAG" ]; then
             gh release delete "$STAGING_TAG" \
               --repo "$PREVIEW_RELEASE_REPOSITORY" \
-              --cleanup-tag \
               --yes
           fi
