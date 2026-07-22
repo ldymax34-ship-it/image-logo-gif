@@ -18,6 +18,8 @@ Updater 签名只验证更新包的完整性和来源；它**不是** Windows Au
 
 ## 发布流程
 
+发布前必须遵守 [Preview 自动更新发布门禁](UPDATE_RELEASE_GATES.md)：CI 可并行构建双平台，但客户端可见更新必须经历“macOS 候选实机验证 → 正式双平台 Preview 放行 → Windows 实机验证”。公共 `preview/latest-preview.json` 不得在 macOS 验证通过前暴露 Windows 可安装更新。
+
 1. 在私有源码仓库触发 `Publish signed Preview updater`。
 2. 构建 `darwin-aarch64` 和 `windows-x86_64`，并生成签名 updater artifact、`.sig` 与人工安装包。
 3. 用 `.sig` 的实际文本生成 `latest-preview.json`。
@@ -59,3 +61,5 @@ Preview 清单仅有两个平台：
 
 - macOS Apple Silicon：已完成 `0.1.26 → 0.1.27` 的发现、提示、下载、签名包、安装和重启验证。
 - Windows x64：CI 构建、Preview 资产/清单和 `0.1.26` 测试基线包均已验证；仍需在真实 Windows 设备执行完整更新回归，步骤见 [Windows updater test](WINDOWS_UPDATER_TEST.md)。
+
+从 `0.1.30` 起，Windows 实机验证在 macOS 候选验证通过并正式放行 Windows 条目后执行；不得以旧版、占位或不匹配签名的 Windows 包提前暴露更新。

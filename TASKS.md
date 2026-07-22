@@ -4,6 +4,13 @@
 
 ## 当前版本：0.1.29 → 0.1.30 预览版过渡期
 
+### 自动更新发布门禁（强制）
+
+- [ ] `0.1.30` 采用 GitHub 桥接：`0.1.29` 的 manifest 与安装包均由 GitHub 提供；`0.1.30` 才内置已验证 CNB manifest first、GitHub fallback。
+- [ ] CI 可并行构建 macOS arm64 / Windows x64，但发布必须先完成 macOS 候选实机更新验证；Windows 在此之前不得出现在公共 Preview 清单中。
+- [ ] macOS 候选通过后，才生成含两个真实平台条目的公共 Preview 清单，并继续完成 Windows 真实 `0.1.29 → 0.1.30` 验证。
+- [ ] 发布细则见 `docs/UPDATE_RELEASE_GATES.md`；不得用删平台字段、旧版包或占位包绕过阶段门禁。
+
 ### UI 正式化（已完成）
 1. [UI-大] 模块导航改为 72px 固定宽，带语义状态点（蓝=激活/绿=就绪/黄=警告/红=错误/灰=未启用），切换模块不改变布局尺寸。
 2. [UI-中] SectionHeader 使用 data-section-state 驱动状态点颜色，Logo/CPR 启用时点为蓝色。
@@ -15,7 +22,7 @@
 
 ### CNB 国内更新镜像（准备中）
 8. [维护-中] 创建 CNB 镜像方案文档 `docs/CNB_MIRROR_PLAN.md`，包含：多 endpoint 回退行为、验收标准、所需外部信息清单。
-9. [维护-中] 创建 CNB 镜像发布脚本 `scripts/cnb-mirror-release.sh`，实现：从 GitHub 下载资产 → 修改 manifest URL → 上传到 CNB → 验证匿名下载。
+9. [维护-中] 创建 CNB 镜像准备脚本 `scripts/cnb-mirror-release.sh`，仅下载 GitHub 已签名资产、记录哈希、在已验证 CNB 附件基址后生成 manifest；不猜测上传 API、不读取 token、不上传私钥。
 10. [维护-小] 确认 Tauri Updater v2.10.1 在 `endpoints` 数组中按顺序回退：第一个不可达/非 200/无效 JSON/超时 → 自动尝试下一个，不产生并发下载。
 
 ### 正式产品路线
