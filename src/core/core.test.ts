@@ -367,6 +367,21 @@ describe('core 0.1.x foundation', () => {
     expect(text).toContain('微博横版 1200x675 jpg 800KB');
   });
 
+  it('uses dimension-only names for the built-in wide presets', () => {
+    const widePreset = PRESET_TEMPLATES.find((preset) => preset.id === 'wide-campaign');
+    expect(widePreset?.specs.map((spec) => spec.name)).toEqual([
+      '1920x1080',
+      '2560x1097',
+      '1600x1200'
+    ]);
+    expect(widePreset?.specs.every((spec) => spec.format === 'jpg')).toBe(true);
+    expect(serializePresetSpecs(widePreset?.specs ?? [])).toBe([
+      '1920x1080',
+      '2560x1097',
+      '1600x1200'
+    ].join('\n'));
+  });
+
   it('converts material specs into preset-safe specs', () => {
     const presetSpecs = toPresetSpecs([{ id: 'spec_1', name: 'A', width: 1080, height: 1920, format: 'jpg' }]);
     expect(presetSpecs).toEqual([{ name: 'A', width: 1080, height: 1920, format: 'jpg' }]);
