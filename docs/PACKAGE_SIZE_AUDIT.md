@@ -78,6 +78,13 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - Windows NSIS、Windows 安装目录、macOS DMG、macOS `.app`：本阶段未生成，不能据此前端构建结果推断平台包体增量。
 - 结论：无新增运行时和二进制包体风险；平台安装包的真实增量继续留待后续实机构建审计。
 
+## 0.1.33 Stage 5B 默认启动设置审计（2026-07-23）
+
+- 新增依赖：无。偏好模型、`localStorage` 键与设置控件均使用既有 React/TypeScript 和浏览器能力。
+- 前端 `dist`：1,188 KB，较 Stage 5A 的 1,184 KB 约 +4 KB；未新增 Rust crate、sidecar、字体、模型、Vue、FFmpeg 或第二个 Tauri window。
+- Windows NSIS、Windows 安装目录、macOS DMG、macOS `.app`：本阶段未生成，不能据此前端构建结果推断平台包体增量。
+- 结论：无新增运行时和二进制包体风险；平台安装包的真实增量继续留待后续实机构建审计。
+
 ## 0.1.32 Fabric.js 接入审计（2026-07-22）
 
 ### 当前基线与增量

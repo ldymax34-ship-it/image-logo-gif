@@ -2,13 +2,13 @@
 
 ## 当前目标
 
-0.1.33 工具箱路线：完成 Stage 5A 品宣工具箱启动器后，继续 Stage 5B 默认启动偏好；不继续旧 FFUI / FFmpeg 审计 PoC，不开始 Stage 6。
+0.1.33 工具箱路线：Stage 5A 品宣工具箱启动器与 Stage 5B 默认启动偏好均已完成；不继续旧 FFUI / FFmpeg 审计 PoC，不开始 Stage 6。
 
 ## 本轮任务
 
 - [x] Stage 5A：工具箱首页、可用/未完成入口、返回工具箱与轻量应用设置表面。复用现有 React/Tauri 壳，无 FFmpeg、Vue、第二窗口或新依赖。
-- [ ] Stage 5B：版本化应用偏好、默认启动与未完成工具回退。
-- [x] Stage 5A 完整门禁、包体记录、浏览器截图与独立提交；Stage 5B 仍待独立执行，不推送、不发布。
+- [x] Stage 5B：版本化应用偏好、默认启动与未完成工具回退；仅记录工具入口，不保存工作内容。
+- [x] Stage 5A、5B 均已完成独立门禁、包体记录、浏览器截图与提交；不推送、不发布。
 
 ## 暂不处理
 
@@ -65,6 +65,14 @@
 - [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（255 tests / 34 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
 - [x] 包体：未新增 npm/Rust/二进制依赖；前端 `dist` 为 1,184 KB，较 Stage 4 记录的 1,172 KB 约 +12 KB。未构建新平台安装包，macOS/Windows 包体增量待实机构建审计。
 - [ ] 仍需 macOS/Windows Tauri 实机：工具箱初始页、返回入口、键盘焦点与系统字体渲染；浏览器截图不替代桌面壳验证。
+
+### 工具箱路线｜阶段 5B：默认启动设置
+- [x] 新增独立 `AppPreferencesV1`：`startupTool` 支持工具箱首页、Logo 与版式、GIF / 媒体工具、水印与追溯、上次使用的工具；`lastTool` 只记录工具入口，未保存任务和工作内容不恢复。
+- [x] 偏好使用独立本地键 `brand-material-workbench.app-preferences.v1` 持久化，不写入 `BrandSettingsV1`、Logo 资源、`BoardDocument` 或任何画板状态。
+- [x] 缺失、损坏 JSON、未知版本和未知值统一回退工具箱首页；GIF / 媒体工具、水印与追溯作为启动项或 `lastTool` 时也统一回退，不能创建空白模块。
+- [x] 新增偏好解析和应用设置组件回归，覆盖直接启动、`last`、无效/损坏/未知数据、未完成工具回退与设置的五个选项。浏览器开发环境实际检查：`logo-layout` 重载后进入工作台，`gif-media` 重载后显示工具箱；完成后恢复默认工具箱启动项。截图仅保存在 `/private/tmp/brand-material-workbench-stage5b-*.png`。
+- [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（259 tests / 36 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [ ] 仍需 macOS/Windows Tauri 实机：本地偏好跨桌面重启、系统 WebView 存储、键盘选择与工具箱/工作台焦点；浏览器重载和纯函数回归不替代该项。
 
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。

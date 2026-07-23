@@ -12,8 +12,9 @@ import {
   type BrandSettingsV1
 } from '../core';
 import { AppActivityContext, IDLE_APP_ACTIVITY, type AppActivity } from './appActivity';
+import { loadAppPreferences, resolveStartupTool, saveAppPreferences, type AppPreferencesV1 } from './appPreferences';
 
-export type AppTool = 'toolbox' | 'logo-layout';
+export type AppTool = ReturnType<typeof resolveStartupTool>;
 export type AppNavigationTarget = WorkbenchModule | 'toolbox';
 
 
@@ -26,8 +27,10 @@ export type MediaHeaderState = {
 
 type AppRuntime = {
   activeTool: AppTool;
-  setActiveTool: Dispatch<SetStateAction<AppTool>>;
+  setActiveTool: (tool: AppTool) => void;
   requestToolbox: () => void;
+  appPreferences: AppPreferencesV1;
+  setAppPreferences: Dispatch<SetStateAction<AppPreferencesV1>>;
   activeModule: WorkbenchModule;
   setActiveModule: Dispatch<SetStateAction<WorkbenchModule>>;
   requestModuleChange: (module: WorkbenchModule) => void;
@@ -78,7 +81,8 @@ export function resolveAppActivity(
 }
 
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
-  const [activeTool, setActiveTool] = useState<AppTool>('toolbox');
+  const [appPreferences, setAppPreferences] = useState<AppPreferencesV1>(() => loadAppPreferences());
+  const [activeTool, setActiveTool] = useState<AppTool>(() => resolveStartupTool(appPreferences));
   const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
   const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
@@ -95,6 +99,12 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveBrandSettings(brandSettings);
   }, [brandSettings]);
+  useEffect(() => {
+    saveAppPreferences(appPreferences);
+  }, [appPreferences]);
+  useEffect(() => {
+    setAppPreferences((previous) => previous.lastTool === activeTool ? previous : { ...previous, lastTool: activeTool });
+  }, [activeTool]);
 
   const requestModuleChange = useCallback((module: WorkbenchModule) => {
     if (module === activeModule) return;
@@ -104,6 +114,9 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const requestToolbox = useCallback(() => {
     if (mediaModuleChangeGuardRef.current && !mediaModuleChangeGuardRef.current('toolbox')) return;
     setActiveTool('toolbox');
+  }, []);
+  const setActiveAppTool = useCallback((tool: AppTool) => {
+    setActiveTool(tool);
   }, []);
   const registerMediaModuleChangeGuard = useCallback((guard: (target: AppNavigationTarget) => boolean) => {
     mediaModuleChangeGuardRef.current = guard;
@@ -133,8 +146,10 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppRuntime>(() => ({
     activeTool,
-    setActiveTool,
+    setActiveTool: setActiveAppTool,
     requestToolbox,
+    appPreferences,
+    setAppPreferences,
     activeModule,
     setActiveModule,
     requestModuleChange,
@@ -160,7 +175,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     registerGlobalBrandResourceHandlers,
     mediaHeader,
     setMediaHeader
-  }), [activeTool, requestToolbox, activeModule, requestModuleChange, registerMediaModuleChangeGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, applicationSettingsOpen, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
+  }), [activeTool, setActiveAppTool, requestToolbox, appPreferences, activeModule, requestModuleChange, registerMediaModuleChangeGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, applicationSettingsOpen, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
 
   return <AppRuntimeContext.Provider value={value}><AppActivityContext.Provider value={resolvedActivity}>{children}</AppActivityContext.Provider></AppRuntimeContext.Provider>;
 }

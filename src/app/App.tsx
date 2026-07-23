@@ -29,6 +29,8 @@ function AppContent() {
     requestModuleChange,
     requestToolbox,
     setActiveTool,
+    appPreferences,
+    setAppPreferences,
     brandAssets,
     brandLayer,
     mediaHeader,
@@ -53,7 +55,7 @@ function AppContent() {
     [activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled]
   );
 
-  const appSettings = applicationSettingsOpen ? <ApplicationSettingsDialog onClose={() => setApplicationSettingsOpen(false)} /> : null;
+  const appSettings = applicationSettingsOpen ? <ApplicationSettingsDialog preferences={appPreferences} onPreferencesChange={setAppPreferences} onClose={() => setApplicationSettingsOpen(false)} /> : null;
 
   return <>
     <UncleanExitNotice />

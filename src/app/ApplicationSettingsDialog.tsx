@@ -1,6 +1,19 @@
 import { useEffect } from 'react';
+import type { AppPreferencesV1, StartupTool } from './appPreferences';
 
-export function ApplicationSettingsDialog({ onClose }: { onClose: () => void }) {
+const STARTUP_OPTIONS: Array<{ value: StartupTool; label: string }> = [
+  { value: 'toolbox', label: '工具箱首页' },
+  { value: 'logo-layout', label: 'Logo 与版式' },
+  { value: 'gif-media', label: 'GIF / 媒体工具' },
+  { value: 'watermark-trace', label: '水印与追溯' },
+  { value: 'last', label: '上次使用的工具' }
+];
+
+export function ApplicationSettingsDialog({ preferences, onPreferencesChange, onClose }: {
+  preferences: AppPreferencesV1;
+  onPreferencesChange: (preferences: AppPreferencesV1) => void;
+  onClose: () => void;
+}) {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -20,8 +33,17 @@ export function ApplicationSettingsDialog({ onClose }: { onClose: () => void }) 
           <button type="button" className="icon-button" onClick={onClose} aria-label="关闭应用设置" title="关闭">×</button>
         </div>
         <div className="application-settings-dialog-body">
-          <p>启动偏好会保存在本机，不影响 Logo 资源、画板或未保存的工作内容。</p>
-          <p className="inline-note">当前版本仅提供工具箱与 Logo 与版式工作区。</p>
+          <label className="settings-field">
+            <span>启动时打开</span>
+            <select
+              value={preferences.startupTool}
+              onChange={(event) => onPreferencesChange({ ...preferences, startupTool: event.target.value as StartupTool })}
+            >
+              {STARTUP_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <p>启动偏好会保存在本机，只记录工具入口，不恢复未保存的工作内容。</p>
+          <p className="inline-note">GIF / 媒体工具和水印与追溯暂未开放；选择它们或上次使用未开放工具时，会安全回退到工具箱首页。</p>
         </div>
         <div className="dialog-footer">
           <span />

@@ -1,5 +1,31 @@
 # 更新日志
 
+## 2026-07-23｜Stage 5B｜默认启动设置
+
+### 修改文件
+- `src/app/appPreferences.ts`、`src/app/appPreferences.test.ts`
+- `src/app/ApplicationSettingsDialog.tsx`、`src/app/ApplicationSettingsDialog.test.tsx`
+- `src/app/AppRuntimeProvider.tsx`、`src/app/App.tsx`、`src/styles/components.css`
+- `TASKS.md`、`README.md`、`docs/PACKAGE_SIZE_AUDIT.md`
+
+### 主要改动
+- 新增独立、版本化的 `AppPreferencesV1` 与本地持久化键；偏好只保存启动入口和上次工具，不保存素材、画板、Logo 设置或任何未保存工作内容。
+- 设置提供工具箱首页、Logo 与版式、GIF / 媒体工具、水印与追溯、上次使用的工具五个启动选择。
+- 损坏 JSON、未知版本、未知值、未完成 GIF / 水印启动项或未完成 `lastTool` 都会安全回退到工具箱首页；当前不会创建空模块。
+
+### 验证方式
+- 定向回归覆盖默认/直接/上次启动、损坏 JSON、未知版本/值、未完成工具回退和设置选项；完整前端回归为 259 tests / 36 files，`git diff --check`、`npm run verify:core`、`npm run build`、`cargo fmt --check`、`cargo check` 与 `cargo test`（9 passed）均通过。
+- 浏览器开发环境实际验证：选择 Logo 与版式后重载进入现有工作台；选择 GIF / 媒体工具后重载回退工具箱。完成后恢复工具箱首页启动项；截图只保存于 `/private/tmp/brand-material-workbench-stage5b-*.png`。
+
+### 影响范围
+- 仅应用级偏好和设置表面；不改变品牌设置、BoardDocument、工作台业务状态、Render Plan、导出、同步、Fabric、更新或发布链路。
+
+### 未完成 / 风险
+- 原生 Tauri/WebView 的持久化、桌面重启、系统字体与键盘焦点仍需 macOS/Windows 人工验证；浏览器重载和纯函数测试不替代该项。
+
+### 下一步建议
+- Stage 5A/5B 已完成，按路线停在此处；未获得新指令前不开始 Stage 6 FFUI 隔离 PoC。
+
 ## 2026-07-23｜Stage 5A｜品宣工具箱启动器
 
 ### 修改文件

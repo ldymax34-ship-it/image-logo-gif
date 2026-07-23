@@ -59,6 +59,7 @@ body {
 .application-settings-dialog { width: min(440px, calc(100vw - 32px)); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-panel); box-shadow: var(--shadow-dialog); }
 .application-settings-dialog-body { display: grid; gap: 8px; padding: 16px; }
 .application-settings-dialog-body p { margin: 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.5; }
+.application-settings-dialog .settings-field { grid-template-columns: 96px minmax(0, 1fr); }
 .section-title { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text); font-size: var(--font-size-page); font-weight: 650; }
 .section-title > span, .brand-resource-manager h3::before, .spec-editor-header > span::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 7px; border-radius: 50%; background: var(--color-text-muted); vertical-align: middle; }
 .topbar {
