@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { TOOL_HINTS } from './FocusWorkspace';
+import { TOOL_HINT_DETAILS, TOOL_HINTS } from './FocusWorkspace';
 import { BrandControlsPanel } from './BrandControlsPanel';
 import { DEFAULT_BRAND_LAYER, DEFAULT_BRAND_SETTINGS, createDefaultCprState, createDefaultLogoGroup } from '../../core';
 import type { BrandLayerState, BrandSettingsV1, CprState, LogoGroupState } from '../../core';
@@ -25,21 +25,24 @@ function defaultProps() {
 
 describe('FocusWorkspace tool hints', () => {
   it('shows crop hint for crop tool', () => {
-    expect(TOOL_HINTS.crop).toContain('拖动画面移动素材');
+    expect(TOOL_HINTS.crop).toContain('拖动画面裁切');
     expect(TOOL_HINTS.crop).toContain('滚轮缩放查看');
-    expect(TOOL_HINTS.crop).toContain('Space / 中键拖动平移视图');
+    expect(TOOL_HINTS.crop).toContain('Space / 中键平移');
+    expect(TOOL_HINT_DETAILS.crop).toContain('右侧“素材缩放”');
   });
 
   it('shows logo hint for logo tool', () => {
-    expect(TOOL_HINTS.logo).toContain('拖动 Logo 调整位置');
-    expect(TOOL_HINTS.logo).toContain('方向键微调 1px');
-    expect(TOOL_HINTS.logo).toContain('Shift + 方向键微调 10px');
+    expect(TOOL_HINTS.logo).toContain('拖动 Logo');
+    expect(TOOL_HINTS.logo).toContain('方向键 1px');
+    expect(TOOL_HINTS.logo).toContain('Shift + 方向键 10px');
+    expect(TOOL_HINT_DETAILS.logo).toContain('滚轮只改变查看倍率');
   });
 
   it('shows cpr hint for cpr tool', () => {
-    expect(TOOL_HINTS.cpr).toContain('拖动 CPR 调整位置');
+    expect(TOOL_HINTS.cpr).toContain('拖动 CPR');
     expect(TOOL_HINTS.cpr).toContain('左侧调整大小与颜色');
-    expect(TOOL_HINTS.cpr).toContain('Space / 中键拖动平移视图');
+    expect(TOOL_HINTS.cpr).toContain('Space / 中键平移');
+    expect(TOOL_HINT_DETAILS.cpr).toContain('按住 Space');
   });
 });
 

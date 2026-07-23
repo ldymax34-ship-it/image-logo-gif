@@ -36,9 +36,15 @@ const MAX_VIEW_ZOOM = 300;
 const VIEW_ZOOM_STEP = 25;
 
 export const TOOL_HINTS: Record<FocusSession['tool'], string> = {
-  crop: '拖动画面移动素材 · 右侧「素材缩放」调整图片大小 · 滚轮缩放查看 · Space / 中键拖动平移视图',
-  logo: '拖动 Logo 调整位置 · 方向键微调 1px · Shift + 方向键微调 10px · 滚轮缩放查看',
-  cpr: '拖动 CPR 调整位置 · 左侧调整大小与颜色 · 滚轮缩放查看 · Space / 中键拖动平移视图'
+  crop: '拖动画面裁切 · 滚轮缩放查看 · Space / 中键平移',
+  logo: '拖动 Logo · 方向键 1px · Shift + 方向键 10px',
+  cpr: '拖动 CPR · 左侧调整大小与颜色 · Space / 中键平移'
+};
+
+export const TOOL_HINT_DETAILS: Record<FocusSession['tool'], string> = {
+  crop: '拖动画面移动素材；右侧“素材缩放”调整底图大小；滚轮缩放查看；按住 Space 拖动或使用中键平移视图。',
+  logo: '拖动 Logo 调整位置；方向键微调 1px；Shift + 方向键微调 10px；滚轮只改变查看倍率。',
+  cpr: '拖动 CPR 调整位置；左侧调整大小与颜色；滚轮缩放查看；按住 Space 拖动或使用中键平移视图。'
 };
 
 export function clampFocusViewZoom(percent: number): number {
@@ -270,7 +276,7 @@ export function FocusWorkspace({
      <div><span className="dialog-kicker">画板调整</span><h2>{spec.name}</h2><small>{spec.width} x {spec.height}</small></div>
      <div className="dialog-actions"><button type="button" onClick={() => session.dirty ? setConfirmDiscard(true) : onCancel()}>取消</button><button type="button" className="primary-button" onClick={() => onCommit(session)}>保存并返回</button></div>
    </div>
-    <div className="focus-hint-bar" aria-label="聚焦操作提示">
+    <div className="focus-hint-bar" aria-label="聚焦操作提示" title={TOOL_HINT_DETAILS[session.tool]}>
       <svg className="focus-hint-icon" aria-hidden="true" viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M3 4h7a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H7l-3 2.5V11H4a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5z"/></svg>
       <span className="focus-hint-text">{TOOL_HINTS[session.tool]}</span>
     </div>
@@ -302,9 +308,9 @@ export function FocusWorkspace({
         <div className="focus-view-zoom" aria-label="查看倍率">
           <span className="control-label">查看倍率</span>
           <div className="focus-view-zoom-controls">
-            <button type="button" aria-label="缩小查看倍率" onClick={() => setCenterZoom(viewport.zoom - VIEW_ZOOM_STEP)} disabled={viewport.zoom <= MIN_VIEW_ZOOM}>−</button>
+            <button type="button" aria-label="缩小查看倍率" title="缩小查看倍率" onClick={() => setCenterZoom(viewport.zoom - VIEW_ZOOM_STEP)} disabled={viewport.zoom <= MIN_VIEW_ZOOM}>−</button>
             <output aria-live="polite">{Math.round(viewport.zoom)}%</output>
-            <button type="button" aria-label="放大查看倍率" onClick={() => setCenterZoom(viewport.zoom + VIEW_ZOOM_STEP)} disabled={viewport.zoom >= MAX_VIEW_ZOOM}>+</button>
+            <button type="button" aria-label="放大查看倍率" title="放大查看倍率" onClick={() => setCenterZoom(viewport.zoom + VIEW_ZOOM_STEP)} disabled={viewport.zoom >= MAX_VIEW_ZOOM}>+</button>
           </div>
           <input aria-label="查看倍率滑块" type="range" min={MIN_VIEW_ZOOM} max={MAX_VIEW_ZOOM} step="1" value={Math.max(MIN_VIEW_ZOOM, viewport.zoom)} onChange={(event) => setCenterZoom(Number(event.target.value))} />
           <div className="focus-view-commands" aria-label="查看视口命令">
@@ -312,7 +318,7 @@ export function FocusWorkspace({
             <button type="button" className="focus-view-command" aria-label="实际尺寸 100%" onClick={actualSize} title="按画板像素 1:1 显示">100%</button>
             {selectionPlan.logoGroupRect ? <button type="button" className="focus-view-command" aria-label="定位 Logo" onClick={locateLogo} title="只调整查看视口，不修改 Logo 坐标">定位</button> : null}
           </div>
-          <small className="inline-note">仅影响查看，不会修改裁切、Logo/CPR 位置或导出。</small>
+          <small className="inline-note" title="查看倍率和视口平移不会修改裁切、Logo/CPR 位置或正式导出。">仅改变查看视口</small>
         </div>
         {session.tool === 'crop' ? <><div><span className="control-label">填充方式</span><div className="segmented-control"><button type="button" className={session.draft.previewState.fitMode === 'cover' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'cover' } }))}>填满画布</button><button type="button" className={session.draft.previewState.fitMode === 'contain' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'contain' } }))}>适应画布</button></div></div><label className="focus-range-field"><span className="control-label">素材缩放</span><input type="range" min={minScale} max={maxScale} step={Math.max(minScale / 100, .001)} value={crop.scale} onChange={(event) => updateCrop(Number(event.target.value))} /></label><button type="button" onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, crop: createInitialCropState(asset, spec, session.draft.previewState.fitMode) } }))}>裁切复位</button>{onApplyCropSameSize ? <button type="button" onClick={onApplyCropSameSize}>同素材·同尺寸同步裁切</button> : null}</> : null}
         {session.tool === 'logo' && bounds ? (
@@ -321,7 +327,7 @@ export function FocusWorkspace({
             <small>{constraintMode === 'safe-area' ? '安全区内' : '画布内'} · 方向键 1px，Shift+方向键 10px</small>
           </div>
         ) : null}
-        <p className="dialog-help">聚焦期间所有修改均保存在草稿中；保存前不会写入画板。</p>
+        <p className="dialog-help" title="聚焦期间所有修改先保存在草稿中，点击“保存并返回”后才写入画板。">修改先保存在草稿中</p>
       </aside>
     </div>
     {pendingModuleChange ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存。保存后切换到{pendingModuleChange}吗？</span><button type="button" onClick={onCancelModuleChange}>取消</button><button type="button" className="danger-button" onClick={onDiscardAndLeave}>放弃</button><button type="button" className="primary-button" onClick={onSaveAndLeave}>保存</button></div> : confirmDiscard ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存，确定放弃吗？</span><button type="button" onClick={() => setConfirmDiscard(false)}>继续调整</button><button type="button" className="danger-button" onClick={onCancel}>放弃修改</button></div> : null}

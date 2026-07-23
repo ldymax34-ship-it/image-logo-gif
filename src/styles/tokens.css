@@ -1,15 +1,16 @@
 :root {
   --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-size-caption: 12px;
-  --font-size-body: 14px;
-  --font-size-section: 14px;
-  --font-size-title: 20px;
+  --font-size-body: 13px;
+  --font-size-section: 13px;
+  --font-size-page: 14px;
+  --font-size-title: 16px;
   --line-height-caption: 1.4;
-  --line-height-body: 1.5;
-  --line-height-title: 1.3;
-  --control-height: 34px;
-  --control-height-compact: 32px;
-  --property-label-width: 56px;
+  --line-height-body: 1.45;
+  --line-height-title: 1.25;
+  --control-height: 32px;
+  --control-height-compact: 28px;
+  --property-label-width: 52px;
   --selection-handle-size: 10px;
   --panel-padding: 12px;
   --space-1: 4px;
@@ -34,5 +35,5 @@
   --state-warning: #e1b66c;
   --state-danger: #ee7777;
   --state-success: #73b987;
-  --state-disabled: #55555a;
+  --state-disabled: #686d75;
 }

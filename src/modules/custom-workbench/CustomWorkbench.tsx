@@ -441,7 +441,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       {!hasImage ? (
         <div className="custom-empty">
           <strong>未导入图片</strong>
-          <p>导入图片后可自由摆放游戏 Logo、公司 Logo 与 CPR。拖拽为主，数值输入用于精调；支持参考线、网格吸附和高级效果。</p>
+          <p title="导入后可拖动和等比缩放游戏 Logo、公司 Logo 与 CPR；数值输入用于精调，并可使用参考线、网格吸附和高级效果。">导入图片后调整三个固定对象</p>
         </div>
       ) : (
         <>
@@ -466,7 +466,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
             <button type="button" className={cropEditing ? 'active' : ''} onClick={() => setCropEditing((value) => !value)}>{cropEditing ? '完成底图调整' : '调整底图'}</button>
             {cropEditing ? <>
               <label className="range-field custom-number-field"><span>素材缩放</span><input aria-label="素材缩放数值" type="number" min={computeFitScale(asset!, canvas, previewState!.fitMode)} max={computeFitScale(asset!, canvas, 'cover') * 6} step="0.01" value={Number(previewState!.crop.scale.toFixed(3))} onChange={(event) => updateCropScale(Math.max(computeFitScale(asset!, canvas, previewState!.fitMode), Number(event.target.value) || computeFitScale(asset!, canvas, previewState!.fitMode)))} /></label>
-              <small className="inline-note">拖动画布中的底图调整位置</small>
+              <small className="inline-note" title="进入底图调整后，在画布内拖动底图即可改变裁切位置。">画布内拖动底图</small>
               <button type="button" onClick={resetCrop}>裁切复位</button>
             </> : null}
           </div>
@@ -483,7 +483,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
 
           <div className="brand-control-group">
             <div className="section-header is-idle" data-section-state="idle">
-              <div><h3><span className="section-state-dot" aria-hidden="true" />{selectedObjectId === 'game' ? '游戏 Logo' : selectedObjectId === 'company' ? '公司 Logo' : selectedObjectId === 'cpr' ? 'CPR' : '当前对象'}</h3><small>{selectedObjectId ? '拖动与四角等比缩放；数值用于精调' : '请点击画布中的 Logo 或 CPR'}</small></div>
+              <div><h3><span className="section-state-dot" aria-hidden="true" />{selectedObjectId === 'game' ? '游戏 Logo' : selectedObjectId === 'company' ? '公司 Logo' : selectedObjectId === 'cpr' ? 'CPR' : '当前对象'}</h3><small title={selectedObjectId ? '在画布中拖动对象、使用四角控制点等比缩放；下方数值用于精确调整。' : undefined}>{selectedObjectId ? '拖动、四角缩放；数值精调' : '请点击画布中的 Logo 或 CPR'}</small></div>
             </div>
             {selectedObjectId === 'game' ? <>
               <label className="toggle"><input type="checkbox" checked={gameEnabled} onChange={(event) => setGameEnabled(event.target.checked)} />显示游戏 Logo</label>

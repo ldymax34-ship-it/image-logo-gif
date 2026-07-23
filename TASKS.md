@@ -11,6 +11,15 @@
 - [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（234 tests / 30 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
 - [ ] 原生 Tauri 限制保持不变：真实素材的自定义尺寸 PNG/JPG 落盘像素、公司 Logo disclosure、系统文件选择/保存、WebView 高 DPI 与横/方/竖 Focus 手势仍需双平台人工复核；浏览器截图不冒充桌面实机验证。
 
+### 工具箱路线｜阶段 2：可见 UI 规则统一
+- [x] 完成 `docs/UI_RULE_UNIFICATION_AUDIT.md`：明确 OpenPencil 的属性面板密度、状态和选框规则为主参考；OpenDesign 只用于深色 surface 与留白，并明确排除卡片化、玻璃模糊、渐变和大范围辉光。
+- [x] 收敛 `tokens.css`、`theme.css`、`components.css` 与旧 `styles.css` 的基础控件规则：标题、正文、标签、属性行、32px 常规控件、28px 紧凑控件、选中、焦点、禁用和 invalid 状态均由同一 token 契约表达。
+- [x] 保持现有模块导航、左右面板宽度、总览/Focus/自定义构图结构、查看倍率位置以及 Render Plan、同步和导出链路不变；说明文字缩短后保留可访问的 `title` 信息。
+- [x] 同一 `128x128.png` 和状态下生成 after 证据：`artifacts/ui-rule-unification/after/` 包含总览与聚焦各 1440×900、1100×720，自定义构图 1440×900；另保留一张 1100×720 自定义构图响应式检查图。浏览器检查无横向溢出，关键操作可达。
+- [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（239 tests / 31 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [x] 前端构建目录记录为 1,172 KB；相对 Fabric 阶段记录的约 1,140 KB 仅约 +32 KB，主要为 CSS/JS 文本变化。未生成新的 macOS/Windows 安装包，平台包体增量仍待后续构建审计。
+- [ ] 仍需 macOS/Windows Tauri 实机：WebView 高 DPI 下的控件/选框、hover/focus/disabled、系统字体渲染、横/方/竖 Focus 手势与导出位置一致性；浏览器截图和静态测试不替代该项。
+
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。
 - [x] `1920×1080` 保留为显式手动规格；手动选择在同一/替换底图时保持，切回原图尺寸立即使用当前底图自然尺寸。
