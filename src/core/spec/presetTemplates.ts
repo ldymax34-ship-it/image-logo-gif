@@ -13,9 +13,9 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
     name: '常用社媒',
     description: '覆盖方图、横版、竖版三个基础版型。',
     specs: [
-      { name: '方图_1080', width: 1080, height: 1080, format: 'jpg' },
-      { name: '竖版_1080x1920', width: 1080, height: 1920, format: 'jpg' },
-      { name: '横版_1920x1080', width: 1920, height: 1080, format: 'jpg' }
+      { name: '1080x1080', width: 1080, height: 1080, format: 'jpg' },
+      { name: '1080x1920', width: 1080, height: 1920, format: 'jpg' },
+      { name: '1920x1080', width: 1920, height: 1080, format: 'jpg' }
     ]
   },
   {

@@ -9,6 +9,7 @@
 - [x] Stage 5A：工具箱首页、可用/未完成入口、返回工具箱与轻量应用设置表面。复用现有 React/Tauri 壳，无 FFmpeg、Vue、第二窗口或新依赖。
 - [x] Stage 5B：版本化应用偏好、默认启动与未完成工具回退；仅记录工具入口，不保存工作内容。
 - [x] Stage 5A、5B 均已完成独立门禁、包体记录、浏览器截图与提交；不推送、不发布。
+- [x] 内置“常用社媒”模板显示名统一为纯尺寸 `1080x1080`、`1080x1920`、`1920x1080`；保持稳定套组 ID、宽高、顺序和 JPG 格式不变，并补齐回归测试。`git diff --check`、`npm run verify:core`、`npm test -- --run`（260 tests / 36 files）与 `npm run build` 均通过；未涉及 Rust/Tauri，未重复 Cargo 门禁。
 
 ## 暂不处理
 

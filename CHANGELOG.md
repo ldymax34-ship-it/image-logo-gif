@@ -1,5 +1,21 @@
 # 更新日志
 
+## 2026-07-23｜内置常用社媒规格名称修复
+
+### 修改文件
+- `src/core/spec/presetTemplates.ts`、`src/core/core.test.ts`
+- `TASKS.md`、`CHANGELOG.md`
+
+### 主要改动
+- 将“常用社媒”的显示名从方图、竖版、横版前缀统一为纯尺寸：`1080x1080`、`1080x1920`、`1920x1080`。
+- 保持 `social-common`、规格顺序、宽高与 JPG 格式不变；套用到尺寸草稿后继续直接显示纯尺寸。
+
+### 验证方式
+- 新增内置常用社媒模板回归，锁定三项名称、宽高、顺序、JPG 格式与草稿序列化结果；`git diff --check`、`npm run verify:core`、`npm test -- --run`（260 tests / 36 files）及 `npm run build` 均通过。未涉及 Rust/Tauri，未重复 Cargo 门禁。
+
+### 影响范围
+- 仅修复内置模板显示文本；不改变导出、Render Plan、同步、Fabric、更新或发布链路。
+
 ## 2026-07-23｜Stage 5B｜默认启动设置
 
 ### 修改文件

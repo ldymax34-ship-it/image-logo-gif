@@ -382,6 +382,20 @@ describe('core 0.1.x foundation', () => {
     ].join('\n'));
   });
 
+  it('uses dimension-only names for the built-in social presets', () => {
+    const socialPreset = PRESET_TEMPLATES.find((preset) => preset.id === 'social-common');
+    expect(socialPreset?.specs).toEqual([
+      { name: '1080x1080', width: 1080, height: 1080, format: 'jpg' },
+      { name: '1080x1920', width: 1080, height: 1920, format: 'jpg' },
+      { name: '1920x1080', width: 1920, height: 1080, format: 'jpg' }
+    ]);
+    expect(serializePresetSpecs(socialPreset?.specs ?? [])).toBe([
+      '1080x1080',
+      '1080x1920',
+      '1920x1080'
+    ].join('\n'));
+  });
+
   it('converts material specs into preset-safe specs', () => {
     const presetSpecs = toPresetSpecs([{ id: 'spec_1', name: 'A', width: 1080, height: 1920, format: 'jpg' }]);
     expect(presetSpecs).toEqual([{ name: 'A', width: 1080, height: 1920, format: 'jpg' }]);
