@@ -35,6 +35,7 @@
 31. [测试-中] 新增 Focus Logo Fabric 几何与草稿/正式 Render Plan 回归，覆盖 25%/100%/300% 查看倍率、横方竖边界、资源/语种切换、缩放 baseline 与保存前草稿隔离；全量测试 `239 → 251`（32 files），Rust 9 tests 通过。浏览器开发环境确认选框与拖动；macOS/Windows Tauri 实机仍待复核。
 32. [维护-中] Focus 与自定义构图共享画布基础能力：适合窗口、实际倍率、指针缩放、平移边界、Canvas/Fabric 坐标换算、手势 baseline、选框和控制点主题收敛到 `components/canvas` 纯模块。两处业务状态、同步和导出模型保持隔离。
 33. [测试-小] 新增共享交互基础回归，验证两个编辑器使用同一 Fabric 选择 token、stage 缩放数学与高 DPI 逻辑坐标；全量测试 `251 → 254`（33 files），Rust 9 tests 通过。
+34. [路线-中] 完成可嵌入 FFmpeg GUI 的源码与许可证筛选；没有候选可同时满足当前 React/Tauri 可嵌入性、可靠批量取消、单一离线 sidecar和无需首次联网下载的条件。因此没有接入 GIF/媒体处理、FFmpeg、Python 或 WASM 运行时，后续媒体阶段保持停止。
 
 ## 0.1.32（默认横版规格名称精简）
 

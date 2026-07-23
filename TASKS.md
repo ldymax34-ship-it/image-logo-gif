@@ -35,6 +35,12 @@
 - [x] 自动验证：共享选择 token、stage 视口缩放、高 DPI 逻辑坐标，以及既有 Focus/Custom 坐标和边界回归均通过；`git diff --check`、`npm run verify:core`、`npm test -- --run`（254 tests / 33 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
 - [ ] 原生 Tauri 实机仍需验证两处编辑器在高 DPI、鼠标/触控板输入和横/方/竖画布下的选框与查看视口表现；共享纯函数和浏览器验证不替代该项。
 
+### 工具箱路线｜阶段 5：可嵌入 FFmpeg GUI 筛选（阻断）
+- [x] 完成 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md`：按 React/Tauri 可嵌入性、离线单 sidecar、队列、进度、取消、GIF 参数、许可证、跨平台和维护质量审计 FFmpeg-UI、FFUI、FFmpeg GUI - Tauri Edition 的当前源码。
+- [x] 结论：没有候选同时满足条件。FFmpeg-UI 的 desktop 取消为空实现且默认联网下载；FFUI 是独立 Vue/Rust/Tauri 应用并带自动下载；FFmpeg GUI - Tauri Edition 缺批量/GIF/sidecar 且许可文件不完整。
+- [x] 按路线停止正式接入：未加入 FFmpeg/FFprobe sidecar、Python、WASM、云服务、独立软件或新媒体模块；Stage 6 不开始。
+- [ ] 仅在出现许可证明确、可裁剪嵌入当前 React 18/Tauri 2、已有可靠队列/取消并支持单一内置离线 sidecar 的成熟候选后，重新开启 Stage 5 PoC。
+
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。
 - [x] `1920×1080` 保留为显式手动规格；手动选择在同一/替换底图时保持，切回原图尺寸立即使用当前底图自然尺寸。
