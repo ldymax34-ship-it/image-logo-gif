@@ -1,15 +1,14 @@
 import { getLogoPlacementBounds, type LogoConstraintMode } from '../../core';
+import {
+  fromFabricFrame,
+  toFabricFrame,
+  toFabricFrameFromTransform,
+  type CanvasRect,
+  type FabricFrame
+} from '../../components/canvas/fabricInteraction';
 
-export type FocusLogoCanvasRect = { x: number; y: number; width: number; height: number };
-
-export type FocusLogoFabricFrame = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  scaleX: number;
-  scaleY: number;
-};
+export type FocusLogoCanvasRect = CanvasRect;
+export type FocusLogoFabricFrame = FabricFrame;
 
 export type FocusLogoTransform = { x: number; y: number; scale: number };
 
@@ -30,17 +29,7 @@ const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value :
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 /** Maps the current Render Plan group rect to Fabric's CSS-pixel space. */
-export function toFocusLogoFabricFrame(rect: FocusLogoCanvasRect, previewScale: number): FocusLogoFabricFrame {
-  const scale = Math.max(Number.EPSILON, finite(previewScale, 1));
-  return {
-    left: rect.x * scale,
-    top: rect.y * scale,
-    width: Math.max(1, rect.width) * scale,
-    height: Math.max(1, rect.height) * scale,
-    scaleX: 1,
-    scaleY: 1
-  };
-}
+export const toFocusLogoFabricFrame = toFabricFrame;
 
 /** Freezes the render geometry so one Fabric gesture cannot accumulate React updates. */
 export function createFocusLogoTransformBaseline(
@@ -78,20 +67,14 @@ export function fromFocusLogoFabricFrame(
   frame: FocusLogoFabricFrame,
   baseline: FocusLogoTransformBaseline
 ): FocusLogoTransform {
-  const scaleMultiplier = Math.max(Number.EPSILON, Math.abs(finite(frame.scaleX, 1)));
-  const scale = clamp(baseline.currentScale * scaleMultiplier, baseline.minScale, baseline.maxScale);
-  const appliedMultiplier = scale / baseline.currentScale;
-  const rect = {
-    width: baseline.rect.width * appliedMultiplier,
-    height: baseline.rect.height * appliedMultiplier
-  };
-  const bounds = getLogoPlacementBounds(baseline.canvas, rect, baseline.constraintMode);
-
-  return {
-    x: clamp(finite(frame.left) / baseline.previewScale, bounds.minX, bounds.maxX),
-    y: clamp(finite(frame.top) / baseline.previewScale, bounds.minY, bounds.maxY),
-    scale
-  };
+  return fromFabricFrame(frame, baseline, (scale) => {
+    const multiplier = scale / baseline.currentScale;
+    const bounds = getLogoPlacementBounds(baseline.canvas, {
+      width: baseline.rect.width * multiplier,
+      height: baseline.rect.height * multiplier
+    }, baseline.constraintMode);
+    return bounds;
+  });
 }
 
 /** Restores the constrained domain state to Fabric's baseline frame. */
@@ -99,12 +82,5 @@ export function toConstrainedFocusLogoFabricFrame(
   transform: FocusLogoTransform,
   baseline: FocusLogoTransformBaseline
 ): FocusLogoFabricFrame {
-  return {
-    left: transform.x * baseline.previewScale,
-    top: transform.y * baseline.previewScale,
-    width: baseline.rect.width * baseline.previewScale,
-    height: baseline.rect.height * baseline.previewScale,
-    scaleX: transform.scale / baseline.currentScale,
-    scaleY: transform.scale / baseline.currentScale
-  };
+  return toFabricFrameFromTransform(transform, baseline.rect, baseline.previewScale, baseline.currentScale);
 }

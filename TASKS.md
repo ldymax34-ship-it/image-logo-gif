@@ -29,6 +29,12 @@
 - [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（251 tests / 32 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
 - [ ] 仍需 macOS/Windows Tauri 实机：横/方/竖素材在 25% / 100% / 300% 下的选框命中、拖动、四角缩放、触控板/鼠标、保存/取消以及最终 PNG/JPG 导出坐标一致性；浏览器开发环境不能替代该项。
 
+### 工具箱路线｜阶段 4：共享画布基础能力收口
+- [x] 新增仅含纯数学与主题常量的 `components/canvas` 基础层：`viewportController`、`fabricInteraction`、`fabricSelection`。Focus 和自定义构图复用其适合窗口、实际倍率、定位对象、指针缩放、平移边界、Canvas/Fabric 坐标换算、手势 baseline 与控制点样式。
+- [x] Focus 保留既有 `focusCoords` 公开适配名；自定义构图保留既有领域类型/接口及全画布约束。没有共享 FocusSession、自定义状态、Logo/CPR/公司 Logo 枚举、同步范围、导出状态或通用图层树。
+- [x] 自动验证：共享选择 token、stage 视口缩放、高 DPI 逻辑坐标，以及既有 Focus/Custom 坐标和边界回归均通过；`git diff --check`、`npm run verify:core`、`npm test -- --run`（254 tests / 33 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [ ] 原生 Tauri 实机仍需验证两处编辑器在高 DPI、鼠标/触控板输入和横/方/竖画布下的选框与查看视口表现；共享纯函数和浏览器验证不替代该项。
+
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。
 - [x] `1920×1080` 保留为显式手动规格；手动选择在同一/替换底图时保持，切回原图尺寸立即使用当前底图自然尺寸。

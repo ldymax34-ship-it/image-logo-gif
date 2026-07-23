@@ -33,6 +33,8 @@
 29. [交互-大] 社媒聚焦画板的 Logo 组合增加透明 Fabric 操作层：点击选中、拖动、四角等比缩放与现有安全区/画布边界约束。操作只写入当前草稿的 Logo 自定义位置和连续缩放；CPR、旋转、多选、图层、复制和删除均不在范围内。
 30. [一致性-高] Focus Fabric 对象始终由当前 Render Plan 的 `logoGroupRect` 驱动；手势冻结起始几何，防止 React 重渲染造成连续缩放累积。正式预览和导出继续仅消费 `BoardCanvas + Render Plan`，Fabric 不负责颜色或导出。
 31. [测试-中] 新增 Focus Logo Fabric 几何与草稿/正式 Render Plan 回归，覆盖 25%/100%/300% 查看倍率、横方竖边界、资源/语种切换、缩放 baseline 与保存前草稿隔离；全量测试 `239 → 251`（32 files），Rust 9 tests 通过。浏览器开发环境确认选框与拖动；macOS/Windows Tauri 实机仍待复核。
+32. [维护-中] Focus 与自定义构图共享画布基础能力：适合窗口、实际倍率、指针缩放、平移边界、Canvas/Fabric 坐标换算、手势 baseline、选框和控制点主题收敛到 `components/canvas` 纯模块。两处业务状态、同步和导出模型保持隔离。
+33. [测试-小] 新增共享交互基础回归，验证两个编辑器使用同一 Fabric 选择 token、stage 缩放数学与高 DPI 逻辑坐标；全量测试 `251 → 254`（33 files），Rust 9 tests 通过。
 
 ## 0.1.32（默认横版规格名称精简）
 

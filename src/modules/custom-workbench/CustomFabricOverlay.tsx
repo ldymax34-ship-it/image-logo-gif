@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 import type { Canvas, Rect } from 'fabric';
 import {
+  FABRIC_CANVAS_OPTIONS,
+  FABRIC_CORNER_CONTROLS,
+  FABRIC_SELECTION_STYLE
+} from '../../components/canvas/fabricSelection';
+import {
   createTransformBaseline,
   fromFabricFrameWithBaseline,
   toConstrainedFabricFrame,
@@ -20,26 +25,9 @@ type OverlayView = {
   selectedId?: CustomFabricObjectId;
 };
 
-export const CUSTOM_FABRIC_CORNER_CONTROLS = { tl: true, tr: true, bl: true, br: true, ml: false, mr: false, mt: false, mb: false, mtr: false };
-export const CUSTOM_FABRIC_CANVAS_OPTIONS = {
-  selection: false,
-  selectionKey: null,
-  preserveObjectStacking: true,
-  uniformScaling: true,
-  uniScaleKey: null,
-  centeredScaling: false,
-  defaultCursor: 'default',
-  hoverCursor: 'move',
-  moveCursor: 'move'
-} as const;
-export const CUSTOM_FABRIC_SELECTION_STYLE = {
-  cornerColor: '#f5f8ff',
-  cornerStrokeColor: '#3d83d5',
-  borderColor: '#3d83d5',
-  cornerSize: 10,
-  cornerStyle: 'rect' as const,
-  padding: 1
-} as const;
+export const CUSTOM_FABRIC_CORNER_CONTROLS = FABRIC_CORNER_CONTROLS;
+export const CUSTOM_FABRIC_CANVAS_OPTIONS = FABRIC_CANVAS_OPTIONS;
+export const CUSTOM_FABRIC_SELECTION_STYLE = FABRIC_SELECTION_STYLE;
 
 function applyFrame(target: FabricRect, frame: ReturnType<typeof toConstrainedFabricFrame>) {
   target.set({ left: frame.left, top: frame.top, width: frame.width, height: frame.height, scaleX: frame.scaleX, scaleY: frame.scaleY });
