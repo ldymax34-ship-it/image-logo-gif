@@ -1,10 +1,14 @@
 # 品宣物料工作台
 
-本仓库目标是做一个纯本地运行的设计生产工具，用于品宣 / 市场平面物料的批量适配、裁切、导出和复核。
+本仓库是一个纯本地运行的桌面设计生产工具，用于把市场平面素材批量适配到不同尺寸，完成裁切、Logo / CPR 版式、导出与复核。
+
+它解决的是“同一套素材在多尺寸、多语种交付时，如何稳定保留版式规则并直接落盘”的日常生产问题；不是通用图片编辑器、视频剪辑器或云端处理服务。
 
 ## 当前状态
 
 当前项目已推进到 0.1.33，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并已发布 Windows x64 与 macOS Apple Silicon 的 `0.1.33` 签名更新产物。
+
+应用启动后先进入“品宣工具箱”：Logo 与版式可用，GIF / 媒体工具与水印与追溯尚未开放；设置用于应用级偏好。进入 Logo 与版式后，原有设媒与自定义构图工作流、模块导航与导出行为保持不变，并可随时返回工具箱。
 
 当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 仍为独立模块。Preview 提示式自动更新已接入；2026-07-22 已完成隔离 macOS Apple Silicon `0.1.29 → 0.1.33` 更新 E2E。GIF 编解码、视频和 AI 能力尚未进入开发。
 
@@ -55,7 +59,7 @@
 
 待继续接入：
 
-- 正式产品封板阶段的统一视觉规范、稳定频道与完整实机发布回归
+- Stage 5B：应用级默认启动偏好；之后才允许评估 FFUI 隔离 PoC，GIF / 媒体工具与水印与追溯仍不实现。
 
 ## 启动与停止
 
@@ -80,6 +84,16 @@ npm stop
 首次启动如果缺少依赖，启动脚本会自动执行本地安装。服务固定运行在 `http://127.0.0.1:5173/`。
 
 `start-windows-preview.bat` 需要 Windows 电脑预先安装 Node.js LTS。它不会直接使用共享盘里可能由 macOS 产生的 `node_modules`，而是将源码同步到 `%LOCALAPPDATA%\BrandMaterialWorkbench\preview` 后再启动。
+
+## 核心文件与边界
+
+- `src/app/App.tsx`、`src/app/AppRuntimeProvider.tsx`：应用级工具入口、工作区切换与全局状态。
+- `src/modules/media-workbench/`：设媒与多画板导出工作流。
+- `src/modules/custom-workbench/`：固定对象的自定义构图。
+- `src/core/`：规格、Logo / CPR、Render Plan、导出与本地存储。
+- `AGENTS.md`、`TASKS.md`、`CHANGELOG.md`：协作规则、当前任务和历史记录的权威入口；参考原文位于 `docs/references/AI开发规则推荐默认规则文件.md`。
+
+不要修改：自动更新、签名、Preview 发布和 CNB/GitHub 分发链路；不要删除用户素材或未跟踪 `artifacts/`；不要把 Render Plan、同步、正式导出交给 Fabric；不要在未完成依赖审计和明确确认前引入 FFmpeg、Vue、独立窗口、云端运行时、Python 或模型。
 
 ## 新工具目标
 

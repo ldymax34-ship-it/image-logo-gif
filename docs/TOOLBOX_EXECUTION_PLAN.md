@@ -190,8 +190,40 @@ FocusSession和Custom状态
 
 本阶段不增加用户功能，只消除重复数学和交互规则。
 
-阶段五：筛选可嵌入的成熟 FFmpeg GUI
-路线修正
+阶段五 A：品宣工具箱启动器
+
+目标是建立应用级工具入口，而不是新增编辑器或调整现有 Logo 工作台内部结构。
+
+- 首页提供 Logo 与版式、GIF / 媒体工具、水印与追溯、设置四个入口。
+- 当前版本只有 Logo 与版式与设置可用；未完成工具明确标记“即将开放 / 暂不可用”，不进入空白页。
+- 现有设媒与自定义构图继续保留在 Logo 与版式工作区内；返回工具箱只切换应用入口，不改变 Render Plan、导出、同步、Fabric、模块导航或更新链路。
+- 不引入 FFmpeg、Vue、独立 Tauri window 或第二套应用壳。
+
+阶段五 B：默认启动设置
+
+新增独立、版本化的应用偏好，不写入品牌设置或 `BoardDocument`：
+
+```ts
+type StartupTool = 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark-trace' | 'last';
+
+type AppPreferencesV1 = {
+  version: 1;
+  startupTool: StartupTool;
+  lastTool: 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark-trace';
+};
+```
+
+- 本地持久化；损坏、未知版本和值均安全回退工具箱首页。
+- 当前 GIF / 媒体工具和水印与追溯尚未实现；无论作为启动项或上次工具，均统一回退工具箱首页，不创建空模块。
+- 只记录工具入口，不恢复未保存任务、工作台状态或素材。
+
+阶段六：FFUI 隔离 PoC
+
+`a8e9ded` 与 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为旧路线的历史源码审计记录，不删除、不作为 Stage 5A/5B 的实现前置条件。
+
+在 Stage 5A/5B 完成后，才允许评估 FFUI 隔离 PoC：保留其 Vue 前端为当前 Tauri 应用的独立内部窗口，不带第二个 Tauri 应用、不要求额外安装；只规划安装包内唯一 FFmpeg/FFprobe，并验证队列、进度、取消与一个 MP4 → GIF 任务。PoC 未通过前不得进入正式媒体模块。
+
+阶段六的候选条件
 
 停止以下方案：
 
@@ -202,7 +234,7 @@ ScreenToGif
 
 目标是：
 
-找一个成熟开源的 Web、React、Vue、Svelte或普通 HTML FFmpeg GUI，复用其文件队列、参数组织、任务状态、进度、取消、错误处理和输出结果页面，再嵌入当前 Tauri应用。
+找一个成熟开源的 Web、React、Vue、Svelte或普通 HTML FFmpeg GUI，复用其文件队列、参数组织、任务状态、进度、取消、错误处理和输出结果页面，再以隔离方式接入当前 Tauri应用。
 
 候选条件
 
@@ -249,7 +281,7 @@ UI可裁剪和主题适配。
 停止正式实现。
 输出候选对比和失败原因。
 不自行从零开发复杂 FFmpeg GUI。
-阶段六：接入 GIF / 媒体工具
+阶段七：接入 GIF / 媒体工具
 
 仅在阶段五选定成熟 GUI后执行。
 
@@ -302,35 +334,6 @@ GIF重新压缩
 自研量化
 自研编码
 自研复杂预览播放器
-阶段七：默认启动模块设置
-
-新增独立应用偏好，不写进品牌设置。
-
-type StartupModule = 'media' | 'custom' | 'gif' | 'last';
-
-type AppPreferencesV1 = {
-  version: 1;
-  startupModule: StartupModule;
-  lastModule: 'media' | 'custom' | 'gif';
-};
-
-设置项：
-
-启动时打开
-- 设媒工作台
-- 自定义构图
-- GIF / 媒体工具
-- 上次使用的模块
-
-要求：
-
-本地持久化。
-升级后保留。
-数据损坏时回退设媒工作台。
-模块不可用时回退设媒工作台。
-选择 GIF表示打开应用内 GIF模块，不启动外部程序。
-不新增工具箱首页。
-不恢复未保存任务。
 阶段八：统一“水印与追溯”页面
 
 可见水印和像素指纹不要拆成两个模块。

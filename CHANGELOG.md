@@ -1,5 +1,31 @@
 # 更新日志
 
+## 2026-07-23｜Stage 5A｜品宣工具箱启动器
+
+### 修改文件
+- `docs/references/AI开发规则推荐默认规则文件.md`
+- `AGENTS.md`、`TASKS.md`、`README.md`、`docs/TOOLBOX_EXECUTION_PLAN.md`
+- `src/app/`、`src/components/ModuleNav.tsx`、`src/modules/media-workbench/MediaWorkbench.tsx`、`src/styles/components.css`
+
+### 主要改动
+- 新增应用级品宣工具箱入口；Logo 与版式保持使用现有工作台，GIF / 媒体工具和水印与追溯只显示“暂不可用 / 即将开放”。
+- 当前工作台顶部新增“返回工具箱”；工作台在入口切换时保持挂载，原有内存状态、模块导航、Render Plan、导出、同步、Fabric 和更新链路均未变更。
+- 设置入口提供轻量应用级说明表面；未写入品牌设置、画板或未保存任务，启动偏好留待 Stage 5B。
+- 固定用户提供的默认规则原文到 `docs/references/`，将适用的范围、依赖、文档和冲突优先级规则并入根目录权威文件。旧 Stage 5 No-Go 审计保留为历史记录，正式路线调整为 5A 工具箱、5B 启动偏好、6 FFUI 隔离 PoC。
+
+### 验证方式
+- `git diff --check`、`npm run verify:core`、`npm test -- --run`（255 tests / 34 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）通过。
+- 浏览器开发环境在 1440×900、1100×720 下检查工具箱、Logo 与版式、返回路径和设置路径：无横向溢出，未完成入口禁用。截图只保存于 `/private/tmp/brand-material-workbench-stage5a/`。
+
+### 影响范围
+- 仅应用级入口与文档；不改变现有工作台内部模块、Render Plan、导出、同步、Fabric、自动更新或发布链路。
+
+### 未完成 / 风险
+- macOS/Windows 原生 Tauri 的初始工具箱、返回动作、系统字体和键盘焦点仍需人工实机验证；浏览器检查不能替代该项。Stage 5B 尚未开始。
+
+### 下一步建议
+- 完成 Stage 5B 的版本化启动偏好、失效数据回退与独立门禁；不开始 Stage 6。
+
 ## 0.1.33（自定义构图原图画布、裁切与几何缩放）
 
 1. [体验-大] 自定义构图默认画布改为“原图尺寸（跟随底图）”：首次导入、替换横图/竖图/方图时保持底图自然像素尺寸与比例；`1920×1080` 改为用户主动选择的手动规格，切换回原图尺寸立即恢复当前底图尺寸。

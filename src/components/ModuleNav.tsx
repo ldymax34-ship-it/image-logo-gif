@@ -1,12 +1,11 @@
 import { type ReactNode } from 'react';
 
-export type WorkbenchModule = 'media' | 'custom' | 'gif';
+export type WorkbenchModule = 'media' | 'custom';
 export type ModuleStatus = 'active' | 'idle' | 'warning' | 'error' | 'disabled';
 
 const MODULES: Array<{ id: WorkbenchModule; label: string; glyph: string }> = [
   { id: 'media', label: '设媒', glyph: '▣' },
-  { id: 'custom', label: '自定义', glyph: '✦' },
-  { id: 'gif', label: 'GIF 压缩', glyph: '◌' }
+  { id: 'custom', label: '自定义', glyph: '✦' }
 ];
 
 function describeStatus(status: ModuleStatus): string {

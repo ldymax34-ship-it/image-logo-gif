@@ -71,6 +71,13 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 只内置已确认需要的字体资源；当前水印字体边界为思源黑体 Regular。
 - 审计结果必须进入提交记录或构建说明，不能只留在聊天中。
 
+## 0.1.33 Stage 5A 工具箱启动器审计（2026-07-23）
+
+- 新增依赖：无。未新增 npm、Rust crate、sidecar、字体、模型、Vue、FFmpeg 或第二个 Tauri window。
+- 前端 `dist`：1,184 KB；相对 Stage 4 记录的 1,172 KB 约 +12 KB，来自 React/TypeScript/CSS 入口和文档无关的构建文本变化。
+- Windows NSIS、Windows 安装目录、macOS DMG、macOS `.app`：本阶段未生成，不能据此前端构建结果推断平台包体增量。
+- 结论：无新增运行时和二进制包体风险；平台安装包的真实增量继续留待后续实机构建审计。
+
 ## 0.1.32 Fabric.js 接入审计（2026-07-22）
 
 ### 当前基线与增量

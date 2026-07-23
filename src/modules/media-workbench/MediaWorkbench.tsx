@@ -33,8 +33,7 @@ import {
   MultiAssetBoardOverview,
   SpecPanel
 } from '../../components';
-import { useAppRuntime } from '../../app/AppRuntimeProvider';
-import type { WorkbenchModule } from '../../components/ModuleNav';
+import { useAppRuntime, type AppNavigationTarget } from '../../app/AppRuntimeProvider';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
 import { FocusWorkspace } from './FocusWorkspace';
 import { ConfirmationDialog } from './ConfirmationDialog';
@@ -136,12 +135,12 @@ type PendingBrandScope = {
 };
 
 export function MediaWorkbench({ active }: { active: boolean }) {
-  const [pendingModuleChange, setPendingModuleChange] = useState<WorkbenchModule>();
+  const [pendingModuleChange, setPendingModuleChange] = useState<AppNavigationTarget>();
   const [pendingBrandScope, setPendingBrandScope] = useState<PendingBrandScope>();
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
-  const { brandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, updateActivity, setMediaHeader, registerGlobalBrandResourceHandlers, setSettingsSelectedCompanyLogoId, setActiveModule, registerMediaModuleChangeGuard } = useAppRuntime();
+  const { brandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, updateActivity, setMediaHeader, registerGlobalBrandResourceHandlers, setSettingsSelectedCompanyLogoId, setActiveModule, setActiveTool, registerMediaModuleChangeGuard } = useAppRuntime();
   const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusSession, setFocusSession, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures } = useMediaWorkbenchState();
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
@@ -601,10 +600,10 @@ export function MediaWorkbench({ active }: { active: boolean }) {
           onSessionChange={(session) => setFocusSession(session)}
           onCancel={closeFocusSession}
           onCommit={commitFocusSession}
-          pendingModuleChange={pendingModuleChange === 'custom' ? '自定义' : pendingModuleChange === 'gif' ? 'GIF 压缩' : undefined}
+          pendingModuleChange={pendingModuleChange === 'toolbox' ? '品宣工具箱' : pendingModuleChange === 'custom' ? '自定义' : undefined}
           onCancelModuleChange={() => setPendingModuleChange(undefined)}
-          onDiscardAndLeave={() => { const target = pendingModuleChange; setPendingModuleChange(undefined); closeFocusSession(); if (target) setActiveModule(target); }}
-          onSaveAndLeave={() => { const target = pendingModuleChange; if (focusSession) commitFocusSession(focusSession); setPendingModuleChange(undefined); if (target) setActiveModule(target); }}
+          onDiscardAndLeave={() => { const target = pendingModuleChange; setPendingModuleChange(undefined); closeFocusSession(); if (target === 'toolbox') setActiveTool('toolbox'); else if (target) setActiveModule(target); }}
+          onSaveAndLeave={() => { const target = pendingModuleChange; if (focusSession) commitFocusSession(focusSession); setPendingModuleChange(undefined); if (target === 'toolbox') setActiveTool('toolbox'); else if (target) setActiveModule(target); }}
           onApplyCropSameSize={requestCropScope}
         />
       ) : null}

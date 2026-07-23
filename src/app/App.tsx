@@ -1,12 +1,13 @@
 import { useCallback, useMemo } from 'react';
 import type { ModuleStatus, WorkbenchModule } from '../components/ModuleNav';
 import { WorkbenchHeader } from '../components';
-import { GifCompressorPlaceholder } from '../modules/gif-compressor';
 import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
 import { MediaWorkbench } from '../modules/media-workbench/MediaWorkbench';
 import { AppRuntimeProvider, useAppRuntime } from './AppRuntimeProvider';
 import { AppShell } from './AppShell';
+import { ApplicationSettingsDialog } from './ApplicationSettingsDialog';
 import { GlobalDialogs } from './GlobalDialogs';
+import { ToolboxHome } from './ToolboxHome';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 import { UncleanExitNotice } from '../diagnostics';
 
@@ -17,19 +18,23 @@ function resolveModuleStatuses(
 ): Record<WorkbenchModule, ModuleStatus> {
   return {
     media: active === 'media' ? 'active' : (logoEnabled ? 'idle' : 'idle'),
-    custom: active === 'custom' ? 'active' : (logoEnabled ? 'idle' : 'disabled'),
-    gif: active === 'gif' ? 'active' : 'disabled'
+    custom: active === 'custom' ? 'active' : (logoEnabled ? 'idle' : 'disabled')
   };
 }
 
 function AppContent() {
   const {
     activeModule,
+    activeTool,
     requestModuleChange,
+    requestToolbox,
+    setActiveTool,
     brandAssets,
     brandLayer,
     mediaHeader,
     setSettingsDialogOpen,
+    applicationSettingsOpen,
+    setApplicationSettingsOpen,
     updateActivity
   } = useAppRuntime();
   const { checkForUpdate } = useUpdate();
@@ -48,28 +53,34 @@ function AppContent() {
     [activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled]
   );
 
+  const appSettings = applicationSettingsOpen ? <ApplicationSettingsDialog onClose={() => setApplicationSettingsOpen(false)} /> : null;
+
   return <>
     <UncleanExitNotice />
-    <AppShell
-      activeModule={activeModule}
-      onModuleChange={requestModuleChange}
-      moduleStatuses={moduleStatuses}
-      header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} onCheckUpdate={() => void checkForUpdate(true)} />}
-    >
-      <MediaWorkbench active={activeModule === 'media'} />
-      {activeModule === 'custom' ? <CustomWorkbench
-        brandLayer={brandLayer}
-        logoAsset={selectedLogo}
-        cprAsset={selectedCpr}
-        companyLogo={companyLogo}
-        gameLogo={gameLogo}
-        gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
-        onDirtyChange={handleCustomWorkbenchDirty}
-      /> : null}
-      {activeModule === 'gif' ? <GifCompressorPlaceholder /> : null}
-    </AppShell>
+    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
+    <div hidden={activeTool !== 'logo-layout'}>
+      <AppShell
+        activeModule={activeModule}
+        onModuleChange={requestModuleChange}
+        onReturnToToolbox={requestToolbox}
+        moduleStatuses={moduleStatuses}
+        header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} onCheckUpdate={() => void checkForUpdate(true)} />}
+      >
+        <MediaWorkbench active={activeModule === 'media'} />
+        {activeModule === 'custom' ? <CustomWorkbench
+          brandLayer={brandLayer}
+          logoAsset={selectedLogo}
+          cprAsset={selectedCpr}
+          companyLogo={companyLogo}
+          gameLogo={gameLogo}
+          gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
+          onDirtyChange={handleCustomWorkbenchDirty}
+        /> : null}
+      </AppShell>
+    </div>
     <GlobalDialogs />
     <UpdateDialog />
+    {appSettings}
   </>;
 }
 

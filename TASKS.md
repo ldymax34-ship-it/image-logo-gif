@@ -1,6 +1,22 @@
 # 任务看板
 
-## 当前版本：0.1.33 自定义构图原图画布、裁切与几何缩放
+## 当前目标
+
+0.1.33 工具箱路线：完成 Stage 5A 品宣工具箱启动器后，继续 Stage 5B 默认启动偏好；不继续旧 FFUI / FFmpeg 审计 PoC，不开始 Stage 6。
+
+## 本轮任务
+
+- [x] Stage 5A：工具箱首页、可用/未完成入口、返回工具箱与轻量应用设置表面。复用现有 React/Tauri 壳，无 FFmpeg、Vue、第二窗口或新依赖。
+- [ ] Stage 5B：版本化应用偏好、默认启动与未完成工具回退。
+- [x] Stage 5A 完整门禁、包体记录、浏览器截图与独立提交；Stage 5B 仍待独立执行，不推送、不发布。
+
+## 暂不处理
+
+- Stage 6 FFUI 隔离 PoC、FFmpeg / FFprobe sidecar、GIF / 媒体工具和水印与追溯正式功能。
+- 旧 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为历史审计记录，不回滚、不删除。
+- 用户未跟踪的 `artifacts/audit-export-flow-2026-07-22/` 与 `artifacts/visual/` 保留且不纳入提交。
+
+## 已完成
 
 ### 工具箱路线｜阶段 1：0.1.33 可信基线
 - [x] 收口此前未提交的 OpenPencil UI 规则与自定义构图定向返工：任意画布尺寸、固定标题行导出入口、单层高级样式 disclosure 均保留现有 Render Plan 与状态所有权。
@@ -35,11 +51,20 @@
 - [x] 自动验证：共享选择 token、stage 视口缩放、高 DPI 逻辑坐标，以及既有 Focus/Custom 坐标和边界回归均通过；`git diff --check`、`npm run verify:core`、`npm test -- --run`（254 tests / 33 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
 - [ ] 原生 Tauri 实机仍需验证两处编辑器在高 DPI、鼠标/触控板输入和横/方/竖画布下的选框与查看视口表现；共享纯函数和浏览器验证不替代该项。
 
-### 工具箱路线｜阶段 5：可嵌入 FFmpeg GUI 筛选（阻断）
+### 工具箱路线｜旧阶段 5：FFmpeg GUI 源码审计（历史记录）
 - [x] 完成 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md`：按 React/Tauri 可嵌入性、离线单 sidecar、队列、进度、取消、GIF 参数、许可证、跨平台和维护质量审计 FFmpeg-UI、FFUI、FFmpeg GUI - Tauri Edition 的当前源码。
 - [x] 结论：没有候选同时满足条件。FFmpeg-UI 的 desktop 取消为空实现且默认联网下载；FFUI 是独立 Vue/Rust/Tauri 应用并带自动下载；FFmpeg GUI - Tauri Edition 缺批量/GIF/sidecar 且许可文件不完整。
 - [x] 按路线停止正式接入：未加入 FFmpeg/FFprobe sidecar、Python、WASM、云服务、独立软件或新媒体模块；Stage 6 不开始。
-- [ ] 仅在出现许可证明确、可裁剪嵌入当前 React 18/Tauri 2、已有可靠队列/取消并支持单一内置离线 sidecar 的成熟候选后，重新开启 Stage 5 PoC。
+- [x] 该 No-Go 仅保留为旧路线历史审计；2026-07-23 起，正式路线为 Stage 5A 工具箱启动器、Stage 5B 默认启动设置、Stage 6 FFUI 隔离 PoC。未执行旧 Stage 5 的运行时 PoC。
+
+### 工具箱路线｜阶段 5A：品宣工具箱启动器
+- [x] 应用默认进入“品宣工具箱”，提供 Logo 与版式、GIF / 媒体工具、水印与追溯、设置四个入口；前两项未完成功能明确显示“暂不可用 / 即将开放”，无法进入空白页。
+- [x] “Logo 与版式”进入现有设媒 / 自定义构图工作台；顶部“返回工具箱”只切换应用入口。既有工作台保留挂载，返回后重新进入不会因入口切换丢失内存状态。
+- [x] 设置入口打开轻量应用级说明表面，不写入品牌设置、画板或未保存工作内容；Stage 5B 才实现启动偏好。
+- [x] 新增工具箱静态组件与根应用回归；浏览器开发环境检查 1440×900 和 1100×720：工具箱、Logo 与版式及设置均无横向溢出，核心入口可达。截图仅保存在 `/private/tmp/brand-material-workbench-stage5a/`，不冒充原生 Tauri 实机验证。
+- [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（255 tests / 34 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [x] 包体：未新增 npm/Rust/二进制依赖；前端 `dist` 为 1,184 KB，较 Stage 4 记录的 1,172 KB 约 +12 KB。未构建新平台安装包，macOS/Windows 包体增量待实机构建审计。
+- [ ] 仍需 macOS/Windows Tauri 实机：工具箱初始页、返回入口、键盘焦点与系统字体渲染；浏览器截图不替代桌面壳验证。
 
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。

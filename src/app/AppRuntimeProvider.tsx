@@ -13,6 +13,8 @@ import {
 } from '../core';
 import { AppActivityContext, IDLE_APP_ACTIVITY, type AppActivity } from './appActivity';
 
+export type AppTool = 'toolbox' | 'logo-layout';
+export type AppNavigationTarget = WorkbenchModule | 'toolbox';
 
 
 export type MediaHeaderState = {
@@ -23,10 +25,13 @@ export type MediaHeaderState = {
 };
 
 type AppRuntime = {
+  activeTool: AppTool;
+  setActiveTool: Dispatch<SetStateAction<AppTool>>;
+  requestToolbox: () => void;
   activeModule: WorkbenchModule;
   setActiveModule: Dispatch<SetStateAction<WorkbenchModule>>;
   requestModuleChange: (module: WorkbenchModule) => void;
-  registerMediaModuleChangeGuard: (guard: (module: WorkbenchModule) => boolean) => () => void;
+  registerMediaModuleChangeGuard: (guard: (target: AppNavigationTarget) => boolean) => () => void;
   brandAssets: BrandAsset[];
   setBrandAssets: Dispatch<SetStateAction<BrandAsset[]>>;
   brandLayer: BrandLayerState;
@@ -37,6 +42,8 @@ type AppRuntime = {
   setSettingsDialogOpen: Dispatch<SetStateAction<boolean>>;
   settingsDirty: boolean;
   setSettingsDirty: Dispatch<SetStateAction<boolean>>;
+  applicationSettingsOpen: boolean;
+  setApplicationSettingsOpen: Dispatch<SetStateAction<boolean>>;
   settingsSelectedCompanyLogoId?: string;
   setSettingsSelectedCompanyLogoId: Dispatch<SetStateAction<string | undefined>>;
   activity: AppActivity;
@@ -71,17 +78,19 @@ export function resolveAppActivity(
 }
 
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
+  const [activeTool, setActiveTool] = useState<AppTool>('toolbox');
   const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
   const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
   const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
   const [brandSettings, setBrandSettings] = useState<BrandSettingsV1>(() => loadBrandSettings());
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [applicationSettingsOpen, setApplicationSettingsOpen] = useState(false);
   const [settingsSelectedCompanyLogoId, setSettingsSelectedCompanyLogoId] = useState<string>();
   const [activity, setActivity] = useState<AppActivity>(IDLE_APP_ACTIVITY);
   const [mediaHeader, setMediaHeader] = useState<MediaHeaderState>(INITIAL_MEDIA_HEADER);
   const globalBrandResourceHandlersRef = useRef<GlobalBrandResourceHandlers>({});
-  const mediaModuleChangeGuardRef = useRef<((module: WorkbenchModule) => boolean) | undefined>();
+  const mediaModuleChangeGuardRef = useRef<((target: AppNavigationTarget) => boolean) | undefined>();
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -92,7 +101,11 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     if (mediaModuleChangeGuardRef.current && !mediaModuleChangeGuardRef.current(module)) return;
     setActiveModule(module);
   }, [activeModule]);
-  const registerMediaModuleChangeGuard = useCallback((guard: (module: WorkbenchModule) => boolean) => {
+  const requestToolbox = useCallback(() => {
+    if (mediaModuleChangeGuardRef.current && !mediaModuleChangeGuardRef.current('toolbox')) return;
+    setActiveTool('toolbox');
+  }, []);
+  const registerMediaModuleChangeGuard = useCallback((guard: (target: AppNavigationTarget) => boolean) => {
     mediaModuleChangeGuardRef.current = guard;
     return () => { if (mediaModuleChangeGuardRef.current === guard) mediaModuleChangeGuardRef.current = undefined; };
   }, []);
@@ -119,6 +132,9 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AppRuntime>(() => ({
+    activeTool,
+    setActiveTool,
+    requestToolbox,
     activeModule,
     setActiveModule,
     requestModuleChange,
@@ -133,6 +149,8 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     setSettingsDialogOpen,
     settingsDirty,
     setSettingsDirty,
+    applicationSettingsOpen,
+    setApplicationSettingsOpen,
     settingsSelectedCompanyLogoId,
     setSettingsSelectedCompanyLogoId,
     activity: resolvedActivity,
@@ -142,7 +160,7 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     registerGlobalBrandResourceHandlers,
     mediaHeader,
     setMediaHeader
-  }), [activeModule, requestModuleChange, registerMediaModuleChangeGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
+  }), [activeTool, requestToolbox, activeModule, requestModuleChange, registerMediaModuleChangeGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, applicationSettingsOpen, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
 
   return <AppRuntimeContext.Provider value={value}><AppActivityContext.Provider value={resolvedActivity}>{children}</AppActivityContext.Provider></AppRuntimeContext.Provider>;
 }
