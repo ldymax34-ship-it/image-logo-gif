@@ -2,7 +2,7 @@
 
 ## 当前目标
 
-0.1.33 工具箱路线：Stage 5A 品宣工具箱启动器与 Stage 5B 默认启动偏好均已完成；不继续旧 FFUI / FFmpeg 审计 PoC，不开始 Stage 6。
+0.1.33 工具箱路线：Stage 5A 品宣工具箱启动器与 Stage 5B 默认启动偏好均已完成；Stage 6A 仅完成 GIF / 媒体工具与隔离 PoC 规划，未开始 Stage 6B。miniPaint 与专业静态编辑器已取消当前路线，不作为当前待办。
 
 ## 本轮任务
 
@@ -11,10 +11,12 @@
 - [x] Stage 5A、5B 均已完成独立门禁、包体记录、浏览器截图与提交；不推送、不发布。
 - [x] 内置“常用社媒”模板显示名统一为纯尺寸 `1080x1080`、`1080x1920`、`1920x1080`；保持稳定套组 ID、宽高、顺序和 JPG 格式不变，并补齐回归测试。`git diff --check`、`npm run verify:core`、`npm test -- --run`（260 tests / 36 files）与 `npm run build` 均通过；未涉及 Rust/Tauri，未重复 Cargo 门禁。
 - [x] 设媒 Logo 与 CPR 的“连续缩放”滑块支持双击复位到 100%，保留现有画板更新、dirty、同步与 Render Plan 状态链；补齐行为与无障碍文案回归。`git diff --check`、`npm run verify:core`、`npm test -- --run`（262 tests / 36 files）与 `npm run build` 均通过；未涉及 Rust/Tauri，未重复 Cargo 门禁。
+- [x] Stage 6A：完成 GIF / 媒体工具产品范围、FFUI 隔离 PoC 边界、验收矩阵、许可证/包体/sidecar 决策点与 6B 最小清单规划；仅文档，不接入 Vue、FFmpeg、sidecar、第二窗口或二进制。
 
 ## 暂不处理
 
-- Stage 6 FFUI 隔离 PoC、FFmpeg / FFprobe sidecar、GIF / 媒体工具和水印与追溯正式功能。
+- Stage 6B FFUI 隔离 PoC、FFmpeg / FFprobe sidecar、GIF / 媒体工具和水印与追溯正式功能，均待后续明确批准。
+- miniPaint、Photopea / Canva / Photoshop 类专业静态编辑器和完整开源图片编辑器已取消当前路线。本项目当前不集成、分发或提供高级编辑入口，也不主动预留图层、插件、时间轴、通用文档模型或兼容层；未来若其他已确认功能有真实需求，须重新经过用户确认、边界审计、依赖/许可证与包体评估。
 - 旧 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为历史审计记录，不回滚、不删除。
 - 用户未跟踪的 `artifacts/audit-export-flow-2026-07-22/` 与 `artifacts/visual/` 保留且不纳入提交。
 
@@ -57,7 +59,7 @@
 - [x] 完成 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md`：按 React/Tauri 可嵌入性、离线单 sidecar、队列、进度、取消、GIF 参数、许可证、跨平台和维护质量审计 FFmpeg-UI、FFUI、FFmpeg GUI - Tauri Edition 的当前源码。
 - [x] 结论：没有候选同时满足条件。FFmpeg-UI 的 desktop 取消为空实现且默认联网下载；FFUI 是独立 Vue/Rust/Tauri 应用并带自动下载；FFmpeg GUI - Tauri Edition 缺批量/GIF/sidecar 且许可文件不完整。
 - [x] 按路线停止正式接入：未加入 FFmpeg/FFprobe sidecar、Python、WASM、云服务、独立软件或新媒体模块；Stage 6 不开始。
-- [x] 该 No-Go 仅保留为旧路线历史审计；2026-07-23 起，正式路线为 Stage 5A 工具箱启动器、Stage 5B 默认启动设置、Stage 6 FFUI 隔离 PoC。未执行旧 Stage 5 的运行时 PoC。
+- [x] 该 No-Go 仅保留为旧路线历史审计；2026-07-23 起，正式路线先完成 Stage 5A 工具箱启动器、Stage 5B 默认启动设置与 Stage 6A GIF / 媒体工具规划，Stage 6B FFUI 隔离 PoC 仍待后续明确批准。未执行旧 Stage 5 的运行时 PoC。
 
 ### 工具箱路线｜阶段 5A：品宣工具箱启动器
 - [x] 应用默认进入“品宣工具箱”，提供 Logo 与版式、GIF / 媒体工具、水印与追溯、设置四个入口；前两项未完成功能明确显示“暂不可用 / 即将开放”，无法进入空白页。

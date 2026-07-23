@@ -1,5 +1,31 @@
 # 更新日志
 
+## 2026-07-23｜Stage 6A｜GIF / 媒体工具与隔离 PoC 规划
+
+### 修改文件
+- `docs/STAGE_6A_GIF_MEDIA_POC_PLAN.md`、`docs/TOOLBOX_EXECUTION_PLAN.md`、`docs/FFMPEG_GUI_CANDIDATE_AUDIT.md`
+- `TASKS.md`、`README.md`、`CHANGELOG.md`
+
+### 主要改动
+- 只定义 MP4/MOV→GIF、GIF 重新压缩、批量队列的首版产品范围、参数、状态、预设、隔离 PoC 边界和双平台验收矩阵。
+- 将旧 FFmpeg GUI No-Go 保留为历史审计，改由 Stage 6A 规划约束未来 Stage 6B；本轮不接入 Vue、FFmpeg/FFprobe、sidecar、第二窗口、二进制或正式媒体模块。
+
+### 影响范围
+- 仅文档规划；不修改业务代码、依赖、Tauri 配置、发布链路或包体。
+
+## 2026-07-23｜产品边界：取消当前专业静态编辑器路线
+
+### 修改文件
+- `AGENTS.md`、`README.md`、`TASKS.md`、`CHANGELOG.md`
+- `docs/PRODUCT_BOUNDARIES.md`、`docs/TOOLBOX_EXECUTION_PLAN.md`、`docs/TOOLBOX_ROADMAP_FEASIBILITY_REVIEW.md`
+
+### 产品决策
+- miniPaint、Photopea / Canva / Photoshop 类专业静态编辑器与完整开源图片编辑器已取消当前路线；本项目当前不集成、分发或提供高级编辑入口。
+- 复杂静态编辑当前由用户自行使用已有外部专业软件，本项目当前不负责集成、启动、同步、文件交接或分发；不为未确认需求主动搭建图层、插件、时间轴、通用文档模型或高级编辑入口。未来若其他已确认功能有真实需求，必须重新经过用户确认、边界审计、依赖/许可证与包体评估后再决定。
+
+### 影响范围
+- 仅更新产品边界和执行路线，不修改业务代码、依赖、Tauri 配置、发布链路或包体。
+
 ## 2026-07-23｜连续缩放双击复位
 
 ### 修改文件
@@ -57,7 +83,7 @@
 - 原生 Tauri/WebView 的持久化、桌面重启、系统字体与键盘焦点仍需 macOS/Windows 人工验证；浏览器重载和纯函数测试不替代该项。
 
 ### 下一步建议
-- Stage 5A/5B 已完成，按路线停在此处；未获得新指令前不开始 Stage 6 FFUI 隔离 PoC。
+- 历史建议：Stage 5A/5B 完成后曾要求停止。该建议现已由 Stage 6A 规划取代；Stage 6B FFUI 隔离 PoC 仍须新的明确批准。
 
 ## 2026-07-23｜Stage 5A｜品宣工具箱启动器
 

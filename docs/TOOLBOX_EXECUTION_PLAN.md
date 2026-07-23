@@ -19,12 +19,13 @@ TOOLBOX_ROADMAP_FEASIBILITY_REVIEW.md
 许可证明显无法接受；
 包体或运行时异常膨胀；
 会破坏现有 Render Plan、导出或更新链路。
-不要只写调研文档。候选方案明确可行时，应继续做隔离 PoC和最小正式接入。
+除非当前阶段明确标为“仅规划”，候选方案明确可行时，应继续做隔离 PoC和最小正式接入。
 不修改或删除用户已有的 artifacts/。
 不使用 reset --hard、覆盖式 checkout或其他会丢失现有改动的操作。
 不引入 Python、PyTorch、完整开发环境或重复媒体运行时。
 Windows离线 WebView2约200MB是已接受的固定安装基线，不再使用统一10MB硬停止线。记录每项真实包体增量，异常增长时说明原因。
 不自研编码、量化、水印、指纹、时间轴、图层或通用编辑器底层能力。
+miniPaint、Photopea / Canva / Photoshop 类专业静态编辑器及完整开源图片编辑器已从当前产品路线取消；当前不以内嵌、可选安装包、独立子工具、项目内调用或兼容层方式进入本项目，也不为未确认需求主动预埋高级编辑架构。未来仅可在其他已确认功能出现真实需求后，重新完成用户确认、边界审计、依赖/许可证与包体评估。
 阶段一：当前在途改动收口
 
 先检查工作区已有的 UI、自定义构图、测试和文档改动。
@@ -217,11 +218,15 @@ type AppPreferencesV1 = {
 - 当前 GIF / 媒体工具和水印与追溯尚未实现；无论作为启动项或上次工具，均统一回退工具箱首页，不创建空模块。
 - 只记录工具入口，不恢复未保存任务、工作台状态或素材。
 
-阶段六：FFUI 隔离 PoC
+阶段六 A：GIF / 媒体工具与隔离 PoC 规划（仅文档）
 
-`a8e9ded` 与 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为旧路线的历史源码审计记录，不删除、不作为 Stage 5A/5B 的实现前置条件。
+本阶段只执行 `docs/STAGE_6A_GIF_MEDIA_POC_PLAN.md` 所定义的产品、隔离和验收规划；不得接入 Vue、FFmpeg/FFprobe、sidecar、第二个 Tauri window 或任何二进制。
 
-在 Stage 5A/5B 完成后，才允许评估 FFUI 隔离 PoC：保留其 Vue 前端为当前 Tauri 应用的独立内部窗口，不带第二个 Tauri 应用、不要求额外安装；只规划安装包内唯一 FFmpeg/FFprobe，并验证队列、进度、取消与一个 MP4 → GIF 任务。PoC 未通过前不得进入正式媒体模块。
+`a8e9ded` 与 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为旧路线的历史源码审计记录；它们已由 Stage 6A 的规划口径取代，不授权任何实现。
+
+阶段六 B：FFUI 隔离 PoC（需要后续明确批准）
+
+仅在用户明确批准 Stage 6B 后，才允许验证 FFUI Vue 前端能否作为当前 Tauri 应用的独立内部窗口/隔离前端入口运行，不带第二个 Tauri app、不要求用户额外安装。PoC 必须复用安装包内唯一 FFmpeg/FFprobe sidecar，并优先复用现成队列、进度、取消、错误和结果 UX；未通过前不得进入正式媒体模块。
 
 阶段六的候选条件
 
@@ -538,6 +543,8 @@ Python / PyTorch
 通用图层系统
 通用视频编辑器
 通用图片编辑器
+当前路线内的 miniPaint、Photopea / Canva / Photoshop 类专业静态编辑器
+当前路线内的完整开源图片编辑器、独立静态编辑子工具、项目内外部软件调用或兼容层
 多 Agent或额外服务
 云端转码
 首次使用联网下载模型
