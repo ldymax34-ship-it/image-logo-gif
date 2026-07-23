@@ -55,3 +55,8 @@ export function resolveStartupTool(preferences: AppPreferencesV1): AvailableAppT
   const selected = preferences.startupTool === 'last' ? preferences.lastTool : preferences.startupTool;
   return selected === 'logo-layout' ? 'logo-layout' : 'toolbox';
 }
+
+export function shouldLaunchGifMediaOnStartup(preferences: AppPreferencesV1): boolean {
+  const selected = preferences.startupTool === 'last' ? preferences.lastTool : preferences.startupTool;
+  return selected === 'gif-media';
+}

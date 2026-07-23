@@ -1,5 +1,20 @@
 # 更新日志
 
+## 2026-07-23｜Stage 6B｜真实 GIF / 媒体处理
+
+### 主要改动
+- 用户将项目明确为内部本地工具，解除未来公开分发/完整许可证材料作为开发冻结条件；历史 `e021121` gate 保留，但不再阻断本阶段。
+- 接入当前 Tauri 应用内的固定 FFmpeg / FFprobe sidecar 与隔离 Vue 队列：支持 MP4/MOV → GIF、起止时间、输出宽度、FPS、循环、高清/8MB 倾向/快速预览/原尺寸、批量顺序、真实进度、取消、失败与结果大小。
+- Rust 后端只从 Tauri `resource_dir` 启动 `externalBin`，没有 PATH 探测、环境覆盖、运行时下载、shell 命令拼接或第二个 Tauri app。输出强制为新 GIF 名，重名确定性追加后缀。
+
+### 验证方式
+- macOS arm64 使用仓库内 sidecar 真实跑过 MP4/MOV → GIF、中文与空格路径、GIF 元数据、两任务、运行中子进程终止、受控失败后继续及输入文件不覆盖。
+- Rust 定向实机回归覆盖上述受控任务；Vue 定向回归覆盖浏览器桌面降级与队列状态。完整门禁通过：`git diff --check`、`npm run verify:core`、`npm test -- --run`（271 tests / 40 files）、`npm run build`、`cargo fmt --check`、`cargo check` 与 `cargo test`（15 passed）。
+- 以 `createUpdaterArtifacts=false` 完成本机 macOS `.app` bundle 检查，固定 sidecar 位于 `Contents/MacOS/` 且 `codesign --verify --deep --strict` 通过；未生成 Preview 发布物。
+
+### 未完成 / 风险
+- Windows x64 尚无原生构建或交互式实机；仅完成 PE x86-64 架构和 Tauri target-triple 资源规则复核。Stage 6C 可见水印尚未开始。
+
 ## 2026-07-23｜Stage 6B / 6C｜真实媒体后端与可见水印门禁复核
 
 ### 修改文件

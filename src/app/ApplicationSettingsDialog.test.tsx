@@ -18,6 +18,7 @@ describe('ApplicationSettingsDialog', () => {
     expect(markup).toContain('GIF / 媒体工具');
     expect(markup).toContain('水印与追溯');
     expect(markup).toContain('上次使用的工具');
-    expect(markup).toContain('安全回退到工具箱首页');
+    expect(markup).toContain('GIF / 媒体工具会在启动后打开独立窗口');
+    expect(markup).toContain('水印与追溯仍会安全回退到工具箱首页');
   });
 });

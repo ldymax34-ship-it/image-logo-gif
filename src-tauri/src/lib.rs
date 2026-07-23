@@ -1,4 +1,5 @@
 mod diagnostics;
+mod media;
 
 use std::path::{Component, Path, PathBuf};
 use tauri::Manager;
@@ -75,6 +76,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(media::MediaTaskRegistry::default())
         .setup(|app| {
             let log_plugin = tauri_plugin_log::Builder::new()
                 .targets([
@@ -101,6 +103,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             save_export_file,
+            media::media_engine_status,
+            media::start_gif_media_task,
+            media::cancel_gif_media_task,
             diagnostics::diagnostics_info,
             diagnostics::diagnostics_recent_errors,
             diagnostics::diagnostics_open_log_dir,

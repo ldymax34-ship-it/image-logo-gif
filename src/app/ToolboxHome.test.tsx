@@ -13,8 +13,8 @@ describe('ToolboxHome', () => {
     expect(markup).toContain('GIF / 媒体工具');
     expect(markup).toContain('水印与追溯');
     expect(markup).toContain('设置');
-    expect(markup).toContain('实验预览');
-    expect(markup).toContain('打开实验预览');
+    expect(markup).toContain('内部实验');
+    expect(markup).toContain('打开 GIF 工具');
     expect(markup).toMatch(/Logo 与版式[\s\S]*?进入工作台/);
     expect(markup).toContain('disabled=""');
   });

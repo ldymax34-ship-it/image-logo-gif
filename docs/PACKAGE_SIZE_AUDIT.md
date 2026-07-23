@@ -100,6 +100,14 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 当前仓库没有可打包的中文字体资源，不能估算文字水印字体的前端、macOS 或 Windows 包体增量。
 - 结论：未选择 sidecar 或字体，也未生成平台安装包；在固定来源、SHA-256、许可证、每平台资源清单和字体策略得到确认前，真实媒体后端与文字水印维持阻断。详见 `docs/STAGE_6B_BACKEND_GATE.md`。
 
+## 0.1.33 Stage 6B 真实 GIF 后端审计（2026-07-23）
+
+- 用户明确将本项目限定为内部本地工具，公开分发级许可证和供应链材料不再作为开发阻断；仍固定记录上游、版本、SHA-256、文件大小与修改范围。
+- 新增平台 sidecar：macOS arm64 的 `ffmpeg` + `ffprobe` 合计 54,954,368 B（约 52.4 MiB）；Windows x64 合计 145,454,080 B（约 138.7 MiB）。构建时每个平台只随 `bundle.externalBin` 选择本平台的成对工具，不会将两套平台二进制同时放进同一安装包。
+- 前端 `dist`：1,312 KB，较 Stage 6B-UI Checkpoint 的 1,292 KB 约 +20 KB，来自真实队列、参数、进度、错误和取消 UI；没有新增第二个前端框架或独立 Tauri app。
+- macOS `.app`：本机以 `createUpdaterArtifacts=false` 构建为 71,112 KB（约 69.4 MiB），其中固定 macOS sidecar 约 52.4 MiB；已确认 bundle 内只有 `Contents/MacOS/ffmpeg` 与 `ffprobe` 两个媒体二进制。未生成 DMG、Windows NSIS 或 Windows 安装目录，不能据此宣称跨平台安装包增量。
+- 资源文件、SHA-256、来源与运行时单份约束见 `docs/MEDIA_RUNTIME_SOURCES.md`。Stage 6C 的中文字体包体单独记录，不混入本阶段。
+
 ## 0.1.32 Fabric.js 接入审计（2026-07-22）
 
 ### 当前基线与增量

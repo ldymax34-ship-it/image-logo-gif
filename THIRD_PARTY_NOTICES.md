@@ -16,4 +16,9 @@
 - `@vitejs/plugin-vue@5.2.4`：MIT；仅用于当前 Vite 多页面构建。
 - `@vue/server-renderer@3.5.26`：MIT；仅用于 Vue 预览组件的开发期渲染测试，不进入生产运行时入口。
 
-本检查点未加入 FFmpeg / FFprobe、sidecar、媒体二进制、第二个 Tauri app 或联网下载器。后续任何正式 PoC 或分发前，须复核许可证文本、归属和实际打包清单。
+### Stage 6B 媒体 sidecar
+
+- `@ffmpeg-installer/darwin-arm64@4.1.5`、`@ffprobe-installer/darwin-arm64@5.0.1`
+- `@ffmpeg-installer/win32-x64@4.1.0`、`@ffprobe-installer/win32-x64@5.1.0`
+- 使用范围：当前 Tauri app 内唯一的 MP4/MOV → GIF 运行时。仅从 bundle resource directory 启动，不探测 PATH、不联网下载、不启动第二个 Tauri app。
+- 固定上游标识、SHA-256、文件大小、平台打包路径与维护说明见 `docs/MEDIA_RUNTIME_SOURCES.md`。

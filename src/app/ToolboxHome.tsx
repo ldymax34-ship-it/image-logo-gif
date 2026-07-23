@@ -16,8 +16,8 @@ const TOOLS = [
   {
     id: 'gif-media',
     label: 'GIF / 媒体工具',
-    detail: '查看隔离队列与参数界面的实验预览',
-    action: '打开实验预览',
+    detail: 'MP4 / MOV 转 GIF，本地队列处理',
+    action: '打开 GIF 工具',
     available: true,
     experimental: true
   },
@@ -56,7 +56,7 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenSet
             onClick={getToolboxLaunchAction(tool.id, { onOpenLogoLayout, onOpenGifMediaPreview })}
             aria-label={tool.available ? `${tool.label}，${tool.action}` : `${tool.label}，${tool.action}`}
           >
-            <span className="toolbox-launch-status">{tool.experimental ? '实验预览' : tool.available ? '可用' : '暂不可用'}</span>
+            <span className="toolbox-launch-status">{tool.experimental ? '内部实验' : tool.available ? '可用' : '暂不可用'}</span>
             <strong>{tool.label}</strong>
             <small>{tool.detail}</small>
             <span className="toolbox-launch-action">{tool.action}</span>

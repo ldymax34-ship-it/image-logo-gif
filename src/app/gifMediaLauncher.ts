@@ -43,7 +43,7 @@ export async function openGifMediaDesktopWindow(api: GifMediaWindowApi): Promise
   }
 
   api.create(GIF_MEDIA_WINDOW_LABEL, {
-    title: 'GIF / 媒体工具 - 实验预览',
+    title: 'GIF / 媒体工具',
     url: GIF_MEDIA_PAGE_PATH,
     width: 1180,
     height: 800,

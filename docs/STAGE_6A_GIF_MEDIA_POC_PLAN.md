@@ -2,9 +2,9 @@
 
 ## 状态与边界
 
-状态：Stage 6B-UI Checkpoint 已完成；真实后端在实现前被 sidecar 与字体门禁阻断，详见 `docs/STAGE_6B_BACKEND_GATE.md`。
+状态：Stage 6B 的真实 MP4/MOV → GIF 闭环已开始实施；旧公开分发门禁已由用户的内部工具决策覆盖。固定 sidecar 来源与运行时边界见 `docs/MEDIA_RUNTIME_SOURCES.md`。
 
-2026-07-23 更新：用户先授权 Stage 6B-UI Checkpoint，随后授权继续真实后端与首版可见水印。UI Checkpoint 已加入最小 Vue 多页面预览和 singleton 内部窗口入口；但真实转码、命令生成、可执行队列、进度、取消和水印均未实现，因为唯一可审计 sidecar 与跨平台中文字体尚未满足前置条件。
+2026-07-23 更新：用户先授权 Stage 6B-UI Checkpoint，随后授权真实后端与首版可见水印，并明确内部工具无需以未来公开分发材料冻结开发。UI Checkpoint 保留独立 Vue 多页面和 singleton 内部窗口入口；Stage 6B 接入固定 Tauri sidecar、真实转码、队列、进度、取消与错误处理。Stage 6C 仍须在 Stage 6B 独立验收后开始。
 
 Stage 6A 只为用户确认后的 Stage 6B 提供最小决策材料。现有 Logo 与版式工作台、Render Plan、导出、同步、Fabric、更新和发布链路均不在本阶段修改范围内。
 

@@ -43,7 +43,7 @@ export function ApplicationSettingsDialog({ preferences, onPreferencesChange, on
             </select>
           </label>
           <p>启动偏好会保存在本机，只记录工具入口，不恢复未保存的工作内容。</p>
-          <p className="inline-note">GIF / 媒体工具和水印与追溯暂未开放；选择它们或上次使用未开放工具时，会安全回退到工具箱首页。</p>
+          <p className="inline-note">GIF / 媒体工具会在启动后打开独立窗口，且不会恢复未保存任务；水印与追溯仍会安全回退到工具箱首页。</p>
         </div>
         <div className="dialog-footer">
           <span />

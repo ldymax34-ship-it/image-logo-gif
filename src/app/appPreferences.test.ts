@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_APP_PREFERENCES,
   parseAppPreferences,
-  resolveStartupTool
+  resolveStartupTool,
+  shouldLaunchGifMediaOnStartup
 } from './appPreferences';
 
 describe('app preferences', () => {
@@ -19,10 +20,13 @@ describe('app preferences', () => {
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'logo-layout' })).toBe('logo-layout');
   });
 
-  it('safely returns unavailable startup and last tools to the toolbox', () => {
+  it('launches the available GIF window separately while unavailable watermark choices still return to the toolbox', () => {
     expect(resolveStartupTool({ version: 1, startupTool: 'gif-media', lastTool: 'logo-layout' })).toBe('toolbox');
     expect(resolveStartupTool({ version: 1, startupTool: 'watermark-trace', lastTool: 'toolbox' })).toBe('toolbox');
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'gif-media' })).toBe('toolbox');
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'watermark-trace' })).toBe('toolbox');
+    expect(shouldLaunchGifMediaOnStartup({ version: 1, startupTool: 'gif-media', lastTool: 'toolbox' })).toBe(true);
+    expect(shouldLaunchGifMediaOnStartup({ version: 1, startupTool: 'last', lastTool: 'gif-media' })).toBe(true);
+    expect(shouldLaunchGifMediaOnStartup({ version: 1, startupTool: 'watermark-trace', lastTool: 'toolbox' })).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ModuleStatus, WorkbenchModule } from '../components/ModuleNav';
 import { WorkbenchHeader } from '../components';
 import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
@@ -9,6 +9,7 @@ import { ApplicationSettingsDialog } from './ApplicationSettingsDialog';
 import { GlobalDialogs } from './GlobalDialogs';
 import { ToolboxHome } from './ToolboxHome';
 import { openGifMediaPreview } from './gifMediaLauncher';
+import { shouldLaunchGifMediaOnStartup } from './appPreferences';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 import { UncleanExitNotice } from '../diagnostics';
 
@@ -40,6 +41,7 @@ function AppContent() {
     setApplicationSettingsOpen,
     updateActivity
   } = useAppRuntime();
+  const startupMediaHandled = useRef(false);
   const { checkForUpdate } = useUpdate();
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
@@ -50,6 +52,16 @@ function AppContent() {
   const handleCustomWorkbenchDirty = useCallback((customWorkbenchDirty: boolean) => {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
+  const openGifMediaTool = useCallback(() => {
+    setAppPreferences((previous) => previous.lastTool === 'gif-media' ? previous : { ...previous, lastTool: 'gif-media' });
+    void openGifMediaPreview();
+  }, [setAppPreferences]);
+
+  useEffect(() => {
+    if (startupMediaHandled.current || !shouldLaunchGifMediaOnStartup(appPreferences)) return;
+    startupMediaHandled.current = true;
+    void openGifMediaPreview();
+  }, [appPreferences]);
 
   const moduleStatuses = useMemo(
     () => resolveModuleStatuses(activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled),
@@ -60,7 +72,7 @@ function AppContent() {
 
   return <>
     <UncleanExitNotice />
-    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifMediaPreview={() => void openGifMediaPreview()} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
+    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifMediaPreview={openGifMediaTool} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
     <div hidden={activeTool !== 'logo-layout'}>
       <AppShell
         activeModule={activeModule}
