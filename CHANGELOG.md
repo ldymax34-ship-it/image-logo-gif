@@ -1,5 +1,29 @@
 # 更新日志
 
+## 2026-07-23｜Stage 6B-UI Checkpoint｜GIF / 媒体工具实验预览
+
+### 修改文件
+- `gif-media.html`、`src/gif-media/`、`src/app/gifMediaLauncher.ts`
+- `src/app/ToolboxHome.tsx`、`src/app/App.tsx`、`vite.config.ts`
+- `src-tauri/capabilities/`、`THIRD_PARTY_NOTICES.md`
+- `TASKS.md`、`README.md`、`docs/STAGE_6A_GIF_MEDIA_POC_PLAN.md`、`docs/TOOLBOX_EXECUTION_PLAN.md`、`docs/PACKAGE_SIZE_AUDIT.md`
+
+### 主要改动
+- 工具箱的 GIF / 媒体工具改为可点击的“实验预览”：浏览器进入独立 `gif-media.html`，Tauri 使用同一应用内 singleton WebviewWindow；主 React 工作台不持有 Vue 媒体任务状态。
+- 预览按 FFUI 固定提交 `4122222415bc209c711c7c166fc78d2d6d1dc139` 的队列/参数 UX 结构做最小适配，保留来源和 MIT 声明；未复制 FFUI 源码，也未带入其 Rust 壳、下载器、ECharts、GSAP 或执行队列。
+- 预览明确展示空队列、参数、预设和状态图例；没有可执行队列、假进度或假结果。开始处理禁用并显示“转换引擎尚未接入”。
+
+### 影响范围
+- 增加最小 Vue 多页面运行时与窗口创建能力；未加入 FFmpeg / FFprobe、sidecar、媒体二进制、命令、真实转码、自动更新变更或第二个 Tauri app。
+
+### 验证方式
+- 定向回归覆盖工具箱实验预览入口、浏览器 fallback、singleton 窗口创建/聚焦、关闭/返回、独立多页面入口、禁用开始按钮和未接入说明。
+- 浏览器开发环境在 1440×900、1100×720 下验证工具箱与 GIF 页面入口、返回、禁用状态和无横向溢出；截图仅保存于 `/private/tmp/brand-material-workbench-stage6b-ui/`，不代替原生 Tauri 验证。
+- `git diff --check`、`npm run verify:core`、`npm test -- --run`（269 tests / 39 files）、`npm run build`、`cargo fmt --check`、`cargo check` 与 `cargo test`（9 passed）均通过。
+
+### 未完成 / 风险
+- macOS/Windows 仍需实际验证 singleton 窗口创建/复用、关闭、权限 scope、系统缩放、键盘焦点以及主工作台未保存状态隔离。未获得新授权前，不开始 FFmpeg / FFprobe sidecar、命令生成、真实队列、进度、取消或转码。
+
 ## 2026-07-23｜Stage 6A｜GIF / 媒体工具与隔离 PoC 规划
 
 ### 修改文件

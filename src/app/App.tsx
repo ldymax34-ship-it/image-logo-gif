@@ -8,6 +8,7 @@ import { AppShell } from './AppShell';
 import { ApplicationSettingsDialog } from './ApplicationSettingsDialog';
 import { GlobalDialogs } from './GlobalDialogs';
 import { ToolboxHome } from './ToolboxHome';
+import { openGifMediaPreview } from './gifMediaLauncher';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 import { UncleanExitNotice } from '../diagnostics';
 
@@ -59,7 +60,7 @@ function AppContent() {
 
   return <>
     <UncleanExitNotice />
-    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
+    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifMediaPreview={() => void openGifMediaPreview()} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
     <div hidden={activeTool !== 'logo-layout'}>
       <AppShell
         activeModule={activeModule}

@@ -1,5 +1,6 @@
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
+  onOpenGifMediaPreview: () => void;
   onOpenSettings: () => void;
 };
 
@@ -9,25 +10,34 @@ const TOOLS = [
     label: 'Logo 与版式',
     detail: '设媒工作台与自定义构图',
     action: '进入工作台',
-    available: true
+    available: true,
+    experimental: false
   },
   {
     id: 'gif-media',
     label: 'GIF / 媒体工具',
-    detail: '转换与压缩能力仍在规划中',
-    action: '即将开放',
-    available: false
+    detail: '查看隔离队列与参数界面的实验预览',
+    action: '打开实验预览',
+    available: true,
+    experimental: true
   },
   {
     id: 'watermark-trace',
     label: '水印与追溯',
     detail: '本地水印与追溯能力仍在规划中',
     action: '即将开放',
-    available: false
+    available: false,
+    experimental: false
   }
 ] as const;
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenSettings }: ToolboxHomeProps) {
+export function getToolboxLaunchAction(toolId: typeof TOOLS[number]['id'], handlers: Pick<ToolboxHomeProps, 'onOpenLogoLayout' | 'onOpenGifMediaPreview'>): (() => void) | undefined {
+  if (toolId === 'logo-layout') return handlers.onOpenLogoLayout;
+  if (toolId === 'gif-media') return handlers.onOpenGifMediaPreview;
+  return undefined;
+}
+
+export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenSettings }: ToolboxHomeProps) {
   return (
     <main className="toolbox-home" aria-label="品宣工具箱">
       <header className="toolbox-home-header">
@@ -43,10 +53,10 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenSettings }: ToolboxHomePro
             type="button"
             className={`toolbox-launch-card ${tool.available ? 'is-available' : 'is-unavailable'}`}
             disabled={!tool.available}
-            onClick={tool.available ? onOpenLogoLayout : undefined}
+            onClick={getToolboxLaunchAction(tool.id, { onOpenLogoLayout, onOpenGifMediaPreview })}
             aria-label={tool.available ? `${tool.label}，${tool.action}` : `${tool.label}，${tool.action}`}
           >
-            <span className="toolbox-launch-status">{tool.available ? '可用' : '暂不可用'}</span>
+            <span className="toolbox-launch-status">{tool.experimental ? '实验预览' : tool.available ? '可用' : '暂不可用'}</span>
             <strong>{tool.label}</strong>
             <small>{tool.detail}</small>
             <span className="toolbox-launch-action">{tool.action}</span>

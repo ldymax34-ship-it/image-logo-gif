@@ -12,10 +12,11 @@
 - [x] 内置“常用社媒”模板显示名统一为纯尺寸 `1080x1080`、`1080x1920`、`1920x1080`；保持稳定套组 ID、宽高、顺序和 JPG 格式不变，并补齐回归测试。`git diff --check`、`npm run verify:core`、`npm test -- --run`（260 tests / 36 files）与 `npm run build` 均通过；未涉及 Rust/Tauri，未重复 Cargo 门禁。
 - [x] 设媒 Logo 与 CPR 的“连续缩放”滑块支持双击复位到 100%，保留现有画板更新、dirty、同步与 Render Plan 状态链；补齐行为与无障碍文案回归。`git diff --check`、`npm run verify:core`、`npm test -- --run`（262 tests / 36 files）与 `npm run build` 均通过；未涉及 Rust/Tauri，未重复 Cargo 门禁。
 - [x] Stage 6A：完成 GIF / 媒体工具产品范围、FFUI 隔离 PoC 边界、验收矩阵、许可证/包体/sidecar 决策点与 6B 最小清单规划；仅文档，不接入 Vue、FFmpeg、sidecar、第二窗口或二进制。
+- [x] Stage 6B-UI Checkpoint：工具箱 GIF 实验预览、独立 Vue 多页面入口与当前 Tauri app singleton 内部窗口已完成；未接入 sidecar、真实队列、进度、取消、命令或转码。浏览器在 1440×900、1100×720 下确认无横向溢出、入口/返回可达、开始处理禁用；等待用户视觉确认后停止。
 
 ## 暂不处理
 
-- Stage 6B FFUI 隔离 PoC、FFmpeg / FFprobe sidecar、GIF / 媒体工具和水印与追溯正式功能，均待后续明确批准。
+- Stage 6B 后端 PoC、FFmpeg / FFprobe sidecar、真实 GIF / 媒体处理和水印与追溯正式功能，均待后续明确批准。
 - miniPaint、Photopea / Canva / Photoshop 类专业静态编辑器和完整开源图片编辑器已取消当前路线。本项目当前不集成、分发或提供高级编辑入口，也不主动预留图层、插件、时间轴、通用文档模型或兼容层；未来若其他已确认功能有真实需求，须重新经过用户确认、边界审计、依赖/许可证与包体评估。
 - 旧 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为历史审计记录，不回滚、不删除。
 - 用户未跟踪的 `artifacts/audit-export-flow-2026-07-22/` 与 `artifacts/visual/` 保留且不纳入提交。
@@ -77,6 +78,13 @@
 - [x] 新增偏好解析和应用设置组件回归，覆盖直接启动、`last`、无效/损坏/未知数据、未完成工具回退与设置的五个选项。浏览器开发环境实际检查：`logo-layout` 重载后进入工作台，`gif-media` 重载后显示工具箱；完成后恢复默认工具箱启动项。截图仅保存在 `/private/tmp/brand-material-workbench-stage5b-*.png`。
 - [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（259 tests / 36 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
 - [ ] 仍需 macOS/Windows Tauri 实机：本地偏好跨桌面重启、系统 WebView 存储、键盘选择与工具箱/工作台焦点；浏览器重载和纯函数回归不替代该项。
+
+### 工具箱路线｜阶段 6B-UI Checkpoint：GIF / 媒体工具实验预览
+- [x] 工具箱 GIF / 媒体工具改为可点击的“实验预览”；浏览器导航到独立 `gif-media.html`，桌面环境通过固定 `gif-media-preview` label 创建或聚焦 singleton 内部窗口。主 React 工作台只调用入口适配器，不读取或保存 Vue 媒体任务状态。
+- [x] Vue 多页面预览只展示文件/拖入区、空队列、高清/8MB 倾向/快速预览/原尺寸、首版参数、状态图例与输出设置；参数、文件选择、预设和开始处理均禁用，明确显示“转换引擎尚未接入”，不制造假进度或假结果。
+- [x] FFUI `4122222415bc209c711c7c166fc78d2d6d1dc139`、MIT 和参考来源记录在 `THIRD_PARTY_NOTICES.md`；未复制 FFUI 源码或接入其 Rust 壳、下载器、ECharts、GSAP、VueUse、虚拟列表和真实队列。
+- [x] 定向回归覆盖工具箱入口、浏览器 fallback、singleton 窗口创建/聚焦、关闭/返回、独立多页面入口、媒体预览空状态和禁用开始按钮；浏览器 1440×900、1100×720 保存截图至 `/private/tmp/brand-material-workbench-stage6b-ui/`，两种尺寸均无横向溢出。
+- [ ] 仍需 macOS/Windows Tauri 实机：singleton 窗口创建/复用、关闭、权限 scope、主工作台未保存状态隔离、系统缩放和键盘焦点。开始侧车/真实媒体任务前，必须等待用户对本检查点的视觉确认与新授权。
 
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。

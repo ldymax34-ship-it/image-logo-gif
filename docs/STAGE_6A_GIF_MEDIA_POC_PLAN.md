@@ -4,6 +4,8 @@
 
 状态：仅规划。本文不授权 Stage 6B 实现，不引入 Vue、FFmpeg/FFprobe、sidecar、第二个 Tauri window、二进制、依赖或正式模块。
 
+2026-07-23 更新：用户仅授权 Stage 6B-UI Checkpoint。该检查点可加入最小 Vue 多页面预览和 singleton 内部窗口入口，用于视觉确认；仍不授权 sidecar、真实转码、命令生成、可执行队列、进度、取消或正式媒体模块。
+
 Stage 6A 只为用户确认后的 Stage 6B 提供最小决策材料。现有 Logo 与版式工作台、Render Plan、导出、同步、Fabric、更新和发布链路均不在本阶段修改范围内。
 
 旧 `a8e9ded` 和 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为历史源码审计；本规划取代其作为后续媒体 PoC 的执行口径，但不自动推翻其中的风险结论。

@@ -228,6 +228,8 @@ type AppPreferencesV1 = {
 
 仅在用户明确批准 Stage 6B 后，才允许验证 FFUI Vue 前端能否作为当前 Tauri 应用的独立内部窗口/隔离前端入口运行，不带第二个 Tauri app、不要求用户额外安装。PoC 必须复用安装包内唯一 FFmpeg/FFprobe sidecar，并优先复用现成队列、进度、取消、错误和结果 UX；未通过前不得进入正式媒体模块。
 
+2026-07-23 授权仅覆盖 Stage 6B-UI Checkpoint：工具箱可打开 Vue 多页面的实验预览，并在当前 Tauri app 中创建 singleton 内部窗口。该检查点不接入 FFmpeg/FFprobe、sidecar、命令、真实队列、进度、取消或转码；这些仍待后续明确批准。
+
 阶段六的候选条件
 
 停止以下方案：

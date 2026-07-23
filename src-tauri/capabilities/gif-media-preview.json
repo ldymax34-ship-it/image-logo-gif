@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "gif-media-preview",
+  "description": "minimal permissions for the isolated GIF media visual preview",
+  "windows": [
+    "gif-media-preview"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close"
+  ]
+}

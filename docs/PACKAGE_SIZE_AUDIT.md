@@ -85,6 +85,14 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - Windows NSIS、Windows 安装目录、macOS DMG、macOS `.app`：本阶段未生成，不能据此前端构建结果推断平台包体增量。
 - 结论：无新增运行时和二进制包体风险；平台安装包的真实增量继续留待后续实机构建审计。
 
+## 0.1.33 Stage 6B-UI Checkpoint 审计（2026-07-23）
+
+- 新增 npm 依赖：`vue@3.5.26`、`@vitejs/plugin-vue@5.2.4`；`@vue/server-renderer@3.5.26` 仅作为开发期 Vue 渲染测试依赖。FFUI 来源为 MIT 的 `4122222415bc209c711c7c166fc78d2d6d1dc139`，只参考队列和参数 UX 结构，未复制源码，也未引入 FFUI 的 ECharts、GSAP、VueUse、虚拟列表、自动下载器或 Rust/Tauri 壳。
+- 前端 `dist`：1,292 KB，较 Stage 5B 的 1,188 KB 约 +104 KB。新增可交付资源包括 `gif-media.html`、6.67 KB CSS（gzip 1.86 KB）、62.09 KB Vue 预览 JS（gzip 25.20 KB）以及按需加载的 17.77 KB Tauri WebviewWindow API JS（gzip 3.78 KB）。
+- 未新增 Rust crate、FFmpeg / FFprobe、sidecar、字体、模型、第二个 Tauri app 或媒体二进制。`src-tauri/capabilities/` 仅增加主窗口创建 singleton 内部窗口所需的最小 core window/webview 权限，并为预览窗口仅授予 `core:default` 与 close。
+- Windows NSIS、Windows 安装目录、macOS DMG、macOS `.app`：本阶段未生成，不能据此前端构建结果推断平台安装包增量。原生 singleton 窗口权限和关闭语义也仍待双平台实机确认。
+- 结论：前端增量与隔离可视预览相称；任何 FFmpeg / FFprobe sidecar、真实队列、媒体命令或转码接入前，必须重新执行平台包体与运行时审计。
+
 ## 0.1.32 Fabric.js 接入审计（2026-07-22）
 
 ### 当前基线与增量
