@@ -1,39 +1,30 @@
 /**
- * Pure coordinate functions for the focus workspace viewport.
+ * Pure viewport and coordinate functions for the focus workspace.
  *
- * The stage-frame uses `display: grid; place-items: center` which centers
- * the canvas-wrapper inside it. The wrapper is then translated by (panX, panY)
- * and its content is scaled by `scale` (= fitScale × zoom/100).
- *
- * Because of the centering layout, the canvas origin is NOT the stage-frame
- * origin. Instead, we use the BoardCanvas's own getBoundingClientRect(),
- * which already includes the centering offset, padding, and pan.
- *
- * Hit testing:
- *   canvasX = (clientX - canvasRect.left) / scale
- *   canvasRect already contains centering + pan, so no manual pan subtraction.
- *
- * Zoom anchoring (pointer-anchored zoom with centering):
- *   canvasCenter = canvasRect.left + canvasRect.width / 2
- *   nextPan = currentPan + (pointer - canvasCenter) * (1 - nextZoom/curZoom)
+ * The stage centers the canvas-wrapper, then applies the viewport pan. The
+ * actual BoardCanvas rect already contains both layout centering and pan, so
+ * pointer hit testing must never subtract pan a second time.
  */
+
+export type ViewportMode = 'fit' | 'manual';
 
 export type ViewportState = {
   zoom: number;
   panX: number;
   panY: number;
+  mode?: ViewportMode;
 };
 
 export type CanvasRect = { left: number; top: number; width: number; height: number };
+export type ViewportSize = { width: number; height: number };
 
-/**
- * Convert a screen-space pointer to canvas-space coordinates.
- * Uses the BoardCanvas's own rect, which already includes centering + pan.
- */
+const MIN_VISIBLE_PX = 48;
+
+/** Convert a client-space pointer using the BoardCanvas's real DOM rect. */
 export function pointerToCanvasPoint(
   clientX: number,
   clientY: number,
-  canvasRect: { left: number; top: number },
+  canvasRect: Pick<CanvasRect, 'left' | 'top'>,
   scale: number
 ): { x: number; y: number } {
   return {
@@ -42,15 +33,72 @@ export function pointerToCanvasPoint(
   };
 }
 
+/** The literal canvas scale for a viewport zoom percentage. */
+export function getFocusViewScale(zoom: number): number {
+  return zoom / 100;
+}
+
 /**
- * Compute the next viewport so that the canvas point under the pointer
- * stays fixed after a zoom change, accounting for the centered layout.
- *
- * The canvas is centered in the stage-frame via `place-items: center`.
- * When zoom changes, the canvas size changes and the browser re-centers.
- * Using the canvas center as the zoom anchor:
- *   nextPan = currentPan + (pointer - canvasCenter) * (1 - zoomRatio)
- * where canvasCenter = canvasRect.left + canvasRect.width / 2.
+ * Fits the complete canvas inside the stage content box. The result is a
+ * literal canvas percentage, so 100% remains true 1:1 actual size.
+ */
+export function getFocusFitZoom(
+  stage: ViewportSize,
+  canvas: ViewportSize,
+  padding = 36
+): number {
+  const usableWidth = Math.max(1, stage.width - padding);
+  const usableHeight = Math.max(1, stage.height - padding);
+  return Math.max(1, Math.min(300, Math.min(usableWidth / canvas.width, usableHeight / canvas.height) * 100));
+}
+
+export function createFitViewport(stage: ViewportSize, canvas: ViewportSize): ViewportState {
+  return { zoom: getFocusFitZoom(stage, canvas), panX: 0, panY: 0, mode: 'fit' };
+}
+
+/**
+ * Keeps a viewport reachable. Small canvases are always exactly centered;
+ * larger canvases may pan, but retain at least 48 CSS pixels in view.
+ */
+export function clampFocusViewport(
+  viewport: ViewportState,
+  stage: ViewportSize,
+  canvas: ViewportSize
+): ViewportState {
+  const scale = getFocusViewScale(viewport.zoom);
+  const scaledWidth = canvas.width * scale;
+  const scaledHeight = canvas.height * scale;
+  const clampAxis = (pan: number, stageLength: number, canvasLength: number) => {
+    if (canvasLength <= stageLength) return 0;
+    const limit = Math.max(0, (stageLength + canvasLength) / 2 - Math.min(MIN_VISIBLE_PX, canvasLength));
+    return Math.min(limit, Math.max(-limit, pan));
+  };
+  return {
+    ...viewport,
+    panX: clampAxis(viewport.panX, stage.width, scaledWidth),
+    panY: clampAxis(viewport.panY, stage.height, scaledHeight)
+  };
+}
+
+/** Places a canvas-space point at the center of the visible stage. */
+export function centerViewportOnCanvasPoint(
+  stage: ViewportSize,
+  canvas: ViewportSize,
+  zoom: number,
+  point: { x: number; y: number }
+): ViewportState {
+  const scale = getFocusViewScale(zoom);
+  return clampFocusViewport({
+    zoom,
+    panX: (canvas.width / 2 - point.x) * scale,
+    panY: (canvas.height / 2 - point.y) * scale,
+    mode: 'manual'
+  }, stage, canvas);
+}
+
+/**
+ * Pointer-anchored zoom for a centered canvas. `canvasRect` is the current
+ * BoardCanvas DOM rect, including the grid-centering layout and current pan.
  */
 export function computeZoomViewport(
   pointerClientX: number,
@@ -66,6 +114,33 @@ export function computeZoomViewport(
   return {
     zoom: nextZoom,
     panX: currentViewport.panX + (pointerClientX - canvasCenterX) * (1 - zoomRatio),
-    panY: currentViewport.panY + (pointerClientY - canvasCenterY) * (1 - zoomRatio)
+    panY: currentViewport.panY + (pointerClientY - canvasCenterY) * (1 - zoomRatio),
+    mode: 'manual'
+  };
+}
+
+/**
+ * The same pointer-anchored zoom math expressed from the stable stage frame.
+ * In a `place-items: center` stage, the canvas center is always the stage
+ * center plus the viewport pan. This remains valid across coalesced wheel
+ * events, where a previous BoardCanvas DOM rect may no longer describe the
+ * latest React viewport state.
+ */
+export function computeZoomViewportFromStage(
+  pointerClientX: number,
+  pointerClientY: number,
+  stageRect: CanvasRect,
+  currentViewport: ViewportState,
+  nextZoom: number
+): ViewportState {
+  if (nextZoom === currentViewport.zoom) return currentViewport;
+  const zoomRatio = nextZoom / currentViewport.zoom;
+  const canvasCenterX = stageRect.left + stageRect.width / 2 + currentViewport.panX;
+  const canvasCenterY = stageRect.top + stageRect.height / 2 + currentViewport.panY;
+  return {
+    zoom: nextZoom,
+    panX: currentViewport.panX + (pointerClientX - canvasCenterX) * (1 - zoomRatio),
+    panY: currentViewport.panY + (pointerClientY - canvasCenterY) * (1 - zoomRatio),
+    mode: 'manual'
   };
 }

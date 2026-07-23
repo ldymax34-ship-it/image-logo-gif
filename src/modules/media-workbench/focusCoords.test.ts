@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { pointerToCanvasPoint, computeZoomViewport, type CanvasRect } from './focusCoords';
+import {
+  centerViewportOnCanvasPoint,
+  clampFocusViewport,
+  computeZoomViewport,
+  computeZoomViewportFromStage,
+  createFitViewport,
+  getFocusFitZoom,
+  pointerToCanvasPoint,
+  type CanvasRect
+} from './focusCoords';
 
 // Simulate real DOM geometry:
 //   stage-frame: 1000×700 at (0, 0) with `display:grid; place-items:center`
@@ -123,5 +132,63 @@ describe('computeZoomViewport with centered layout', () => {
     cy = (250 - afterRect.top) / scale;
     expect(Math.round(cx)).toBe(150);
     expect(Math.round(cy)).toBe(100);
+  });
+});
+
+describe('focus viewport bounds and commands', () => {
+  const stage = { width: 1000, height: 700 };
+  const landscape = { width: 1920, height: 1080 };
+
+  it('keeps fit-to-window separate from actual-size 100%', () => {
+    const fit = createFitViewport(stage, landscape);
+    expect(fit).toEqual({ zoom: getFocusFitZoom(stage, landscape), panX: 0, panY: 0, mode: 'fit' });
+    expect(fit.zoom).not.toBe(100);
+  });
+
+  it('recenters a canvas when it becomes smaller than the stage', () => {
+    const clamped = clampFocusViewport({ zoom: 25, panX: 500, panY: -400, mode: 'manual' }, stage, landscape);
+    expect(clamped.panX).toBe(0);
+    expect(clamped.panY).toBe(0);
+  });
+
+  it('keeps a large canvas partially visible after extreme pan', () => {
+    const clamped = clampFocusViewport({ zoom: 200, panX: 99999, panY: -99999, mode: 'manual' }, stage, landscape);
+    const scaled = { width: landscape.width * 2, height: landscape.height * 2 };
+    expect(clamped.panX).toBeLessThanOrEqual((stage.width + scaled.width) / 2 - 48);
+    expect(clamped.panX).toBeGreaterThanOrEqual(-((stage.width + scaled.width) / 2 - 48));
+    expect(clamped.panY).toBeLessThanOrEqual((stage.height + scaled.height) / 2 - 48);
+    expect(clamped.panY).toBeGreaterThanOrEqual(-((stage.height + scaled.height) / 2 - 48));
+  });
+
+  it('centers Logo inspection by viewport state only', () => {
+    const viewport = centerViewportOnCanvasPoint(stage, landscape, 150, { x: 1600, y: 180 });
+    expect(viewport).toMatchObject({ zoom: 150, mode: 'manual' });
+    expect(viewport.panX).toBeLessThan(0);
+    expect(viewport.panY).toBeGreaterThan(0);
+  });
+
+  it('does not drift after ten pointer-anchored zoom changes', () => {
+    const pointer = { x: 350, y: 250 };
+    let viewport = { zoom: 100, panX: 0, panY: 0 };
+    const expected = pointerToCanvasPoint(pointer.x, pointer.y, canvasRect(100), 1);
+    const zooms = [125, 150, 175, 200, 175, 150, 125, 100, 150, 200];
+    for (const zoom of zooms) {
+      viewport = computeZoomViewport(pointer.x, pointer.y, canvasRect(viewport.zoom, viewport.panX, viewport.panY), viewport, zoom);
+    }
+    const result = pointerToCanvasPoint(pointer.x, pointer.y, canvasRect(viewport.zoom, viewport.panX, viewport.panY), viewport.zoom / 100);
+    expect(result.x).toBeCloseTo(expected.x, 8);
+    expect(result.y).toBeCloseTo(expected.y, 8);
+  });
+
+  it('uses the latest viewport pan for coalesced wheel events', () => {
+    const stageRect = { left: 0, top: 0, width: 1000, height: 700 };
+    const pointer = { x: 350, y: 250 };
+    let viewport = { zoom: 100, panX: 0, panY: 0 };
+    for (const zoom of [125, 150, 175, 200]) {
+      viewport = computeZoomViewportFromStage(pointer.x, pointer.y, stageRect, viewport, zoom);
+    }
+    const finalCanvas = canvasRect(viewport.zoom, viewport.panX, viewport.panY);
+    const point = pointerToCanvasPoint(pointer.x, pointer.y, finalCanvas, viewport.zoom / 100);
+    expect(point).toEqual({ x: 150, y: 100 });
   });
 });

@@ -18,7 +18,17 @@ import {
 } from '../../core';
 import { BoardCanvas } from '../../components/canvas';
 import type { FocusSession } from './focusSession';
-import { pointerToCanvasPoint, computeZoomViewport, type ViewportState } from './focusCoords';
+import {
+  centerViewportOnCanvasPoint,
+  clampFocusViewport,
+  computeZoomViewport,
+  computeZoomViewportFromStage,
+  createFitViewport,
+  getFocusFitZoom,
+  getFocusViewScale,
+  pointerToCanvasPoint,
+  type ViewportState
+} from './focusCoords';
 import { updateFocusCpr, updateFocusLogo, withFocusDraft } from './focusSession';
 
 const MIN_VIEW_ZOOM = 25;
@@ -83,13 +93,12 @@ export function FocusWorkspace({
   const stageFrameRef = useRef<HTMLDivElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [viewport, setViewport] = useState<ViewportState>({ zoom: 100, panX: 0, panY: 0 });
+  const [viewport, setViewport] = useState<ViewportState>(() => createFitViewport({ width: 820, height: 560 }, spec));
   const [stageBounds, setStageBounds] = useState({ width: 820, height: 560 });
   const [spacePressed, setSpacePressed] = useState(false);
   const draftBrandLayer = { ...brandLayer, ...session.draft.brandLayer, logoEffect: session.draft.brandLayer.logoEffect };
   const assets = resolveBoardBrandAssets({ boardBrandState: session.draft.brand, brandCatalog, brandLayer: draftBrandLayer });
-  const fitViewScale = Math.min(Math.max(1, stageBounds.width - 36) / spec.width, Math.max(1, stageBounds.height - 36) / spec.height, 1.6);
-  const stageScale = fitViewScale * (viewport.zoom / 100);
+  const stageScale = getFocusViewScale(viewport.zoom);
   const crop = session.draft.previewState.crop;
   const minScale = computeFitScale(asset, spec, session.draft.previewState.fitMode);
   const maxScale = minScale * 6;
@@ -151,6 +160,12 @@ export function FocusWorkspace({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setViewport((previous) => previous.mode === 'fit'
+      ? createFitViewport(stageBounds, spec)
+      : clampFocusViewport(previous, stageBounds, spec));
+  }, [spec.height, spec.width, stageBounds]);
+
   function updateCrop(scale: number) {
     const nextCrop = zoomCropState(asset, spec, crop, scale, { x: spec.width / 2, y: spec.height / 2 }, session.draft.previewState.fitMode);
     onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, crop: clampCropState(asset, spec, nextCrop, session.draft.previewState.fitMode) } }));
@@ -180,7 +195,7 @@ export function FocusWorkspace({
     drag.y = event.clientY;
 
     if (drag.kind === 'pan') {
-      setViewport((previous) => ({ ...previous, panX: previous.panX + dx, panY: previous.panY + dy }));
+      setViewport((previous) => clampFocusViewport({ ...previous, panX: previous.panX + dx, panY: previous.panY + dy, mode: 'manual' }, stageBounds, spec));
       return;
     }
 
@@ -209,13 +224,46 @@ export function FocusWorkspace({
     event.preventDefault();
     const factor = wheelSensitivityFactor(brandSettings.focusWheelSensitivity ?? 'standard');
     const delta = -event.deltaY * factor * 0.2;
-    const nextZoom = clampFocusViewZoom(viewport.zoom + delta);
-    if (nextZoom === viewport.zoom) return;
     const canvasRect = event.currentTarget.getBoundingClientRect();
-    setViewport(computeZoomViewport(event.clientX, event.clientY, { left: canvasRect.left, top: canvasRect.top, width: canvasRect.width, height: canvasRect.height }, viewport, nextZoom));
+    const stageRect = stageFrameRef.current?.getBoundingClientRect();
+    setViewport((previous) => {
+      const nextZoom = clampFocusViewZoom(previous.zoom + delta);
+      if (nextZoom === previous.zoom) return previous;
+      return clampFocusViewport(
+        stageRect
+          ? computeZoomViewportFromStage(event.clientX, event.clientY, stageRect, previous, nextZoom)
+          : computeZoomViewport(event.clientX, event.clientY, { left: canvasRect.left, top: canvasRect.top, width: canvasRect.width, height: canvasRect.height }, previous, nextZoom),
+        stageBounds,
+        spec
+      );
+    });
   }
 
-  function fitToWindow() { setViewport({ zoom: 100, panX: 0, panY: 0 }); }
+  function fitToWindow() {
+    setViewport(createFitViewport(stageBounds, spec));
+  }
+
+  function actualSize() {
+    setViewport(clampFocusViewport({ zoom: 100, panX: 0, panY: 0, mode: 'manual' }, stageBounds, spec));
+  }
+
+  function setCenterZoom(nextZoom: number) {
+    setViewport((previous) => clampFocusViewport({ ...previous, zoom: clampFocusViewZoom(nextZoom), mode: 'manual' }, stageBounds, spec));
+  }
+
+  function locateLogo() {
+    const rect = selectionPlan.logoGroupRect;
+    if (!rect) return;
+    const fitZoom = getFocusFitZoom(stageBounds, spec);
+    const targetZoom = Math.min(300, Math.max(fitZoom, Math.min(
+      (stageBounds.width * .6 / rect.width) * 100,
+      (stageBounds.height * .45 / rect.height) * 100
+    )));
+    setViewport(centerViewportOnCanvasPoint(stageBounds, spec, targetZoom, {
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2
+    }));
+  }
 
   return <section className="focus-workspace" aria-label="画板聚焦工作区">
    <div className="focus-workspace-header">
@@ -254,12 +302,16 @@ export function FocusWorkspace({
         <div className="focus-view-zoom" aria-label="查看倍率">
           <span className="control-label">查看倍率</span>
           <div className="focus-view-zoom-controls">
-            <button type="button" aria-label="缩小查看倍率" onClick={() => setViewport((value) => ({ ...value, zoom: clampFocusViewZoom(value.zoom - VIEW_ZOOM_STEP) }))} disabled={viewport.zoom <= MIN_VIEW_ZOOM}>−</button>
-            <output aria-live="polite">{viewport.zoom}%</output>
-            <button type="button" aria-label="放大查看倍率" onClick={() => setViewport((value) => ({ ...value, zoom: clampFocusViewZoom(value.zoom + VIEW_ZOOM_STEP) }))} disabled={viewport.zoom >= MAX_VIEW_ZOOM}>+</button>
+            <button type="button" aria-label="缩小查看倍率" onClick={() => setCenterZoom(viewport.zoom - VIEW_ZOOM_STEP)} disabled={viewport.zoom <= MIN_VIEW_ZOOM}>−</button>
+            <output aria-live="polite">{Math.round(viewport.zoom)}%</output>
+            <button type="button" aria-label="放大查看倍率" onClick={() => setCenterZoom(viewport.zoom + VIEW_ZOOM_STEP)} disabled={viewport.zoom >= MAX_VIEW_ZOOM}>+</button>
           </div>
-          <input aria-label="查看倍率滑块" type="range" min={MIN_VIEW_ZOOM} max={MAX_VIEW_ZOOM} step="1" value={viewport.zoom} onChange={(event) => setViewport((value) => ({ ...value, zoom: clampFocusViewZoom(Number(event.target.value)) }))} />
-          <button type="button" className="focus-view-fit-button" onClick={fitToWindow}>适合窗口 / 100%</button>
+          <input aria-label="查看倍率滑块" type="range" min={MIN_VIEW_ZOOM} max={MAX_VIEW_ZOOM} step="1" value={Math.max(MIN_VIEW_ZOOM, viewport.zoom)} onChange={(event) => setCenterZoom(Number(event.target.value))} />
+          <div className="focus-view-commands" aria-label="查看视口命令">
+            <button type="button" className="focus-view-command" aria-label="适合窗口" onClick={fitToWindow} title="完整画板居中显示，并清除查看平移">适合</button>
+            <button type="button" className="focus-view-command" aria-label="实际尺寸 100%" onClick={actualSize} title="按画板像素 1:1 显示">100%</button>
+            {selectionPlan.logoGroupRect ? <button type="button" className="focus-view-command" aria-label="定位 Logo" onClick={locateLogo} title="只调整查看视口，不修改 Logo 坐标">定位</button> : null}
+          </div>
           <small className="inline-note">仅影响查看，不会修改裁切、Logo/CPR 位置或导出。</small>
         </div>
         {session.tool === 'crop' ? <><div><span className="control-label">填充方式</span><div className="segmented-control"><button type="button" className={session.draft.previewState.fitMode === 'cover' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'cover' } }))}>填满画布</button><button type="button" className={session.draft.previewState.fitMode === 'contain' ? 'active' : ''} onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, fitMode: 'contain' } }))}>适应画布</button></div></div><label className="focus-range-field"><span className="control-label">素材缩放</span><input type="range" min={minScale} max={maxScale} step={Math.max(minScale / 100, .001)} value={crop.scale} onChange={(event) => updateCrop(Number(event.target.value))} /></label><button type="button" onClick={() => onSessionChange(withFocusDraft(session, { ...session.draft, previewState: { ...session.draft.previewState, crop: createInitialCropState(asset, spec, session.draft.previewState.fitMode) } }))}>裁切复位</button>{onApplyCropSameSize ? <button type="button" onClick={onApplyCropSameSize}>同素材·同尺寸同步裁切</button> : null}</> : null}

@@ -52,9 +52,9 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
         <input type="range" min="0.5" max="2" step="0.01" value={state.scale ?? 1} onChange={(event) => patch({ scale: Number(event.target.value) })} />
       </label>
       <button type="button" onClick={() => patchTransform({ placement: state.transform.placement === 'custom' ? 'bottom-right' : state.transform.placement, offsetX: 0, offsetY: 0 })}>恢复推荐位置</button>
-      <div className="control-row">
+      <div className="control-row cpr-color-row">
         <span>颜色</span>
-        <div className="segmented-control compact-segments">
+        <div className="segmented-control compact-segments cpr-color-mode">
           {COLORS.map((item) => <button key={item.value} type="button" className={state.colorMode === item.value ? 'active' : ''} onClick={() => setColor(item.value)}>{item.label}</button>)}
         </div>
       </div>

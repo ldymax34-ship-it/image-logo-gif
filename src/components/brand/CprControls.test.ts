@@ -52,6 +52,7 @@ describe('color mode labels', () => {
     const segmentEnd = html.indexOf('</div>', segmentStart) + '</div>'.length;
     const colorSegments = html.slice(segmentStart, segmentEnd);
 
+    expect(colorSegments).toContain('cpr-color-mode');
     expectLabelsInOrder(colorSegments, COLOR_LABELS, '</button>');
   });
 });
