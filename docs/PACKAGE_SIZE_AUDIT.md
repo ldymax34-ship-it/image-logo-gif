@@ -98,3 +98,9 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 前端 `dist`：1,140 KB → 1,172 KB，约 +32 KB；本阶段仅变更 CSS、现有 React 文案和静态测试，构建输出显示主 JS 约 315 KB、CSS 约 55 KB。
 - 未新增 npm、Rust、sidecar、字体、模型或二进制依赖；未生成新的 Windows NSIS、macOS DMG 或 `.app`，因此不能据此推断平台安装包增量。
 - 结论：前端增量与 UI 规则统一相称；双平台安装包、安装目录与高 DPI WebView 的实际影响继续留待后续平台构建审计。
+
+## 0.1.33 Focus Logo Fabric 审计（2026-07-23）
+
+- 未新增第三方依赖或额外 Fabric runtime；复用现有本地 `fabric@7.4.0` 的动态导入与同一控制点主题。
+- 前端主 JS 从 UI 规则统一后的约 315 KB 变为约 320 KB（gzip 约 100 KB → 102 KB）；增量为 Focus Logo 的交互适配和测试所需代码，未打包第二份 Fabric chunk。
+- 未生成新的 Windows NSIS、macOS DMG 或 `.app`；平台安装包与安装后目录增量仍需在后续平台构建中记录。

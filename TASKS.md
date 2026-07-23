@@ -20,6 +20,15 @@
 - [x] 前端构建目录记录为 1,172 KB；相对 Fabric 阶段记录的约 1,140 KB 仅约 +32 KB，主要为 CSS/JS 文本变化。未生成新的 macOS/Windows 安装包，平台包体增量仍待后续构建审计。
 - [ ] 仍需 macOS/Windows Tauri 实机：WebView 高 DPI 下的控件/选框、hover/focus/disabled、系统字体渲染、横/方/竖 Focus 手势与导出位置一致性；浏览器截图和静态测试不替代该项。
 
+### 工具箱路线｜阶段 3：社媒 Focus Logo Fabric 操作
+- [x] Focus 仅为当前 Logo 组合新增透明 Fabric 交互层：精确命中、选中、拖动与四角等比缩放；没有接入 CPR、旋转、多选、图层、复制或删除。
+- [x] 交互对象始终从当前 `buildBrandRenderPlan().logoGroupRect` 生成；手势开始时冻结 rect、画布、查看倍率、边界模式和当前 Logo scale，React 重渲染不会使连续缩放累积。
+- [x] 仅回写 Focus 草稿中的 `manualOffset`、`placement: custom` 与既有 `scale`；选框、手势、查看视口均不参与正式预览/导出，`BoardCanvas + Render Plan` 仍为唯一视觉和导出权威。
+- [x] 同一几何路径覆盖 25% / 100% / 300% 查看倍率、横/方/竖画布、安全区/画布边界、语言/资源切换的手动坐标保持、草稿保存/取消以及 Fabric 写回到正式 Render Plan。
+- [x] 浏览器开发环境检查：1440×900 方图 Focus 中点击 Logo 后交互层与四角控制点正确出现，拖动生效且无横向溢出；截图仅存于系统临时目录，未作为桌面端实机结论。
+- [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（251 tests / 32 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [ ] 仍需 macOS/Windows Tauri 实机：横/方/竖素材在 25% / 100% / 300% 下的选框命中、拖动、四角缩放、触控板/鼠标、保存/取消以及最终 PNG/JPG 导出坐标一致性；浏览器开发环境不能替代该项。
+
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。
 - [x] `1920×1080` 保留为显式手动规格；手动选择在同一/替换底图时保持，切回原图尺寸立即使用当前底图自然尺寸。

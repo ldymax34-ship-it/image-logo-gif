@@ -30,6 +30,9 @@
 26. [UI-中] 总览、聚焦与自定义构图减少重复边框和工程说明；短提示直接保留，完整解释通过可访问 `title` 提供。聚焦与 Fabric 选框维持清晰主色 1px 描边和 10px 方形控制点，未改变命中、拖动、缩放或状态写回。
 27. [验证-中] 以与 before 相同的测试素材和状态生成 `artifacts/ui-rule-unification/after/`：总览/聚焦各含 1440×900、1100×720，自定义构图含 1440×900（另附 1100×720 响应式检查）。浏览器检查无横向溢出；完整门禁通过：239 tests / 31 files、Rust 9 tests。浏览器证据不替代 macOS/Windows Tauri 高 DPI 与系统控件实机验证。
 28. [包体-小] 前端 `dist` 为 1,172 KB，相较 Fabric 阶段记录的约 1,140 KB 增加约 32 KB，主要来自 CSS/JS 文本；本阶段未构建新的 Windows/macOS 安装包，安装包增量仍待平台审计。
+29. [交互-大] 社媒聚焦画板的 Logo 组合增加透明 Fabric 操作层：点击选中、拖动、四角等比缩放与现有安全区/画布边界约束。操作只写入当前草稿的 Logo 自定义位置和连续缩放；CPR、旋转、多选、图层、复制和删除均不在范围内。
+30. [一致性-高] Focus Fabric 对象始终由当前 Render Plan 的 `logoGroupRect` 驱动；手势冻结起始几何，防止 React 重渲染造成连续缩放累积。正式预览和导出继续仅消费 `BoardCanvas + Render Plan`，Fabric 不负责颜色或导出。
+31. [测试-中] 新增 Focus Logo Fabric 几何与草稿/正式 Render Plan 回归，覆盖 25%/100%/300% 查看倍率、横方竖边界、资源/语种切换、缩放 baseline 与保存前草稿隔离；全量测试 `239 → 251`（32 files），Rust 9 tests 通过。浏览器开发环境确认选框与拖动；macOS/Windows Tauri 实机仍待复核。
 
 ## 0.1.32（默认横版规格名称精简）
 

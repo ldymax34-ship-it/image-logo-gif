@@ -322,6 +322,11 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 .focus-workspace .focus-stage-frame.is-editing-logo .board-canvas, .focus-workspace .focus-stage-frame.is-editing-cpr .board-canvas { cursor: grab; }
 .focus-workspace .focus-stage-frame.is-dragging .board-canvas { cursor: grabbing; }
 .focus-canvas-wrapper { position: relative; }
+.focus-logo-fabric-overlay { position: absolute; z-index: 30; inset: 0; }
+.focus-logo-fabric-overlay .canvas-container,
+.focus-logo-fabric-overlay .lower-canvas,
+.focus-logo-fabric-overlay .upper-canvas { width: 100% !important; height: 100% !important; }
+.focus-logo-fabric-overlay .upper-canvas { touch-action: none; }
 .focus-selection-outline { position: absolute; z-index: 20; pointer-events: none; border: 1px solid var(--color-primary); box-shadow: none; }
 .focus-selection-outline > span, .focus-selection-hint { position: absolute; top: -22px; left: -1px; padding: 2px 6px; border: 1px solid var(--color-primary); border-radius: 2px; background: var(--color-canvas-deep); color: var(--color-text); font-size: 11px; white-space: nowrap; }
 .focus-selection-hint { top: 10px; left: 10px; background: var(--color-panel-muted); color: var(--color-text-muted); }

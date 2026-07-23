@@ -30,6 +30,7 @@ import {
   type ViewportState
 } from './focusCoords';
 import { updateFocusCpr, updateFocusLogo, withFocusDraft } from './focusSession';
+import { FocusLogoFabricOverlay } from './FocusLogoFabricOverlay';
 
 const MIN_VIEW_ZOOM = 25;
 const MAX_VIEW_ZOOM = 300;
@@ -99,6 +100,7 @@ export function FocusWorkspace({
   const stageFrameRef = useRef<HTMLDivElement>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [focusLogoFabricFailed, setFocusLogoFabricFailed] = useState(false);
   const [viewport, setViewport] = useState<ViewportState>(() => createFitViewport({ width: 820, height: 560 }, spec));
   const [stageBounds, setStageBounds] = useState({ width: 820, height: 560 });
   const [spacePressed, setSpacePressed] = useState(false);
@@ -190,6 +192,18 @@ export function FocusWorkspace({
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, kind: isPanPointer(event) ? 'pan' : tool };
     setDragging(true);
+  }
+
+  function updateFocusLogoFromFabric(next: { x: number; y: number; scale: number }, scaledRect: { width: number; height: number }) {
+    const position = brandSettings.snapEnabled
+      ? snapLogoGroupPosition({ width: spec.width, height: spec.height }, scaledRect, next, brandSettings.snapThreshold / stageScale, constraintMode)
+      : next;
+    onSessionChange(updateFocusLogo(session, {
+      ...session.draft.brand.logo,
+      placement: 'custom',
+      manualOffset: { x: position.x, y: position.y },
+      scale: next.scale
+    }));
   }
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
@@ -301,7 +315,21 @@ export function FocusWorkspace({
           onPointerUp={() => { dragRef.current = undefined; setDragging(false); }}
           onWheel={onWheel}
         />
-        {selectionRect ? <div className="focus-selection-outline" aria-live="polite" style={{ left: selectionRect.x * stageScale, top: selectionRect.y * stageScale, width: selectionRect.width * stageScale, height: selectionRect.height * stageScale }}><span>{dragging ? `正在拖动${selectionLabel}` : selectionLabel}</span></div> : <div className="focus-selection-hint">图片裁切</div>}
+        {session.tool === 'logo' && selectionPlan.logoGroupRect && !focusLogoFabricFailed ? <FocusLogoFabricOverlay
+          canvas={{ width: spec.width, height: spec.height }}
+          rect={selectionPlan.logoGroupRect}
+          previewScale={stageScale}
+          currentScale={session.draft.brand.logo.scale ?? 1}
+          constraintMode={constraintMode}
+          selected
+          onSelectedChange={(selected) => {
+            if (!selected) onSessionChange({ ...session, tool: 'crop' });
+          }}
+          onTransformChange={updateFocusLogoFromFabric}
+          onTransformingChange={setDragging}
+          onError={() => setFocusLogoFabricFailed(true)}
+        /> : null}
+        {selectionRect && (session.tool !== 'logo' || focusLogoFabricFailed) ? <div className="focus-selection-outline" aria-live="polite" style={{ left: selectionRect.x * stageScale, top: selectionRect.y * stageScale, width: selectionRect.width * stageScale, height: selectionRect.height * stageScale }}><span>{dragging ? `正在拖动${selectionLabel}` : selectionLabel}</span></div> : session.tool !== 'logo' ? <div className="focus-selection-hint">图片裁切</div> : null}
         </div>
       </div>
       <aside className="focus-side-controls">
