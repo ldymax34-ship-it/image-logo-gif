@@ -68,7 +68,7 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 不使用统一 10MB 自动停止线；出现无法解释的异常增长、重复运行时或明显超出功能价值的增量时，停止并向用户报告。
 - 不为未来功能打包运行时。
 - 实验功能依赖大型环境时，必须独立分发或暂缓。
-- 只内置已确认需要的字体资源；当前水印字体边界为思源黑体 Regular。
+- 只内置已确认需要的字体资源；文字水印在获得来源、许可证、校验与双平台策略之前不得假定可使用任何中文字体。
 - 审计结果必须进入提交记录或构建说明，不能只留在聊天中。
 
 ## 0.1.33 Stage 5A 工具箱启动器审计（2026-07-23）
@@ -92,6 +92,13 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 未新增 Rust crate、FFmpeg / FFprobe、sidecar、字体、模型、第二个 Tauri app 或媒体二进制。`src-tauri/capabilities/` 仅增加主窗口创建 singleton 内部窗口所需的最小 core window/webview 权限，并为预览窗口仅授予 `core:default` 与 close。
 - Windows NSIS、Windows 安装目录、macOS DMG、macOS `.app`：本阶段未生成，不能据此前端构建结果推断平台安装包增量。原生 singleton 窗口权限和关闭语义也仍待双平台实机确认。
 - 结论：前端增量与隔离可视预览相称；任何 FFmpeg / FFprobe sidecar、真实队列、媒体命令或转码接入前，必须重新执行平台包体与运行时审计。
+
+## 0.1.33 Stage 6B 后端 / Stage 6C 可见水印门禁复核（2026-07-23）
+
+- 本轮未新增 npm、Rust crate、FFmpeg / FFprobe、sidecar、字体、模型或媒体二进制；前端 `dist` 不因这次文档复核而重新计量。
+- `ffprobe-static@3.1.0` npm 解包体积约 351 MB，`ffmpeg-static-electron@2.0.3` 约 234 MB；二者均不是已验证的 macOS arm64 + Windows x64 单份成对 sidecar 注入方案。`ffmpeg-static@5.3.0` 依赖安装时下载且为 GPL-3.0-or-later，不能作为当前离线注入方案。
+- 当前仓库没有可打包的中文字体资源，不能估算文字水印字体的前端、macOS 或 Windows 包体增量。
+- 结论：未选择 sidecar 或字体，也未生成平台安装包；在固定来源、SHA-256、许可证、每平台资源清单和字体策略得到确认前，真实媒体后端与文字水印维持阻断。详见 `docs/STAGE_6B_BACKEND_GATE.md`。
 
 ## 0.1.32 Fabric.js 接入审计（2026-07-22）
 

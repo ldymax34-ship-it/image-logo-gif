@@ -224,11 +224,11 @@ type AppPreferencesV1 = {
 
 `a8e9ded` 与 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为旧路线的历史源码审计记录；它们已由 Stage 6A 的规划口径取代，不授权任何实现。
 
-阶段六 B：FFUI 隔离 PoC（需要后续明确批准）
+阶段六 B：FFUI 隔离 PoC（已授权，后端门禁阻断）
 
 仅在用户明确批准 Stage 6B 后，才允许验证 FFUI Vue 前端能否作为当前 Tauri 应用的独立内部窗口/隔离前端入口运行，不带第二个 Tauri app、不要求用户额外安装。PoC 必须复用安装包内唯一 FFmpeg/FFprobe sidecar，并优先复用现成队列、进度、取消、错误和结果 UX；未通过前不得进入正式媒体模块。
 
-2026-07-23 授权仅覆盖 Stage 6B-UI Checkpoint：工具箱可打开 Vue 多页面的实验预览，并在当前 Tauri app 中创建 singleton 内部窗口。该检查点不接入 FFmpeg/FFprobe、sidecar、命令、真实队列、进度、取消或转码；这些仍待后续明确批准。
+2026-07-23 已完成 Stage 6B-UI Checkpoint：工具箱可打开 Vue 多页面的实验预览，并在当前 Tauri app 中创建 singleton 内部窗口。随后用户授权继续真实后端与首版可见水印，但在任何后端代码前被唯一 sidecar、跨平台分发和中文字体门禁阻断。详细证据、停止范围和重新开启条件固定在 `docs/STAGE_6B_BACKEND_GATE.md`。在该文档列出的条件完成前，预览不得接入 FFmpeg/FFprobe、sidecar、命令、真实队列、进度、取消、转码或水印。
 
 阶段六的候选条件
 
@@ -292,6 +292,8 @@ UI可裁剪和主题适配。
 
 仅在阶段五选定成熟 GUI后执行。
 
+当前状态：未开始。Stage 6B 后端门禁未通过，不能以 PATH、运行时下载、第二个 Tauri app 或自研队列绕过。
+
 底层
 
 全应用只分发一份平台对应的 FFmpeg sidecar。
@@ -342,6 +344,8 @@ GIF重新压缩
 自研编码
 自研复杂预览播放器
 阶段八：统一“水印与追溯”页面
+
+当前状态：未开始。可见水印依赖 Stage 6B 的同一真实任务引擎；中文文字水印还依赖可审计的离线中文字体。隐形指纹继续不实现。
 
 可见水印和像素指纹不要拆成两个模块。
 

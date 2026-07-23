@@ -2,9 +2,9 @@
 
 ## 状态与边界
 
-状态：仅规划。本文不授权 Stage 6B 实现，不引入 Vue、FFmpeg/FFprobe、sidecar、第二个 Tauri window、二进制、依赖或正式模块。
+状态：Stage 6B-UI Checkpoint 已完成；真实后端在实现前被 sidecar 与字体门禁阻断，详见 `docs/STAGE_6B_BACKEND_GATE.md`。
 
-2026-07-23 更新：用户仅授权 Stage 6B-UI Checkpoint。该检查点可加入最小 Vue 多页面预览和 singleton 内部窗口入口，用于视觉确认；仍不授权 sidecar、真实转码、命令生成、可执行队列、进度、取消或正式媒体模块。
+2026-07-23 更新：用户先授权 Stage 6B-UI Checkpoint，随后授权继续真实后端与首版可见水印。UI Checkpoint 已加入最小 Vue 多页面预览和 singleton 内部窗口入口；但真实转码、命令生成、可执行队列、进度、取消和水印均未实现，因为唯一可审计 sidecar 与跨平台中文字体尚未满足前置条件。
 
 Stage 6A 只为用户确认后的 Stage 6B 提供最小决策材料。现有 Logo 与版式工作台、Render Plan、导出、同步、Fabric、更新和发布链路均不在本阶段修改范围内。
 
@@ -89,7 +89,7 @@ Stage 6B 前必须确认：
 
 ## Stage 6B 最小文件与依赖清单
 
-仅在后续明确批准 Stage 6B 后，才允许按以下最小清单建立 PoC；本阶段不创建这些文件：
+在 `docs/STAGE_6B_BACKEND_GATE.md` 的全部前置条件满足后，才允许按以下最小清单建立 PoC：
 
 - 一个隔离窗口/前端入口及关闭清理逻辑。
 - 一个媒体任务适配层，仅承接队列、参数、进度、取消、错误和结果，不接触主工作台业务状态。

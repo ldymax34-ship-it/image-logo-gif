@@ -50,3 +50,9 @@
 4. 以未实现或未验证的取消逻辑承诺媒体任务安全性。
 
 后续是否进行隔离 PoC，按 `docs/STAGE_6A_GIF_MEDIA_POC_PLAN.md` 的用户批准、许可证、唯一 sidecar、队列/取消、双平台、离线和包体门禁决定；本历史审计不单独授权或阻断 Stage 6B。
+
+## Stage 6B 后端门禁复核（2026-07-23）
+
+用户后续已授权 Stage 6B 真实后端和 Stage 6C 首版可见水印。复核没有改变本文件的历史候选结论：FFUI 的前端 UX 已在 UI Checkpoint 中隔离参考，但其 Rust 工具层仍包含 PATH 候选与 `force_download_tool_binary` 自动下载路径，不能原样进入当前应用。当前没有可审计的双平台 `ffmpeg` / `ffprobe` 成对 sidecar 来源，也没有离线可分发的中文文字水印字体。
+
+因此本次在任何真实后端、水印、sidecar 或字体提交前停止。完整证据、候选包体、恢复条件与明确不做项见 `docs/STAGE_6B_BACKEND_GATE.md`；该停止结论针对当前分发门禁，不否定将来在满足全部前置条件后的重新评估。

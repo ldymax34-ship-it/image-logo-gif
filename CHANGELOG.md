@@ -1,5 +1,27 @@
 # 更新日志
 
+## 2026-07-23｜Stage 6B / 6C｜真实媒体后端与可见水印门禁复核
+
+### 修改文件
+- `docs/STAGE_6B_BACKEND_GATE.md`、`docs/STAGE_6A_GIF_MEDIA_POC_PLAN.md`
+- `docs/TOOLBOX_EXECUTION_PLAN.md`、`docs/FFMPEG_GUI_CANDIDATE_AUDIT.md`、`docs/PACKAGE_SIZE_AUDIT.md`
+- `TASKS.md`、`README.md`
+
+### 主要改动
+- 在用户授权继续真实媒体后端和首版可见水印后，先复核 FFUI 工具层、可分发 sidecar、开发机可用工具和中文字体资源；确认当前无法满足离线唯一 sidecar、双平台成对分发与可审计中文文字水印字体要求。
+- FFUI 继续仅作为 Vue 前端 UX 参考：其现成 Rust 工具层包含 PATH 候选和自动下载，不能原样嵌入。未新增 FFmpeg / FFprobe、字体、sidecar、Rust command、队列执行、命令生成、转码或水印实现。
+- 固定恢复条件：双平台成对来源、版本/许可证/SHA-256、构建注入、单份 sidecar、真实取消、包体审计及中文字体许可/校验策略。实验预览继续禁用开始处理，隐形指纹未实现。
+
+### 验证方式
+- 只读复核 FFUI 固定提交的工具命令、当前仓库的 sidecar/font 资源与开发机 `ffmpeg` / `ffprobe` 可用性；核对候选 npm 包许可证、安装行为和解包体积，以及 BtbN 当前资产列表。
+- 本轮没有媒体或 Rust 代码变更；不宣称真实转码、取消、中文路径、中文水印或 Windows 实机已经验证。文档变更仅运行 `git diff --check`。
+
+### 影响范围
+- Stage 6B 后端与 Stage 6C 可见水印停止在实现前，不改变现有 GIF 实验预览、Logo / 版式工作台、Render Plan、静态导出、同步、Fabric、自动更新、发布或用户 artifacts。
+
+### 未完成 / 风险
+- 需要用户认可并固定可分发的 macOS arm64 / Windows x64 `ffmpeg` + `ffprobe` 来源和中文字体方案后，才能重新开始媒体后端与文字水印；随后仍需 macOS 真实任务与 Windows 构建/实机验证。
+
 ## 2026-07-23｜Stage 6B-UI Checkpoint｜GIF / 媒体工具实验预览
 
 ### 修改文件
