@@ -6,24 +6,24 @@ export function BrandEffectControls({
   effect,
   onChange,
   preview,
-  hideColorControls
+  hideColorControls,
+  embedded = false
 }: {
   title: string;
   effect: BrandEffectState;
   onChange: (effect: BrandEffectState) => void;
   preview?: ReactNode;
   hideColorControls?: boolean;
+  /** Lets an owning disclosure render these controls without nesting details. */
+  embedded?: boolean;
 }) {
   function patch(next: Partial<BrandEffectState>) {
     onChange({ ...effect, ...next });
   }
 
-  return (
-    <div className="brand-section effect-section">
-      <details className="effect-details">
-        <summary>{title} 高级样式</summary>
-        {preview ? <div className="effect-preview">{preview}</div> : null}
-        <div className="effect-grid">
+  const controls = <>
+    {preview ? <div className="effect-preview">{preview}</div> : null}
+    <div className="effect-grid">
           {hideColorControls ? null : (
             <>
               <label className="toggle">
@@ -131,8 +131,10 @@ export function BrandEffectControls({
               onChange={(event) => patch({ shadowOffsetY: Number(event.target.value) })}
             />
           </label>
-        </div>
-      </details>
     </div>
-  );
+  </>;
+
+  if (embedded) return <div className="brand-section effect-section effect-controls-embedded">{controls}</div>;
+
+  return <div className="brand-section effect-section"><details className="effect-details"><summary>{title} 高级样式</summary>{controls}</details></div>;
 }

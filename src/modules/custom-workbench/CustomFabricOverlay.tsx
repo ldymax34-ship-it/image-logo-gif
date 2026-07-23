@@ -32,6 +32,14 @@ export const CUSTOM_FABRIC_CANVAS_OPTIONS = {
   hoverCursor: 'move',
   moveCursor: 'move'
 } as const;
+export const CUSTOM_FABRIC_SELECTION_STYLE = {
+  cornerColor: '#f5f8ff',
+  cornerStrokeColor: '#3d83d5',
+  borderColor: '#3d83d5',
+  cornerSize: 10,
+  cornerStyle: 'rect' as const,
+  padding: 1
+} as const;
 
 function applyFrame(target: FabricRect, frame: ReturnType<typeof toConstrainedFabricFrame>) {
   target.set({ left: frame.left, top: frame.top, width: frame.width, height: frame.height, scaleX: frame.scaleX, scaleY: frame.scaleY });
@@ -53,12 +61,7 @@ function createInteractionObject(FabricRectConstructor: FabricConstructor['Rect'
     stroke: 'rgba(0,0,0,0)',
     strokeWidth: 0,
     transparentCorners: false,
-    cornerColor: '#60a5fa',
-    cornerStrokeColor: '#e0f2fe',
-    borderColor: '#60a5fa',
-    cornerSize: 10,
-    cornerStyle: 'circle',
-    padding: 2,
+    ...CUSTOM_FABRIC_SELECTION_STYLE,
     lockRotation: true,
     lockSkewingX: true,
     lockSkewingY: true,

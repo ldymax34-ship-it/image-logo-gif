@@ -2,6 +2,15 @@
 
 ## 当前版本：0.1.33 自定义构图原图画布、裁切与几何缩放
 
+### 工具箱路线｜阶段 1：0.1.33 可信基线
+- [x] 收口此前未提交的 OpenPencil UI 规则与自定义构图定向返工：任意画布尺寸、固定标题行导出入口、单层高级样式 disclosure 均保留现有 Render Plan 与状态所有权。
+- [x] 将执行路线固定为 `docs/TOOLBOX_EXECUTION_PLAN.md`，保留 `docs/TOOLBOX_ROADMAP_FEASIBILITY_REVIEW.md` 的架构、状态隔离、双平台验证和第三方声明约束；停止 Shutter Encoder / ScreenToGif 路线。
+- [x] 将用户提供的 OpenDesign HTML 固定保存为 `docs/references/Social-Media-Dashboard.html`；仅作深色层级与留白参考，不采用大范围辉光、重玻璃模糊或 Dashboard 卡片化。
+- [x] 包体规则改为记录前端、Windows/macOS 安装包、安装后目录和单项资源的真实增量；Windows 离线 WebView2 约 200MB 视为已接受固定基线，不再使用统一 10MB 自动停止线。
+- [x] 使用同一 `128x128.png` 测试素材保存 UI before 基线：总览与聚焦画板各覆盖 1440×900、1100×720，自定义构图覆盖 1440×900，文件位于 `artifacts/ui-rule-unification/before/`。
+- [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（234 tests / 30 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [ ] 原生 Tauri 限制保持不变：真实素材的自定义尺寸 PNG/JPG 落盘像素、公司 Logo disclosure、系统文件选择/保存、WebView 高 DPI 与横/方/竖 Focus 手势仍需双平台人工复核；浏览器截图不冒充桌面实机验证。
+
 ### 0.1.33｜自定义构图原图画布、裁切与几何缩放
 - [x] 默认尺寸模式改为“原图尺寸（跟随底图）”；当前底图的自然宽高作为画布、预览、Fabric 和正式导出的统一 `MaterialSpec`。
 - [x] `1920×1080` 保留为显式手动规格；手动选择在同一/替换底图时保持，切回原图尺寸立即使用当前底图自然尺寸。
@@ -26,6 +35,24 @@
 - [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（220 tests / 29 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）通过。
 - [x] 浏览器开发环境检查：1440×900、1100×720 均确认顶部提示、保存按钮、右侧查看命令和 CPR 配色无重叠或横向溢出；截图保存在系统临时目录。
 - [ ] 仍需原生 Tauri 实机：横/竖/方画板的连续滚轮、Space/中键平移边界、300% Logo 拖动与四角等比缩放，以及预览/导出像素级位置一致性；浏览器开发环境和纯函数测试不能替代该项。
+
+### 0.1.33｜UI 规范收口（OpenPencil 规则）
+- [x] 采用：属性面板紧凑密度、32px 控件高度、12px 属性标签、低对比 surface 层级、1px 选中边界、稳定 10px 方形控制点与明确键盘焦点。
+- [x] 明确不采用：Dashboard 卡片化、大标题、玻璃/模糊、金色/青色光晕、发光文字和大范围阴影；默认面板与控件继续无 glow。
+- [x] Logo/CPR 属性行、活动 section、分段控件与聚焦右栏统一默认/hover/selected/focus/disabled 状态；不改变既有面板宽度、业务分组或查看倍率位置。
+- [x] 聚焦选框与 Fabric 固定对象选框收为主色 1px 描边；Fabric 仅更新 `cornerColor`、`cornerStrokeColor`、`cornerSize`、`cornerStyle` 和 padding，不改变命中、拖动、缩放或状态写回。
+- [x] 说明文案缩短；完整含义保留在可访问 `title` tooltip。Logo/CPR 领域状态、同步、Render Plan、导出、updater 与发布链路未改。
+- [x] 新增 UI 静态回归：Fabric 选框参数、Logo 属性提示 tooltip；全量测试 `220 → 222`（29 files）。
+- [x] 浏览器开发环境视觉检查：1440×900 与 1100×720 下聚焦页及自定义构图的控件未折行/溢出，焦点边框可见，画布保持视觉中心；截图保存于系统临时目录。
+- [ ] 原生 Tauri 实机仍需复核：WebView 下 Fabric 控制点视觉大小、键盘焦点、hover/disabled 以及高 DPI 渲染；浏览器截图不替代该项。
+
+### 0.1.33｜自定义构图验收返工
+- [x] 尺寸选择增加“自定义尺寸”：仅在宽高均为 `1–16384` 的整数时，于 blur 或 Enter 写入现有 `manualSpec`；输入中间态不会写入 0 / NaN。显式 `1350×1800` 在替换底图后保留，切回原图尺寸才重新跟随底图，`1920×1080` 预设保持可用。
+- [x] 预览、Fabric 坐标、Render Plan 与导出继续消费同一 `resolveCustomCanvasSpec`；新增纯函数回归覆盖自定义尺寸、无效值、替换底图、原图恢复和 Render Plan/Fabric 一致性。
+- [x] PNG/JPG 与“导出当前画板”迁入自定义工作区固定 48px 标题行；无图片时禁用，状态/错误仍紧邻入口。1440×900、1100×720 浏览器检查均无需滚动且无横向溢出。
+- [x] 自定义构图的游戏 Logo、公司 Logo、CPR 高级样式改为一个 disclosure owner；`BrandEffectControls` 的 embedded 路径不再生成嵌套 `<details>`，摘要同处于唯一 summary。静态三对象回归与浏览器 DOM 均确认 `details details` 为 0；默认资源集没有公司 Logo，因此公司对象的运行时面板由静态测试覆盖。
+- [x] 自动验证：`git diff --check`、`npm run verify:core`、`npm test -- --run`（234 tests / 30 files）、`npm run build`、`cargo fmt --check` / `cargo check` / `cargo test`（9 passed）。
+- [ ] 仍需原生 Tauri 实机：使用真实项目素材验证 1350×1800 PNG/JPG 的落盘像素、公司 Logo 的一次点击展开和效果折叠保持；浏览器导入、DOM 和纯函数验证不能替代系统文件选择/保存路径。
 
 - [x] “横版投放”内置套组的三个规格名称改为纯尺寸：`1920x1080`、`2560x1097`、`1600x1200`。
 - [x] 保留原有套组 ID、宽高和 JPG 格式，不改动已保存配置与导出/更新架构。

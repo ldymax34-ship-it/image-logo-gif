@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBoardRenderPlan, computeCprPlacementRect, createDefaultCprState, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT } from '../../core';
-import { CUSTOM_FABRIC_CANVAS_OPTIONS, CUSTOM_FABRIC_CORNER_CONTROLS } from './CustomFabricOverlay';
+import { CUSTOM_FABRIC_CANVAS_OPTIONS, CUSTOM_FABRIC_CORNER_CONTROLS, CUSTOM_FABRIC_SELECTION_STYLE } from './CustomFabricOverlay';
 import { constrainCustomCanvasObjectTransform, toCustomFabricTransformPatch } from './customFabricState';
 
 describe('Fabric interaction domain writes', () => {
@@ -17,6 +17,17 @@ describe('Fabric interaction domain writes', () => {
     expect(CUSTOM_FABRIC_CORNER_CONTROLS).toEqual({
       tl: true, tr: true, bl: true, br: true,
       ml: false, mr: false, mt: false, mb: false, mtr: false
+    });
+  });
+
+  it('uses a crisp primary outline with stable square corner controls', () => {
+    expect(CUSTOM_FABRIC_SELECTION_STYLE).toEqual({
+      cornerColor: '#f5f8ff',
+      cornerStrokeColor: '#3d83d5',
+      borderColor: '#3d83d5',
+      cornerSize: 10,
+      cornerStyle: 'rect',
+      padding: 1
     });
   });
 

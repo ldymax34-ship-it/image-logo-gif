@@ -150,7 +150,7 @@ export function LogoGroupControls({
           {CONSTRAINT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </div> : null}
-<p className="inline-note">位置与大小按当前画板保存；CPR 在底部独立设置。</p>
+<p className="inline-note" title="Logo 位置与大小仅保存到当前画板；CPR 使用独立的底部设置。">当前画板独立保存；CPR 单独设置。</p>
     </div>
   );
 }

@@ -11,14 +11,17 @@ export type CustomCanvasSelection = {
 export const CUSTOM_MANUAL_CANVAS_PRESETS = [
   { id: 'custom-manual-1920x1080', name: '1920×1080', width: 1920, height: 1080 }
 ] as const;
+export const CUSTOM_CANVAS_OPTION = 'custom';
+export const MAX_CUSTOM_CANVAS_EDGE = 16384;
 
 const SOURCE_SPEC_ID = 'custom-source-image';
 
 function isValidSize(value: unknown): value is { width: number; height: number } {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as { width?: unknown; height?: unknown };
-  return Number.isFinite(candidate.width) && Number.isFinite(candidate.height)
-    && Number(candidate.width) >= 1 && Number(candidate.height) >= 1;
+  return Number.isInteger(candidate.width) && Number.isInteger(candidate.height)
+    && Number(candidate.width) >= 1 && Number(candidate.height) >= 1
+    && Number(candidate.width) <= MAX_CUSTOM_CANVAS_EDGE && Number(candidate.height) <= MAX_CUSTOM_CANVAS_EDGE;
 }
 
 function toManualSpec(value: unknown): CustomCanvasSelection['manualSpec'] | undefined {
@@ -52,6 +55,20 @@ export function selectCustomCanvasPreset(presetId: string): CustomCanvasSelectio
   if (presetId === 'source') return { mode: 'source' };
   const preset = CUSTOM_MANUAL_CANVAS_PRESETS.find((candidate) => candidate.id === presetId);
   return preset ? { mode: 'manual', manualSpec: { ...preset } } : { mode: 'source' };
+}
+
+/** Creates an explicit arbitrary canvas size only after both integer fields are valid. */
+export function createCustomCanvasSelection(width: unknown, height: unknown): CustomCanvasSelection | undefined {
+  const manualSpec = toManualSpec({ width, height });
+  return manualSpec ? { mode: 'manual', manualSpec } : undefined;
+}
+
+/** Maps a saved selection to the size picker without exposing manualSpec ids in UI. */
+export function getCustomCanvasOptionValue(selection: CustomCanvasSelection): string {
+  if (selection.mode === 'source') return 'source';
+  return CUSTOM_MANUAL_CANVAS_PRESETS.some((preset) => preset.id === selection.manualSpec?.id)
+    ? selection.manualSpec!.id
+    : CUSTOM_CANVAS_OPTION;
 }
 
 /** The one MaterialSpec consumed by preview, Render Plan, Fabric and export. */

@@ -42,7 +42,7 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
           {PLACEMENTS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select>
       </label>
-      {state.transform.placement === 'custom' ? <small className="inline-note">可在“画板调整 → CPR 位置”中拖动，并使用下方微调。</small> : null}
+      {state.transform.placement === 'custom' ? <small className="inline-note" title="在聚焦画板中拖动 CPR；使用下方控件微调。">聚焦画板中可拖动，下面可微调。</small> : null}
       <div className="control-row cpr-nudge-row">
         <span>向下微调</span>
         <input type="range" min="-240" max="240" step="1" value={state.transform.offsetY} onChange={(event) => patchTransform({ offsetY: Number(event.target.value) })} />

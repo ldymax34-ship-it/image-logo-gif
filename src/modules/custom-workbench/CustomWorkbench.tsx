@@ -7,7 +7,7 @@ import { CustomFabricOverlay, type CustomFabricObjectId } from './CustomFabricOv
 import { resolveCustomFabricItems, type CustomFabricOverlayItem } from './customFabricItems';
 import { constrainCustomTransform, getCustomObjectScaleLimits, getCustomTransformBounds, type CustomObjectTransform } from './customFabricCoords';
 import { constrainCustomCanvasObjectTransform, toCustomFabricTransformPatch } from './customFabricState';
-import { CUSTOM_MANUAL_CANVAS_PRESETS, resolveCustomCanvasSelection, resolveCustomCanvasSpec, selectCustomCanvasPreset, type CustomCanvasSelection } from './customCanvasSpec';
+import { CUSTOM_CANVAS_OPTION, CUSTOM_MANUAL_CANVAS_PRESETS, MAX_CUSTOM_CANVAS_EDGE, createCustomCanvasSelection, getCustomCanvasOptionValue, resolveCustomCanvasSelection, resolveCustomCanvasSpec, selectCustomCanvasPreset, type CustomCanvasSelection } from './customCanvasSpec';
 
 const CUSTOM_DEFAULT_CANVAS: MaterialSpec = { id: 'custom-source-image', name: '原图尺寸', width: 1920, height: 1080, format: 'png' };
 export type CustomWorkbenchDirtySnapshot = { canvasSelection: CustomCanvasSelection; gameEnabled: boolean; companyEnabled: boolean; gameScale: number; companyScale: number; cprScale: number; gameOffset: { x: number; y: number }; companyOffset: { x: number; y: number }; cprOffset: { x: number; y: number }; cprEnabled: boolean; gameEffect: BrandEffectState; companyEffect: BrandEffectState; cprEffect: BrandEffectState; format: MaterialFormat; gameLanguage: BrandLanguage; guidesVisible: boolean; snapEnabled: boolean };
@@ -27,6 +27,44 @@ function effectSummary(effect: BrandEffectState): string {
   parts.push(effect.glowEnabled ? '发光开' : '发光关');
   if (effect.colorEnabled) parts.push('改色');
   return parts.join(' · ');
+}
+
+export function CustomExportControls({
+  format,
+  disabled,
+  status,
+  onFormatChange,
+  onExport
+}: {
+  format: MaterialFormat;
+  disabled: boolean;
+  status?: string;
+  onFormatChange: (format: MaterialFormat) => void;
+  onExport: () => void;
+}) {
+  return <div className="custom-export-controls" aria-label="导出当前画板">
+    <div className="segmented-control" aria-label="导出格式">
+      <button type="button" className={format === 'png' ? 'active' : ''} onClick={() => onFormatChange('png')}>PNG</button>
+      <button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => onFormatChange('jpg')}>JPG</button>
+    </div>
+    <button type="button" className="primary-button" onClick={onExport} disabled={disabled}>导出当前画板</button>
+    {status ? <small className="custom-export-status" role="status">{status}</small> : null}
+  </div>;
+}
+
+export function CustomObjectEffectDisclosure({
+  title,
+  effect,
+  onChange
+}: {
+  title: string;
+  effect: BrandEffectState;
+  onChange: (effect: BrandEffectState) => void;
+}) {
+  return <details className="effect-details custom-effect-details">
+    <summary>{title} 高级样式 <span className="effect-summary">{effectSummary(effect)}</span></summary>
+    <BrandEffectControls title={title} effect={effect} onChange={onChange} embedded />
+  </details>;
 }
 
 export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, gameLogo, gameLogos, onDirtyChange }: {
@@ -55,6 +93,8 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const [cprEffect, setCprEffect] = useState<BrandEffectState>(brandLayer.cprEffect);
   const [format, setFormat] = useState<MaterialFormat>('png');
   const [canvasSelection, setCanvasSelection] = useState<CustomCanvasSelection>(() => resolveCustomCanvasSelection());
+  const [customWidthDraft, setCustomWidthDraft] = useState('');
+  const [customHeightDraft, setCustomHeightDraft] = useState('');
   const [status, setStatus] = useState('');
   const [gameLanguage, setGameLanguage] = useState<BrandLanguage>(gameLogo?.language ?? 'zh-CN');
   const [guidesVisible, setGuidesVisible] = useState(true);
@@ -181,6 +221,32 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       // exposing empty space; subsequent user adjustments stay persistent.
       crop: createInitialCropState(asset, nextSpec, previous?.fitMode ?? 'contain')
     }));
+  }
+
+  function selectCanvasSize(option: string) {
+    if (option === CUSTOM_CANVAS_OPTION) {
+      const basis = canvasSelection.mode === 'manual' && canvasSelection.manualSpec ? canvasSelection.manualSpec : canvas;
+      const next = createCustomCanvasSelection(basis.width, basis.height);
+      if (!next) return;
+      setCustomWidthDraft(String(next.manualSpec!.width));
+      setCustomHeightDraft(String(next.manualSpec!.height));
+      updateCanvasSelection(next);
+      return;
+    }
+    const next = selectCustomCanvasPreset(option);
+    setCustomWidthDraft(next.manualSpec ? String(next.manualSpec.width) : '');
+    setCustomHeightDraft(next.manualSpec ? String(next.manualSpec.height) : '');
+    updateCanvasSelection(next);
+  }
+
+  function commitCustomCanvasSize() {
+    const next = createCustomCanvasSelection(Number(customWidthDraft), Number(customHeightDraft));
+    if (!next) {
+      setStatus(`请输入 1-${MAX_CUSTOM_CANVAS_EDGE} 的整数宽高`);
+      return;
+    }
+    setStatus('');
+    updateCanvasSelection(next);
   }
 
   async function exportCurrent() {
@@ -359,9 +425,14 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     }
   }
 
+  const canvasOption = getCustomCanvasOptionValue(canvasSelection);
+
   return <section className="custom-workspace" aria-label="自定义工作区">
-    <aside className="custom-controls">
+    <header className="custom-workspace-toolbar">
       <div className="custom-section-title">自定义构图</div>
+      <CustomExportControls format={format} disabled={!hasImage} status={status} onFormatChange={setFormat} onExport={() => void exportCurrent()} />
+    </header>
+    <aside className="custom-controls">
       <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => void importAsset(event.target.files)} />
       <button type="button" className="primary-button" onClick={() => inputRef.current?.click()} title="导入一张图片开始自定义构图">
         导入图片
@@ -378,10 +449,16 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
             <div className="section-header is-idle" data-section-state="idle">
               <div><h3><span className="section-state-dot" aria-hidden="true" />画布与底图</h3><small>{canvas.width} × {canvas.height}</small></div>
             </div>
-            <label className="control-row"><span>尺寸</span><select aria-label="自定义画布尺寸" value={canvasSelection.mode === 'source' ? 'source' : canvasSelection.manualSpec?.id} onChange={(event) => updateCanvasSelection(selectCustomCanvasPreset(event.target.value))}>
+            <label className="control-row"><span>尺寸</span><select aria-label="自定义画布尺寸" value={canvasOption} onChange={(event) => selectCanvasSize(event.target.value)}>
               <option value="source">原图尺寸（跟随底图）</option>
               {CUSTOM_MANUAL_CANVAS_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              <option value={CUSTOM_CANVAS_OPTION}>自定义尺寸</option>
             </select></label>
+            {canvasOption === CUSTOM_CANVAS_OPTION ? <div className="custom-canvas-dimensions" aria-label="自定义画布宽高">
+              <label><span>宽</span><input aria-label="自定义画布宽度" inputMode="numeric" type="number" min="1" max={MAX_CUSTOM_CANVAS_EDGE} step="1" value={customWidthDraft} onChange={(event) => setCustomWidthDraft(event.target.value)} onBlur={commitCustomCanvasSize} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
+              <span aria-hidden="true">×</span>
+              <label><span>高</span><input aria-label="自定义画布高度" inputMode="numeric" type="number" min="1" max={MAX_CUSTOM_CANVAS_EDGE} step="1" value={customHeightDraft} onChange={(event) => setCustomHeightDraft(event.target.value)} onBlur={commitCustomCanvasSize} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
+            </div> : null}
             <div className="segmented-control" aria-label="底图适配方式">
               <button type="button" className={previewState?.fitMode === 'contain' ? 'active' : ''} onClick={() => updateCropMode('contain')}>适合画布</button>
               <button type="button" className={previewState?.fitMode === 'cover' ? 'active' : ''} onClick={() => updateCropMode('cover')}>填满画布</button>
@@ -416,7 +493,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
               {numberControl('Y', selectedInteractionItem?.rect.y ?? 0, 0, selectedTransformBounds?.maxY ?? 0, 1, (y) => editSelectedTransform({ y }))}
               <small className="inline-note">{fmtScale(selectedInteractionItem?.currentScale ?? resolvedGameScale)} · ({fmtCoord(selectedInteractionItem?.rect.x ?? 0)}, {fmtCoord(selectedInteractionItem?.rect.y ?? 0)})</small>
               <button type="button" onClick={resetSelectedObject}>复位</button>
-              <details className="effect-details"><summary>高级样式 <span className="effect-summary">{effectSummary(gameEffect)}</span></summary><BrandEffectControls title="游戏 Logo" effect={gameEffect} onChange={setGameEffect} /></details>
+              <CustomObjectEffectDisclosure title="游戏 Logo" effect={gameEffect} onChange={setGameEffect} />
             </> : null}
             {selectedObjectId === 'company' ? <>
               <label className="toggle"><input type="checkbox" checked={companyEnabled} onChange={(event) => setCompanyEnabled(event.target.checked)} />显示公司 Logo</label>
@@ -425,7 +502,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
               {numberControl('Y', selectedInteractionItem?.rect.y ?? 0, 0, selectedTransformBounds?.maxY ?? 0, 1, (y) => editSelectedTransform({ y }))}
               <small className="inline-note">{fmtScale(selectedInteractionItem?.currentScale ?? resolvedCompanyScale)} · ({fmtCoord(selectedInteractionItem?.rect.x ?? 0)}, {fmtCoord(selectedInteractionItem?.rect.y ?? 0)})</small>
               <button type="button" onClick={resetSelectedObject}>复位</button>
-              <details className="effect-details"><summary>高级样式 <span className="effect-summary">{effectSummary(companyEffect)}</span></summary><BrandEffectControls title="公司 Logo" effect={companyEffect} onChange={setCompanyEffect} /></details>
+              <CustomObjectEffectDisclosure title="公司 Logo" effect={companyEffect} onChange={setCompanyEffect} />
             </> : null}
             {selectedObjectId === 'cpr' ? <>
               <label className="toggle"><input type="checkbox" checked={cprEnabled} onChange={(event) => setCprEnabled(event.target.checked)} />显示 CPR</label>
@@ -434,7 +511,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
               {numberControl('Y', selectedInteractionItem?.rect.y ?? cprRect?.y ?? 0, 0, selectedTransformBounds?.maxY ?? 0, 1, (y) => editSelectedTransform({ y }))}
               <small className="inline-note">{fmtScale(selectedInteractionItem?.currentScale ?? resolvedCprScale)} · ({fmtCoord(selectedInteractionItem?.rect.x ?? cprRect?.x ?? 0)}, {fmtCoord(selectedInteractionItem?.rect.y ?? cprRect?.y ?? 0)})</small>
               <button type="button" onClick={resetSelectedObject}>复位</button>
-              <details className="effect-details"><summary>高级样式 <span className="effect-summary">{effectSummary(cprEffect)}</span></summary><BrandEffectControls title="CPR" effect={cprEffect} onChange={setCprEffect} /></details>
+              <CustomObjectEffectDisclosure title="CPR" effect={cprEffect} onChange={setCprEffect} />
             </> : null}
           </div>
 
@@ -447,15 +524,6 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
             <label className="toggle"><input type="checkbox" checked={snapEnabled} onChange={(event) => setSnapEnabled(event.target.checked)} />网格吸附</label>
           </div>
 
-          {/* ── Export ── */}
-          <div className="brand-control-group">
-            <div className="section-header is-idle" data-section-state="idle">
-              <div><h3><span className="section-state-dot" aria-hidden="true" />导出</h3><small>格式与输出</small></div>
-            </div>
-            <div className="segmented-control"><button type="button" className={format === 'png' ? 'active' : ''} onClick={() => setFormat('png')}>PNG</button><button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => setFormat('jpg')}>JPG</button></div>
-            <button type="button" onClick={() => void exportCurrent()} disabled={!asset}>导出当前画板</button>
-            {status ? <small role="status">{status}</small> : null}
-          </div>
         </>
       )}
     </aside>

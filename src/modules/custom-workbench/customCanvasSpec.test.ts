@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBoardRenderPlan, createInitialCropState, panCropState, zoomCropState } from '../../core';
-import { resolveCustomCanvasSelection, resolveCustomCanvasSpec, selectCustomCanvasPreset } from './customCanvasSpec';
+import { MAX_CUSTOM_CANVAS_EDGE, createCustomCanvasSelection, getCustomCanvasOptionValue, resolveCustomCanvasSelection, resolveCustomCanvasSpec, selectCustomCanvasPreset } from './customCanvasSpec';
 import { toFabricFrame } from './customFabricCoords';
 
 const landscape = { id: 'landscape', width: 3000, height: 1200 };
@@ -17,6 +17,23 @@ describe('CustomWorkbench canvas size selection', () => {
     const manual = selectCustomCanvasPreset('custom-manual-1920x1080');
     expect(resolveCustomCanvasSpec(landscape, manual, 'png')).toMatchObject({ width: 1920, height: 1080 });
     expect(resolveCustomCanvasSpec(portrait, manual, 'png')).toMatchObject({ width: 1920, height: 1080 });
+  });
+
+  it('keeps an explicit arbitrary 1350×1800 selection while the source image changes', () => {
+    const custom = createCustomCanvasSelection(1350, 1800)!;
+    expect(getCustomCanvasOptionValue(custom)).toBe('custom');
+    expect(resolveCustomCanvasSpec(landscape, custom, 'png')).toMatchObject({ width: 1350, height: 1800 });
+    expect(resolveCustomCanvasSpec(portrait, custom, 'jpg')).toMatchObject({ width: 1350, height: 1800, format: 'jpg' });
+  });
+
+  it.each([
+    [0, 1800],
+    [1350, 0],
+    [Number.NaN, 1800],
+    [1350.5, 1800],
+    [MAX_CUSTOM_CANVAS_EDGE + 1, 1800]
+  ])('does not create a manual canvas for invalid dimensions %p × %p', (width, height) => {
+    expect(createCustomCanvasSelection(width, height)).toBeUndefined();
   });
 
   it('returns to the current source dimensions immediately when source-following is selected', () => {
@@ -46,6 +63,21 @@ describe('CustomWorkbench canvas size selection', () => {
 
     expect(plan.canvas).toEqual({ width: portrait.width, height: portrait.height });
     expect(toFabricFrame({ x: 0, y: 0, width: plan.canvas.width, height: plan.canvas.height }, .25)).toMatchObject({ width: 300, height: 750 });
+  });
+
+  it('uses an arbitrary manual spec for both the Render Plan and Fabric frame', () => {
+    const asset = { id: 'asset', fileName: 'portrait.png', objectUrl: 'blob:portrait', width: portrait.width, height: portrait.height, fileSize: 1, mimeType: 'image/png' };
+    const spec = resolveCustomCanvasSpec(asset, createCustomCanvasSelection(1350, 1800)!, 'png')!;
+    const previewState = { assetId: asset.id, specId: spec.id, fitMode: 'contain' as const, crop: createInitialCropState(asset, spec, 'contain') };
+    const plan = buildBoardRenderPlan({
+      asset,
+      spec,
+      previewState,
+      brandLayer: { logoEnabled: false, cprEnabled: false, logoLanguage: 'zh-CN', cprLanguage: 'zh-CN', logoAnchor: 'top-right', cprAnchor: 'top-right', logoSize: 'standard', cprSize: 'standard', logoEffect: { colorEnabled: false, color: '#fff', strokeEnabled: false, strokeColor: '#000', strokeWidth: 0, glowEnabled: false, glowColor: '#fff', glowBlur: 0, shadowEnabled: false, shadowColor: '#000', shadowOpacity: 0, shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 }, cprEffect: { colorEnabled: false, color: '#fff', strokeEnabled: false, strokeColor: '#000', strokeWidth: 0, glowEnabled: false, glowColor: '#fff', glowBlur: 0, shadowEnabled: false, shadowColor: '#000', shadowOpacity: 0, shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 } }
+    });
+
+    expect(plan.canvas).toEqual({ width: 1350, height: 1800 });
+    expect(toFabricFrame({ x: 0, y: 0, width: plan.canvas.width, height: plan.canvas.height }, .25)).toMatchObject({ width: 337.5, height: 450 });
   });
 
   it('reuses the shared crop logic for contain/cover, dragging, zooming and reset on source and manual canvases', () => {

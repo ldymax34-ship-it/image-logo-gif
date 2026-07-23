@@ -61,6 +61,14 @@ describe('BrandControlsPanel section structure', () => {
     expect(cprIdx).toBeGreaterThan(-1);
     expect(cprIdx).toBeGreaterThan(logoIdx);
   });
+
+  it('keeps shortened panel notes with accessible detail tooltips', () => {
+    const html = renderToStaticMarkup(
+      <BrandControlsPanel {...defaultProps()} />
+    );
+    expect(html).toContain('当前画板独立保存；CPR 单独设置。');
+    expect(html).toContain('title="Logo 位置与大小仅保存到当前画板；CPR 使用独立的底部设置。"');
+  });
 });
 
 describe('Logo style preview color resolution', () => {
