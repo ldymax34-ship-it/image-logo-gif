@@ -75,8 +75,18 @@ export function LogoGroupControls({
         </select>
       </div>
       <label className="range-field compact-range">
-        <span>连续缩放 {Math.round((group.scale ?? 1) * 100)}%</span>
-        <input type="range" min="0.5" max="2" step="0.01" value={group.scale ?? 1} onChange={(event) => patch({ scale: Number(event.target.value) })} />
+        <span>连续缩放 {Math.round((group.scale ?? 1) * 100)}% · 双击复位</span>
+        <input
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.01"
+          value={group.scale ?? 1}
+          onChange={(event) => patch({ scale: Number(event.target.value) })}
+          onDoubleClick={() => patch({ scale: 1 })}
+          aria-label="Logo 连续缩放，双击恢复 100%"
+          title="Logo 连续缩放，双击恢复 100%"
+        />
       </label>
       <div className="toolbar-line compact">
         <label className="control-label small">语种</label>

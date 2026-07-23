@@ -1,5 +1,22 @@
 # 更新日志
 
+## 2026-07-23｜连续缩放双击复位
+
+### 修改文件
+- `src/components/brand/LogoGroupControls.tsx`、`src/components/brand/CprControls.tsx`
+- `src/components/brand/CprControls.test.ts`
+- `TASKS.md`、`CHANGELOG.md`
+
+### 主要改动
+- 设媒的 Logo 与 CPR“连续缩放”滑块支持双击恢复 100%，并提供可见的“双击复位”提示和准确 aria-label/title。
+- 复位继续通过既有 `onChange` 更新链路写入当前画板状态，不绕开 dirty、同步或 Render Plan。
+
+### 验证方式
+- 组件行为回归先将两条滑块修改到非 1，再触发双击并确认分别经既有 `onChange` 回写为 1；同时锁定 aria-label/title。`git diff --check`、`npm run verify:core`、`npm test -- --run`（262 tests / 36 files）与 `npm run build` 均通过。未涉及 Rust/Tauri，未重复 Cargo 门禁。
+
+### 影响范围
+- 仅处理两处“连续缩放”滑块；不改变查看倍率、素材裁切、效果强度、语言校正、GIF 占位状态或 Stage 6 路线。
+
 ## 2026-07-23｜内置常用社媒规格名称修复
 
 ### 修改文件

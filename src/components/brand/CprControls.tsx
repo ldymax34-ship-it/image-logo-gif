@@ -48,8 +48,18 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
         <input type="range" min="-240" max="240" step="1" value={state.transform.offsetY} onChange={(event) => patchTransform({ offsetY: Number(event.target.value) })} />
       </div>
       <label className="range-field compact-range">
-        <span>连续缩放 {Math.round((state.scale ?? 1) * 100)}%</span>
-        <input type="range" min="0.5" max="2" step="0.01" value={state.scale ?? 1} onChange={(event) => patch({ scale: Number(event.target.value) })} />
+        <span>连续缩放 {Math.round((state.scale ?? 1) * 100)}% · 双击复位</span>
+        <input
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.01"
+          value={state.scale ?? 1}
+          onChange={(event) => patch({ scale: Number(event.target.value) })}
+          onDoubleClick={() => patch({ scale: 1 })}
+          aria-label="CPR 连续缩放，双击恢复 100%"
+          title="CPR 连续缩放，双击恢复 100%"
+        />
       </label>
       <button type="button" onClick={() => patchTransform({ placement: state.transform.placement === 'custom' ? 'bottom-right' : state.transform.placement, offsetX: 0, offsetY: 0 })}>恢复推荐位置</button>
       <div className="control-row cpr-color-row">

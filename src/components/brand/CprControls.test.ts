@@ -1,7 +1,7 @@
-import { createElement } from 'react';
+import { createElement, isValidElement, type ChangeEvent, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { createDefaultCprState, createDefaultLogoGroup } from '../../core';
+import { createDefaultCprState, createDefaultLogoGroup, type CprState, type LogoGroupState } from '../../core';
 import { CprControls, setCprColorMode } from './CprControls';
 import { LogoGroupControls } from './LogoGroupControls';
 
@@ -14,6 +14,31 @@ function expectLabelsInOrder(html: string, labels: string[], closingTag: string)
     expect(index).toBeGreaterThan(previousIndex);
     previousIndex = index;
   }
+}
+
+type RangeProps = {
+  type?: string;
+  children?: ReactNode;
+  'aria-label'?: string;
+  title?: string;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onDoubleClick?: () => void;
+};
+
+function findRangeByLabel(node: ReactNode, label: string): RangeProps {
+  if (!isValidElement(node)) throw new Error(`Missing range input: ${label}`);
+  const props = node.props as RangeProps;
+  if (props.type === 'range' && props['aria-label'] === label) return props;
+  const children = Array.isArray(props.children) ? props.children : [props.children];
+  for (const child of children) {
+    if (child === undefined || child === null || typeof child === 'string' || typeof child === 'number') continue;
+    try {
+      return findRangeByLabel(child, label);
+    } catch {
+      // Keep searching sibling branches for the requested control.
+    }
+  }
+  throw new Error(`Missing range input: ${label}`);
 }
 
 describe('setCprColorMode', () => {
@@ -54,5 +79,43 @@ describe('color mode labels', () => {
 
     expect(colorSegments).toContain('cpr-color-mode');
     expectLabelsInOrder(colorSegments, COLOR_LABELS, '</button>');
+  });
+});
+
+describe('continuous scale reset', () => {
+  it('resets Logo scale through the existing onChange path after a double click', () => {
+    let group: LogoGroupState = { ...createDefaultLogoGroup(), scale: 1 };
+    const renderControl = () => LogoGroupControls({
+      group,
+      language: 'zh-CN',
+      onLanguageChange: () => undefined,
+      onChange: (next) => { group = next; }
+    });
+
+    const label = 'Logo 连续缩放，双击恢复 100%';
+    const slider = findRangeByLabel(renderControl(), label);
+    expect(slider.title).toBe(label);
+    slider.onChange?.({ target: { value: '1.37' } } as ChangeEvent<HTMLInputElement>);
+    expect(group.scale).toBe(1.37);
+
+    findRangeByLabel(renderControl(), label).onDoubleClick?.();
+    expect(group.scale).toBe(1);
+  });
+
+  it('resets CPR scale through the existing onChange path after a double click', () => {
+    let state: CprState = { ...createDefaultCprState(), scale: 1 };
+    const renderControl = () => CprControls({
+      state,
+      onChange: (next) => { state = next; }
+    });
+
+    const label = 'CPR 连续缩放，双击恢复 100%';
+    const slider = findRangeByLabel(renderControl(), label);
+    expect(slider.title).toBe(label);
+    slider.onChange?.({ target: { value: '1.42' } } as ChangeEvent<HTMLInputElement>);
+    expect(state.scale).toBe(1.42);
+
+    findRangeByLabel(renderControl(), label).onDoubleClick?.();
+    expect(state.scale).toBe(1);
   });
 });
