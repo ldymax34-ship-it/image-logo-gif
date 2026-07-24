@@ -408,3 +408,51 @@ npm run verify:core
 npm test
 npm run build
 ```
+
+---
+
+## 品宣工具箱 v0.1.33
+
+### 工具入口
+
+```
+品宣工具箱
+├─ Logo 与版式         — 设媒工作台，批量尺寸 + Logo/CPR 导出
+├─ GIF 合成与压缩      — 视频转GIF，掐头去尾 + 8MB自动收口
+├─ 批量模板 GIF 合成器 — Figma模板PNG + 视频 = 批量多语言GIF
+├─ 水印与追溯          — 文字/图片水印，Fabric.js画布直接操作
+└─ 设置
+```
+
+### 技术栈
+
+- **前端**: React 18 + TypeScript + Fabric.js 7 + Vue 3 (GIF工具嵌入)
+- **后端**: Tauri 2 + Rust
+- **媒体**: FFmpeg/FFprobe sidecar (arm64 macOS / x64 Windows)
+- **测试**: Vitest (271 tests) + Cargo test (24 tests)
+
+### 构建
+
+```bash
+npm install
+npm run dev              # 浏览器开发
+npm run tauri:dev        # 桌面开发
+npm run tauri:build      # macOS .app + .dmg
+```
+
+### 验证
+
+```bash
+npm run verify:core      # 核心验证
+npm test -- --run        # 271 tests
+npm run build            # 前端构建
+cd src-tauri && cargo test --lib  # 24 Rust tests
+```
+
+### 包体
+
+| 产物 | 大小 |
+|------|------|
+| .app | 85 MB |
+| .dmg | 42 MB |
+| 前端 dist/ | 1.4 MB |

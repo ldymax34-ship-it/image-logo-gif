@@ -1,5 +1,61 @@
 # 更新日志
 
+
+## 2026-07-24｜品宣工具箱返工 — 单窗口嵌入 + 批量模板合成器 + Fabric.js 水印
+
+### 架构
+- 去掉 GIF/水印独立 Tauri 窗口，全部嵌入主应用单窗口
+- 工具箱从 4 入口扩展为 5 入口
+- 新增 VueToolWrapper（GIF工具暂用）、水印工具重写为 React + Fabric.js
+- CSS 对齐项目设计令牌 tokens.css + theme.css
+
+### GIF 合成与压缩
+- 8MB 自动收口：真实文件体积检测 → 按偏好降参数 → 最多8次重试
+- 无限循环硬编码、时间轴掐头去尾
+
+### 批量模板 GIF 合成器（新增）
+- 单视频多模板 / 多视频颜色映射 双模式
+- Rust 色键合成：colorkey + alphamerge + overlay
+- 模板预览、视频微调(缩放/X/Y)、job.json 持久化
+- 批量统一规格：首模板试跑 → 整批同参数 → 逐个8MB检查
+
+### 水印与追溯
+- Fabric.js 画布直接操作：拖动/旋转/四角等比缩放
+- 文字效果：颜色/描边/投影/透明度
+- 排列：单个/网格平铺/斜向45°砖形 + 暗水印模式
+- 旋转吸附(0/45/90°) + 滑块双击复位
+
+### 修复
+- Fabric.js NotFoundError: mountedRef + genRef 竞态防护
+- 全项目异步扫描：BatchTemplateGif / VueToolWrapper / setTimeout 清理
+- 产品审计：14个aria-label、二次确认、错误重试、自动队列
+- 设计审计：CSS 全部对齐项目令牌
+
+### 提交 (16 commits)
+```
+fc6e71b docs: 四大工具总览
+f8ba7d2 fix: 全项目异步竞态扫描修复
+376ca31 fix: Fabric.js 竞态根因修复
+f3a5c38 fix: Fabric.js NotFoundError
+8717df7 refactor: 设计审计
+3fc32b5 fix: 产品审计修复
+ded9016 fix: Fabric内存泄漏修复
+62b5f49 chore: 清理死代码
+4cfa057 fix: 水印图片加载改用convertFileSrc
+6766f7d refactor: 水印工具改为Fabric.js画布
+de8b4fe feat: 水印暗水印模式
+e5281fd feat: 水印预览功能
+4bc3ef1 feat: 批量模板合成器预览优先布局
+54288f7 feat: Rust色键合成 + job.json
+1da902e feat: 单窗口嵌入式 + 批量模板合成器骨架
+9dbc693 feat: GIF/水印工具拆分重构
+```
+
+### 验证
+- 271 TS tests + 24 Rust tests 通过
+- macOS .app (85MB) / .dmg (42MB) 构建通过
+
+
 ## 2026-07-24｜工具箱最终视觉与本地验证包
 
 ### 视觉

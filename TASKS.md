@@ -549,3 +549,96 @@
 5. [重构-中] 设置弹层、品牌资源替换 / 恢复和隐藏 SVG 上传入口迁移至 `GlobalDialogs`；根层直接聚合 settings activity，设媒模块只汇报导出、聚焦与确认状态。
 6. [维护-中] package、Cargo、Cargo.lock、Tauri 版本统一为 0.1.24；Tauri 2 桌面壳已经接入，自动更新仍未接入。
 7. [验证-中] AppActivity、根层设置入口、模块切换和状态聚合由专项测试覆盖；不修改产品行为。
+
+---
+
+## 0.1.33 品宣工具箱返工 (2026-07-24)
+
+### 架构变更
+
+1. [架构-大] GIF/水印从独立 Tauri 窗口改为单窗口嵌入式；去掉 `gif-tool`/`watermark-tool` WebViewWindow，统一在 React App 内通过 `activeTool` 切换。
+2. [架构-大] 工具箱从 4 入口扩展为 5 入口：Logo与版式 / GIF合成与压缩 / 批量模板GIF合成器 / 水印与追溯 / 设置。
+3. [架构-中] 新增 `VueToolWrapper` 将 Vue 组件嵌入 React（GIF工具暂用）；水印工具重写为纯 React+Fabric.js。
+4. [架构-中] 共享 CSS 迁移至项目设计令牌系统 `tokens.css` + `theme.css`（颜色/间距/圆角/字号统一）。
+
+### GIF 合成与压缩
+
+- [x] 普通视频转 GIF：MP4/MOV 输入、时间轴截取、输出预览、无限循环
+- [x] 8MB 自动收口：首次编码→读真实文件大小→超7.8MB→按偏好降参数→重试(最多8次)
+- [x] 压缩策略三选一：均衡 / 优先清晰 / 优先流畅
+- [x] Rust `start_gif_media_task` 同步 FFmpeg 重试循环 + 取消标志位
+
+### 批量模板 GIF 合成器 (新增)
+
+- [x] 两种模式：单视频多模板 / 多视频颜色映射
+- [x] 色键抠像合成：Rust `colorkey` + `alphamerge` + `overlay` 滤镜链
+- [x] 视频适配：cover/contain、等比缩放(不拉伸)、X/Y位移、居中、重置
+- [x] 模板预览：`preview_template_frame` 单帧合成
+- [x] 批量统一规格：首模板试跑→找最优参数→整批同参数输出→逐个8MB检查
+- [x] job.json 保存/加载：`save_batch_job_json` / `load_batch_job_json`
+- [x] 合成前二次确认弹窗
+- [x] 预览失败重试按钮
+
+### 水印与追溯
+
+- [x] Vue 组件重写为 React + Fabric.js 画布
+- [x] 画布直接操作：拖动/旋转/四角等比缩放
+- [x] 文字效果：颜色/描边(颜色+粗细)/投影(颜色+模糊+X/Y偏移)/透明度
+- [x] 旋转：滑块精调 + 0°/45°/90° 一键吸附 + 双击复位
+- [x] 缩放：滑块+画布双向同步 + 双击复位100%
+- [x] 排列：单个/网格平铺/斜向45°砖形
+- [x] 暗水印模式：极淡透明度(0.06)抗去除
+- [x] 预览：`preview_watermark_frame` 原图/水印后对比
+- [x] 参数变化自动 debounce 重绘
+- [x] 任务队列自动连续处理
+
+### Fabric.js 竞态修复
+
+- [x] WatermarkWorkbench: `mountedRef` + `genRef` lifecycle guards (22处await后校验)
+- [x] BatchTemplateGif: `mountedRef` 防护 invoke 后 setState
+- [x] VueToolWrapper: containerRef 判空防已卸载DOM挂载
+- [x] WatermarkWorkbench setTimeout 队列: clearTimeout 清理
+- [x] 全项目扫描: CustomFabricOverlay/FocusLogoFabricOverlay 已有 disposed 标志 ✅
+- [x] 新增 WatermarkWorkbench 回归测试 3 个
+
+### 产品审计修复
+
+- [x] 水印+批量GIF: 添加 14 个 aria-label
+- [x] 批量GIF: 合成前二次确认 + 预览失败重试按钮
+- [x] 水印: 空catch改为带错误信息 + 任务完成后自动队列
+- [x] Rust: 移除死进程占位符，改纯标记位取消
+
+### 设计审计
+
+- [x] watermarkWorkbench.css / batchTemplateGif.css / styles.css: 全部对齐 `tokens.css` + `theme.css`
+- [x] 统一颜色(--color-*)、间距(--space-*)、圆角(--radius-*)、字号(--font-size-*)、控件高度(--control-height)
+
+### 本阶段提交记录
+
+```
+fc6e71b docs: 四大工具总览
+f8ba7d2 fix: 全项目异步竞态扫描修复
+376ca31 fix: Fabric.js 竞态根因修复
+f3a5c38 fix: Fabric.js NotFoundError
+8717df7 refactor: 设计审计
+3fc32b5 fix: 产品审计修复
+ded9016 fix: Fabric内存泄漏修复
+62b5f49 chore: 清理死代码
+4cfa057 fix: 水印图片加载改用convertFileSrc
+6766f7d refactor: 水印工具改为Fabric.js画布
+de8b4fe feat: 水印暗水印模式
+e5281fd feat: 水印预览功能
+4bc3ef1 feat: 批量模板合成器预览优先布局
+54288f7 feat: Rust色键合成 + job.json
+1da902e feat: 单窗口嵌入式 + 批量模板合成器骨架
+9dbc693 feat: GIF/水印工具拆分重构
+```
+
+### 验证记录
+
+- [x] `npm run verify:core` — OK
+- [x] `npm test -- --run` — 271 tests passed
+- [x] `npm run build` — OK
+- [x] `cargo test --lib` — 24 tests passed
+- [x] macOS .app (85MB) / .dmg (42MB) 构建通过
+- [x] FFmpeg/FFprobe arm64 sidecar 签名打包正常

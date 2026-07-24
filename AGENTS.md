@@ -2,7 +2,7 @@
 
 ## 当前项目事实
 
-本项目是「品宣物料工作台」，当前版本线为 0.1.33。
+本项目是「品宣物料工作台」，当前版本线为 0.1.33。已具备四大工具：Logo与版式、GIF合成与压缩、批量模板GIF合成器、水印与追溯。
 
 - 技术栈：Tauri 2 + Vite + React + TypeScript。
 - 目标平台：Windows x64 与 macOS Apple Silicon。
@@ -162,3 +162,15 @@ npm run build
 - 不修改发布、签名或更新链路来顺带解决普通 UI 问题。
 - 不把 API key、token、内部地址、用户素材或公司资源写入仓库。
 - 不把“未来可扩展”作为增加复杂度的理由。
+
+## Fabric.js 生命周期规则
+
+涉及 Fabric.js 画布的组件必须遵守：
+
+1. 所有 `await import('fabric')` / `FabricImage.fromURL()` 等异步操作后，必须检查组件是否仍挂载（`mountedRef`）和画布实例是否仍为当前实例（`fabricRef.current === fc`）。
+2. 使用 generation token (`genRef`) 区分异步操作代次，过期结果直接丢弃。
+3. cleanup 必须幂等：先标记失效→断开 observer/事件→再 dispose。
+4. 禁止在 `return () => {}` 清理函数中直接操作可能已被 React 移除的 DOM 节点，所有 Fabric 操作需包裹 try/catch。
+5. `setState` 前检查 `mountedRef.current`。
+
+参考实现：`src/watermark-workbench/WatermarkWorkbench.tsx`。
