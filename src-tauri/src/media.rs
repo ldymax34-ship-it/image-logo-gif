@@ -1061,76 +1061,107 @@ fn reduce_gif_params(current_fps: u32, current_width: Option<u32>, step: u32, pr
 
 /// Run FFmpeg synchronously for a GIF encode, returning the output file size on success.
 /// Encode GIF with real child process, progress reporting, and cancellation support.
-/// Returns (file_size, output_path) on success.
+/// Uses temp output + atomic rename to final path. Does NOT hold the registry lock during wait().
 fn run_gif_encode_with_progress(
     ffmpeg: &Path,
     args: &[OsString],
-    output_path: &Path,
+    final_output_path: &Path,
     app: &AppHandle,
     registry: &MediaTaskRegistry,
     task_id: &str,
-    progress_start: f64,
-    progress_span: f64,
+    progress_step_base: f64,  // 0.0 .. 1.0 base for this retry step
+    progress_step_span: f64,  // how much progress this step contributes
 ) -> Result<u64, String> {
-    // Remove previous output so -n doesn't block retry
-    let _ = fs::remove_file(output_path);
+    // Use temp file to avoid clobbering final output until success
+    let temp_output = final_output_path.with_extension("gif.tmp");
 
-    // Build args without -n (use -y for retry safety)
-    let args_no_n: Vec<OsString> = args.iter()
-        .filter(|a| a.to_string_lossy() != "-n")
+    // Build args with -y (retry safety) → temp output
+    let mut args_temp: Vec<OsString> = args.iter()
+        .filter(|a| a.to_string_lossy() != final_output_path.to_string_lossy())
         .cloned()
         .collect();
+    args_temp.push(OsString::from("-y"));
+    args_temp.push(temp_output.as_os_str().to_owned());
 
     let mut child = Command::new(ffmpeg)
-        .args(&args_no_n)
+        .args(&args_temp)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("无法启动 FFmpeg：{e}"))?;
 
+    // Register child for cancellation (Arc<Mutex<Child>>)
     let child_arc = Arc::new(Mutex::new(child));
     registry.insert(task_id.to_string(), child_arc.clone());
 
-    // Read stdout for progress
+    // Take stdout/stderr BEFORE anyone else locks
     let stdout = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?
         .stdout.take();
+    let stderr = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?
+        .stderr.take();
+
+    // Spawn stderr consumer to prevent pipe deadlock
+    let stderr_thread = thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut s) = stderr {
+            let _ = s.read_to_string(&mut buf);
+        }
+        buf
+    });
+
+    // Spawn stdout progress parser
     let app_clone = app.clone();
     let tid = task_id.to_string();
     if let Some(stdout) = stdout {
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if let Some(progress) = parse_progress_line(&line, progress_start, progress_span) {
+                // out_time_ms from -progress starts from 0 after -ss
+                if let Some(frac) = parse_progress_line(&line, 0.0, progress_step_span) {
+                    let p = progress_step_base + frac;
                     emit(&app_clone, MediaTaskEvent::Progress {
                         task_id: tid.clone(),
-                        progress,
+                        progress: p.clamp(0.0, 0.99),
                     });
                 }
             }
         });
     }
 
-    // Wait for completion
+    // Wait WITHOUT holding the lock - take child out of Arc
     let status = {
-        let mut guard = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?;
-        guard.wait().map_err(|e| format!("FFmpeg 等待失败：{e}"))?
+        let mut child_guard = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?;
+        child_guard.wait().map_err(|e| format!("FFmpeg 等待失败：{e}"))?
     };
+    let _stderr_output = stderr_thread.join().unwrap_or_default();
 
-    // Check cancellation
+    // Check cancellation (registry can now lock independently)
     if registry.take_cancelled(task_id) {
-        let _ = fs::remove_file(output_path);
+        let _ = fs::remove_file(&temp_output);
         emit(app, MediaTaskEvent::Cancelled { task_id: task_id.to_string() });
         registry.remove(task_id);
         return Err("已取消".into());
     }
-
     registry.remove(task_id);
 
     if status.success() {
-        fs::metadata(output_path)
-            .map(|m| m.len())
-            .map_err(|_| "FFmpeg 完成后未找到输出文件".into())
+        match fs::metadata(&temp_output) {
+            Ok(meta) => {
+                let size = meta.len();
+                // Atomic rename to final path
+                let _ = fs::remove_file(final_output_path);
+                if let Err(e) = fs::rename(&temp_output, final_output_path) {
+                    let _ = fs::remove_file(&temp_output);
+                    return Err(format!("无法移动到最终路径：{e}"));
+                }
+                Ok(size)
+            }
+            Err(_) => {
+                let _ = fs::remove_file(&temp_output);
+                Err("FFmpeg 完成后未找到输出文件".into())
+            }
+        }
     } else {
-        let _ = fs::remove_file(output_path);
+        let _ = fs::remove_file(&temp_output);
         Err("FFmpeg 编码失败".into())
     }
 }
@@ -1243,7 +1274,7 @@ pub fn start_gif_media_task(
 
             let args = build_gif_encode_args(&request_for_thread, &output_for_task, current_fps, current_width);
             
-            match run_gif_encode_with_progress(&ffmpeg, &args, &output_for_task, &app_for_task, &*app_for_task.state::<MediaTaskRegistry>(), &task_id, started_at, _relevant_duration) {
+            match run_gif_encode_with_progress(&ffmpeg, &args, &output_for_task, &app_for_task, &*app_for_task.state::<MediaTaskRegistry>(), &task_id, step as f64 / 8.0, 1.0/8.0) {
                 Ok(file_size) => {
                     if target_bytes == 0 || file_size <= target_bytes {
                         // Success: within target or no target
@@ -1948,7 +1979,7 @@ pub fn preview_watermark_frame(
 mod tests {
     use super::{
         escape_filter_value, ffmpeg_args, is_static_image, next_available_path, output_path,
-        overlay_coordinates, parse_progress_line, sidecar_path, target_sidecar_name,
+        overlay_coordinates, parse_progress_line, reduce_gif_params, target_sidecar_name,
         tiled_coordinates, watermark_output_path, GifMediaOptions, GifMediaTaskRequest,
         WatermarkMediaTaskRequest, WatermarkOptions,
     };
@@ -2482,6 +2513,30 @@ mod tests {
         assert!(run_fixture_conversion(&ffmpeg, &successful, &output).success());
         assert_eq!(fs::read(output).unwrap()[..6], *b"GIF89a");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+
+
+
+
+    #[test]
+    fn parse_progress_with_zero_base_handles_ss_reset() {
+        assert_eq!(parse_progress_line("out_time_ms=2000000", 0.0, 4.0), Some(0.5));
+        assert_eq!(parse_progress_line("out_time_ms=4000000", 0.0, 4.0), Some(0.99)); // clamped
+        assert_eq!(parse_progress_line("progress=continue", 0.0, 4.0), None);
+    }
+
+    #[test]
+    fn reduce_gif_params_follows_preference() {
+        let (fps_b, w_b) = reduce_gif_params(24, Some(960), 1, "balanced");
+        assert_eq!(fps_b, 24); // step=1 odd, fps unchanged
+        assert!(w_b.unwrap() < 960); // width reduced
+        let (fps_c, _) = reduce_gif_params(24, Some(960), 1, "clarity");
+        assert!(fps_c < 24);
+        let (fps_s, _) = reduce_gif_params(24, Some(960), 1, "smoothness");
+        assert_eq!(fps_s, 24); // fps unchanged on step 1
+        // width unchanged on step 1 (only reduces after step > 1)
     }
 
     #[test]

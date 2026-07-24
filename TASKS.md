@@ -642,3 +642,14 @@ e5281fd feat: 水印预览功能
 - [x] `cargo test --lib` — 24 tests passed
 - [x] macOS .app (85MB) / .dmg (42MB) 构建通过
 - [x] FFmpeg/FFprobe arm64 sidecar 签名打包正常
+
+### P0 返工 (2463d25 复核 → 修复)
+
+- [x] GIF 死锁修复：`run_gif_encode_with_progress` 不再持锁 wait()，stdout/stderr 并发消费防管道死锁
+- [x] 临时输出 + 原子 rename 到 `next_available_path`，不用 -y 覆盖
+- [x] `allowStrongCompression` 真正增加第9次迭代（max_steps=9）
+- [x] 进度跨重试单调：`step/8 + real_progress/8`
+- [x] 水印队列：`stateRef` 快照参数、`activeTaskIdRef` 防重入、纯事件 handler + 独立队列 controller effect
+- [x] setTimeout 写入 `queueTimerRef`，cleanup 可清理
+- [x] 新增 Rust 测试：`parse_progress_with_zero_base`、`reduce_gif_params_follows_preference`
+- [x] 271 TS + 26 Rust + verify:core 通过

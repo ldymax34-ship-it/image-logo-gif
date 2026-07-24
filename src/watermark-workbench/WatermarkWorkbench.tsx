@@ -58,6 +58,10 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const queueTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const activeTaskIdRef = useRef<string>();
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  activeTaskIdRef.current = activeTaskId;
   const unlistenRef = useRef<(() => void)|null>(null);
 
   const currentFile = tasks[0]?.path;
@@ -255,19 +259,19 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   /* ── task ── */
   async function startSingle(task: WatermarkTask) {
-    if (!apiRef.current || task.status !== 'waiting') return;
+    if (!apiRef.current || task.status !== 'waiting' || activeTaskIdRef.current) return;
+    const s = stateRef.current; // snapshot current params
     setActiveTaskId(task.id);
     setTasks(prev => prev.map(t => t.id===task.id ? {...t,status:'running',progress:0} : t));
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('start_watermark_media_task', { request: {
         taskId:task.id, inputPath:task.path,
-        options: { kind:state.kind, text:state.text, imagePath:state.imagePath??null,
-          position:'bottom-right', sizePercent:Math.round(state.scale*10),
-          opacity:state.darkMode?0.06:state.opacity, pattern:state.pattern, density:state.density,
-          angle:Math.round(state.rotation), darkMode:state.darkMode, outputDirectory:state.outputDirectory }
+        options: { kind:s.kind, text:s.text, imagePath:s.imagePath??null,
+          position:'bottom-right', sizePercent:Math.round(s.scale*10),
+          opacity:s.darkMode?0.06:s.opacity, pattern:s.pattern, density:s.density,
+          angle:Math.round(s.rotation), darkMode:s.darkMode, outputDirectory:s.outputDirectory }
       }});
-      // Completion handled by gif-media://task event listener
     } catch(e:any) {
       if (!mountedRef.current) return;
       setTasks(prev => prev.map(t => t.id===task.id ? {...t,status:'failed',error:e?.message??String(e)} : t));
@@ -276,6 +280,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   }
 
   async function startProcessing() {
+    if (activeTaskIdRef.current) return;
     const next = tasks.find(t => t.status === 'waiting');
     if (!next) return;
     await startSingle(next);
@@ -299,7 +304,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   }
 
   /* ── init ── */
-  /* ── real task events ── */
+  /* ── real task events (pure state update) ── */
   useEffect(() => {
     if (!desktop) return;
     let cancelled = false;
@@ -308,30 +313,33 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       const unlisten = await listen('gif-media://task', (event: any) => {
         if (cancelled || !mountedRef.current) return;
         const p = event.payload;
-        setTasks(prev => {
-          const updated = prev.map(t => {
-            if (t.id !== p.taskId) return t;
-            if (p.kind === 'progress') return { ...t, status: 'running' as WatermarkTask['status'], progress: Math.min(1, Math.max(0, p.progress)) };
-            if (p.kind === 'completed') return { ...t, status: 'success' as WatermarkTask['status'], progress: 1, outputPath: p.outputPath, outputBytes: p.outputBytes, error: undefined };
-            if (p.kind === 'cancelled') return { ...t, status: 'cancelled' as WatermarkTask['status'], error: undefined };
-            if (p.kind === 'failed') return { ...t, status: 'failed' as WatermarkTask['status'], error: p.message || '失败' };
-            return t;
-          });
-          const done = updated.find(t => t.id === p.taskId);
-          if (done && (done.status === 'success' || done.status === 'failed' || done.status === 'cancelled')) {
-            if (done.id === activeTaskId) setActiveTaskId(undefined);
-            setTimeout(() => {
-              if (!mountedRef.current) return;
-              setTasks(prev2 => { const n = prev2.find(t2 => t2.status === 'waiting'); if (n) startSingle(n); return prev2; });
-            }, 200);
-          }
-          return updated;
-        });
+        setTasks(prev => prev.map(t => {
+          if (t.id !== p.taskId) return t;
+          if (p.kind === 'progress') return { ...t, status: 'running' as WatermarkTask['status'], progress: Math.min(1, Math.max(0, p.progress)) };
+          if (p.kind === 'completed') return { ...t, status: 'success' as WatermarkTask['status'], progress: 1, outputPath: p.outputPath, outputBytes: p.outputBytes, error: undefined };
+          if (p.kind === 'cancelled') return { ...t, status: 'cancelled' as WatermarkTask['status'], error: undefined };
+          if (p.kind === 'failed') return { ...t, status: 'failed' as WatermarkTask['status'], error: p.message || '失败' };
+          return t;
+        }));
       });
       if (!cancelled) unlistenRef.current = unlisten;
     })().catch(() => {});
     return () => { cancelled = true; unlistenRef.current?.(); };
   }, [desktop]);
+
+  /* ── queue controller: advance when task finishes ── */
+  useEffect(() => {
+    const finished = tasks.find(t => t.id === activeTaskIdRef.current && (t.status === 'success' || t.status === 'failed' || t.status === 'cancelled'));
+    if (!finished) return;
+    setActiveTaskId(undefined);
+    if (!mountedRef.current) return;
+    const next = tasks.find(t => t.status === 'waiting');
+    if (next) {
+      queueTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) startSingle(next);
+      }, 200);
+    }
+  }, [tasks]);
 
   useEffect(() => { initFabric(); }, [initFabric]);
   useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
