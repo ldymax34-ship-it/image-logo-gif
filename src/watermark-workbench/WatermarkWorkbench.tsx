@@ -90,6 +90,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       fabricRef.current.renderAll();
     });
     ro.observe(containerRef.current!);
+    (fc as any).__ro = ro;
 
     // sync canvas → state
     const syncToState = () => {
@@ -118,7 +119,10 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     if (!fabricRef.current) return;
     const { FabricImage } = await import('fabric');
     const fc = fabricRef.current;
-    fc.clear(); wmObjRef.current = null;
+    // Dispose old objects to free memory
+    if (wmObjRef.current) { fc.remove(wmObjRef.current); wmObjRef.current = null; }
+    fc.getObjects().forEach(o => fc.remove(o));
+    fc.backgroundImage = undefined;
     try {
       const { convertFileSrc } = await import('@tauri-apps/api/core');
       const url = convertFileSrc(path);
@@ -136,7 +140,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     const fc = fabricRef.current;
     if (!fc || !currentFile) return;
     syncLockRef.current = true;
-    if (wmObjRef.current) fc.remove(wmObjRef.current);
+    if (wmObjRef.current) { fc.remove(wmObjRef.current); wmObjRef.current = null; }
 
     const { FabricText, FabricImage, Shadow: FabShadow } = await import('fabric');
     const cw = fc.width ?? 800; const ch = fc.height ?? 600;
@@ -274,7 +278,18 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     }
     verify();
   }, [desktop, currentFile]);
-  useEffect(() => { initFabric(); }, [initFabric]);
+  useEffect(() => { initFabric(); return () => {
+    // cleanup Fabric.js resources
+    const fc = fabricRef.current;
+    if (fc) {
+      wmObjRef.current && fc.remove(wmObjRef.current);
+      fc.off('object:modified'); fc.off('object:moving');
+      fc.off('object:scaling'); fc.off('object:rotating');
+      (fc as any).__ro?.disconnect();
+      fc.dispose();
+      fabricRef.current = null;
+    }
+  }; }, [initFabric]);
   useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
   useEffect(() => { renderWatermark(); }, [renderWatermark]);
 

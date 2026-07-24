@@ -1173,11 +1173,11 @@ pub fn start_gif_media_task(
         let max_retries: u32 = 8;
 
         for step in 0..max_retries {
-            // Check cancellation
+            // Check cancellation via registry
             {
                 let registry = app_for_task.state::<MediaTaskRegistry>();
                 if registry.take_cancelled(&task_id) {
-                    remove_incomplete_output(&output_for_task);
+                    let _ = std::fs::remove_file(&output_for_task);
                     emit(&app_for_task, MediaTaskEvent::Cancelled { task_id: task_id.clone() });
                     registry.remove(&task_id);
                     return;
@@ -1191,7 +1191,7 @@ pub fn start_gif_media_task(
             });
 
             let args = build_gif_encode_args(&request_for_thread, &output_for_task, current_fps, current_width);
-
+            
             match run_gif_encode(&ffmpeg, &args) {
                 Ok(file_size) => {
                     if target_bytes == 0 || file_size <= target_bytes {
