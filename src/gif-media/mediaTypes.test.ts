@@ -16,7 +16,7 @@ describe('GIF media queue state', () => {
     const task = createMediaTask('/tmp/input.mov', 0);
     const failed = applyMediaTaskEvent([task], { kind: 'failed', taskId: task.id, message: 'FFmpeg 处理失败' })[0];
     expect(failed).toMatchObject({ status: 'failed', error: 'FFmpeg 处理失败' });
-    expect(applyMediaPreset({ fps: 24, loop: true, preset: 'high', outputDirectory: '/tmp' }, 'target-8mb')).toMatchObject({ fps: 15, width: 960, preset: 'target-8mb' });
+    expect(applyMediaPreset({ fps: 24, loopPlayback: true, preset: 'high', outputDirectory: '/tmp' }, 'target-8mb')).toMatchObject({ fps: 15, width: 960, preset: 'target-8mb' });
     expect(clampProgress(Number.NaN)).toBe(0);
   });
 });

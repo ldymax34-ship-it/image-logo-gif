@@ -236,7 +236,7 @@ onUnmounted(() => { unlistenTaskEvents?.(); unlistenDroppedPaths?.(); unlistenMo
       <div class="gif-media-form">
         <label><span>输出宽度</span><input v-model.number="options.width" :disabled="!desktop || Boolean(activeTaskId)" type="number" min="1" max="8192" step="2" placeholder="保持原尺寸" aria-label="输出宽度" @change="scheduleOutputPreview" /></label>
         <label><span>FPS</span><select v-model.number="options.fps" :disabled="!desktop || Boolean(activeTaskId)" aria-label="GIF 帧率" @change="scheduleOutputPreview"><option :value="12">12</option><option :value="15">15</option><option :value="24">24</option><option :value="30">30</option></select></label>
-        <label><span>循环</span><select v-model="options.loop" :disabled="!desktop || Boolean(activeTaskId)" aria-label="GIF 循环"><option :value="true">循环播放</option><option :value="false">播放一次</option></select></label>
+          <label><span>循环</span><select v-model="options.loopPlayback" :disabled="!desktop || Boolean(activeTaskId)" aria-label="GIF 循环"><option :value="true">循环播放</option><option :value="false">播放一次</option></select></label>
         <label><span>质量 / 体积</span><select v-model="options.preset" :disabled="!desktop || Boolean(activeTaskId)" aria-label="质量和体积倾向" @change="applyPreset(options.preset); scheduleOutputPreview()"><option value="high">高清</option><option value="target-8mb">8MB 倾向（不保证）</option><option value="fast">快速预览</option><option value="original">原尺寸</option></select></label>
         <label><span>输出目录</span><button type="button" class="gif-media-directory" :disabled="!desktop || Boolean(activeTaskId)" :title="options.outputDirectory || '选择输出文件夹'" @click="chooseOutputDirectory">{{ options.outputDirectory || '选择输出文件夹' }}</button></label>
       </div>

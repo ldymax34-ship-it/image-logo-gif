@@ -8,7 +8,7 @@ export type GifMediaOptions = {
   endSeconds?: number;
   width?: number;
   fps: number;
-  loop: boolean;
+  loopPlayback: boolean;
   preset: MediaPreset;
   outputDirectory: string;
 };
@@ -107,7 +107,7 @@ export const MEDIA_PRESETS: Record<MediaPreset, { label: string; fps: number; wi
 
 export const DEFAULT_GIF_MEDIA_OPTIONS: Omit<GifMediaOptions, 'outputDirectory'> = {
   fps: MEDIA_PRESETS.high.fps,
-  loop: true,
+  loopPlayback: true,
   preset: 'high'
 };
 
@@ -155,8 +155,8 @@ export function applyMediaTaskEvent(tasks: GifMediaTask[], event: MediaTaskEvent
 }
 
 export function applyMediaPreset(options: GifMediaOptions, preset: MediaPreset): GifMediaOptions {
-  const definition = MEDIA_PRESETS[preset];
-  return { ...options, preset, fps: definition.fps, width: definition.width };
+  const def = MEDIA_PRESETS[preset];
+  return { ...options, preset, fps: def.fps, width: def.width };
 }
 
 export function formatFileSize(bytes?: number): string {
