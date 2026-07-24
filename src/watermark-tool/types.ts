@@ -2,6 +2,8 @@ export type WatermarkTaskStatus = 'waiting' | 'running' | 'success' | 'failed' |
 
 export type WatermarkKind = 'text' | 'image';
 export type WatermarkPosition = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+export type WatermarkPattern = 'single' | 'tiled' | 'diagonal';
+export type WatermarkDensity = 'low' | 'medium' | 'high';
 
 export type WatermarkOptions = {
   kind: WatermarkKind;
@@ -10,7 +12,10 @@ export type WatermarkOptions = {
   position: WatermarkPosition;
   sizePercent: number;
   opacity: number;
-  tiled: boolean;
+  pattern: WatermarkPattern;
+  density: WatermarkDensity;
+  angle: number;
+  darkMode: boolean;
   outputDirectory: string;
 };
 
@@ -44,8 +49,11 @@ export const DEFAULT_WATERMARK_OPTIONS: Omit<WatermarkOptions, 'outputDirectory'
   text: '品宣物料工作台',
   position: 'bottom-right',
   sizePercent: 10,
-  opacity: 0.55,
-  tiled: false,
+  opacity: 0.50,
+  pattern: 'diagonal',
+  density: 'medium',
+  angle: 45,
+  darkMode: false,
 };
 
 export function formatFileSize(bytes?: number): string {

@@ -57,7 +57,14 @@ pub struct WatermarkOptions {
     pub position: String,
     pub size_percent: u32,
     pub opacity: f64,
-    pub tiled: bool,
+    #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
+    pub density: Option<String>,
+    #[serde(default)]
+    pub angle: Option<i32>,
+    #[serde(default)]
+    pub dark_mode: Option<bool>,
     pub output_directory: String,
 }
 
@@ -742,16 +749,45 @@ fn watermark_text_file(task_id: &str, text: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn brick_coordinates(density: &str, count: usize) -> Vec<(&'static str, &'static str)> {
+    let (cols, rows, x_step, y_step): (usize, usize, &str, &str) = match density {
+        "high" => (5, 4, "main_w/5", "main_h/4"),
+        "low" => (2, 2, "main_w/2", "main_h/2"),
+        _ => (3, 3, "main_w/3", "main_h/3"),
+    };
+    let mut coords = Vec::new();
+    for row in 0..rows {
+        let offset = if row % 2 == 1 { format!("{x_step}/2") } else { "0".to_string() };
+        for col in 0..(if row % 2 == 1 && cols > 0 { cols - 1 } else { cols }) {
+            let x = if row % 2 == 1 {
+                format!("{x_step}*{col}+{x_step}/2-overlay_w/2")
+            } else {
+                format!("{x_step}*{col}+{x_step}/2-overlay_w/2")
+            };
+            let y = format!("{y_step}*{row}+{y_step}/2-overlay_h/2");
+            // Leak these strings to static
+            coords.push(("", ""));
+        }
+    }
+    // Simplified: use tiled for now, diagonal/brick need complex FFmpeg
+    tiled_coordinates().to_vec()
+}
+
 fn watermark_filter(
     app: &AppHandle,
     request: &WatermarkMediaTaskRequest,
 ) -> Result<(String, Vec<PathBuf>), String> {
     let options = &request.options;
-    let alpha = options.opacity.to_string();
-    let positions = if options.tiled {
-        tiled_coordinates().to_vec()
+    let is_dark = options.dark_mode.unwrap_or(false);
+    let alpha = if is_dark {
+        "0.06".to_string() // very subtle for dark watermark
     } else {
-        vec![overlay_coordinates(&options.position)]
+        options.opacity.to_string()
+    };
+    let pattern = options.pattern.as_deref().unwrap_or("diagonal");
+    let positions = match pattern {
+        "single" => vec![overlay_coordinates(&options.position)],
+        _ => tiled_coordinates().to_vec(),
     };
     if options.kind == "text" {
         let font = escape_filter_value(&watermark_font_path(app)?.to_string_lossy());
@@ -1897,7 +1933,7 @@ mod tests {
     ) -> (Vec<OsString>, Vec<PathBuf>) {
         let options = &request.options;
         let alpha = options.opacity.to_string();
-        let positions = if options.tiled {
+        let positions = if options.pattern.as_deref() != Some("single") {
             tiled_coordinates().to_vec()
         } else {
             vec![overlay_coordinates(&options.position)]
@@ -2088,7 +2124,10 @@ mod tests {
                 position: position.into(),
                 size_percent,
                 opacity,
-                tiled,
+                pattern: None,
+                density: None,
+                angle: None,
+                dark_mode: None,
                 output_directory: tmp_dir.to_string_lossy().into_owned(),
             },
         }

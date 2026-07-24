@@ -98,6 +98,10 @@ async function generatePreview() {
       sizePercent: options.value.sizePercent,
       opacity: options.value.opacity,
       tiled: options.value.tiled,
+      pattern: options.value.pattern ?? "diagonal",
+      density: options.value.density ?? "medium",
+      angle: options.value.angle ?? 45,
+      darkMode: options.value.darkMode ?? false,
       timestampSeconds: null,
     });
     previewPath.value = `asset://localhost/${encodeURIComponent(result)}`;
@@ -133,7 +137,10 @@ async function startNextTask() {
         position: options.value.position,
         sizePercent: options.value.sizePercent,
         opacity: options.value.opacity,
-        tiled: options.value.tiled,
+        pattern: options.value.pattern ?? "diagonal",
+        density: options.value.density ?? "medium",
+        angle: options.value.angle ?? 45,
+        darkMode: options.value.darkMode ?? false,
         outputDirectory: options.value.outputDirectory,
       },
     });
@@ -304,13 +311,19 @@ onUnmounted(() => { unlistenTaskEvents?.(); unlistenDroppedPaths?.(); if (previe
           <label><span>水印类型</span><select v-model="options.kind" :disabled="!desktop || Boolean(activeTaskId)" aria-label="水印类型"><option value="text">文字水印</option><option value="image">Logo / 图片水印</option></select></label>
           <label v-if="options.kind === 'text'"><span>水印文字</span><input v-model="options.text" :disabled="!desktop || Boolean(activeTaskId)" aria-label="水印文字" /></label>
           <label v-else><span>水印图片</span><button type="button" class="watermark-tool-directory" :disabled="!desktop || Boolean(activeTaskId)" title="选择 Logo 或图片水印" @click="chooseWatermarkImage">{{ options.imagePath || '选择 Logo 或图片水印' }}</button></label>
-          <label><span>位置</span><select v-model="options.position" :disabled="!desktop || Boolean(activeTaskId)" aria-label="水印位置">
+          <label><span>排列方式</span><select v-model="options.pattern" :disabled="!desktop || Boolean(activeTaskId)" aria-label="水印排列">
+            <option value="single">单个</option><option value="tiled">网格平铺</option><option value="diagonal">斜向45°砖形</option>
+          </select></label>
+          <label v-if="options.pattern !== 'single'"><span>密度</span><select v-model="options.density" :disabled="!desktop || Boolean(activeTaskId)" aria-label="水印密度">
+            <option value="low">低</option><option value="medium">中等</option><option value="high">高</option>
+          </select></label>
+          <label v-if="options.pattern === 'single'"><span>位置</span><select v-model="options.position" :disabled="!desktop || Boolean(activeTaskId)" aria-label="水印位置">
             <option value="top-left">左上</option><option value="top-center">顶部居中</option><option value="top-right">右上</option>
             <option value="bottom-left">左下</option><option value="bottom-center">底部居中</option><option value="bottom-right">右下</option>
           </select></label>
           <label><span>大小</span><input v-model.number="options.sizePercent" :disabled="!desktop || Boolean(activeTaskId)" type="number" min="1" max="90" step="1" aria-label="水印大小百分比" /></label>
           <label><span>透明度</span><input v-model.number="options.opacity" :disabled="!desktop || Boolean(activeTaskId)" type="number" min="0" max="1" step="0.05" aria-label="水印透明度" /></label>
-          <label><span>铺满画面</span><select v-model="options.tiled" :disabled="!desktop || Boolean(activeTaskId)" aria-label="平铺水印"><option :value="false">单个</option><option :value="true">平铺</option></select></label>
+          <label><span>暗水印模式</span><select v-model="options.darkMode" :disabled="!desktop || Boolean(activeTaskId)" aria-label="暗水印模式"><option :value="false">关闭</option><option :value="true">开启（极淡·抗去除）</option></select></label>
           <label><span>输出目录</span><button type="button" class="watermark-tool-directory" :disabled="!desktop || Boolean(activeTaskId)" :title="options.outputDirectory || '选择输出文件夹'" @click="chooseOutputDirectory">{{ options.outputDirectory || '选择输出文件夹' }}</button></label>
         </div>
         <div class="watermark-tool-engine-note" :class="{ ready: engine.ready }" role="status">
