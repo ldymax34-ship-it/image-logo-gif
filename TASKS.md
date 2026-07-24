@@ -14,7 +14,8 @@
 - [x] Stage 6A：完成 GIF / 媒体工具产品范围、FFUI 隔离 PoC 边界、验收矩阵、许可证/包体/sidecar 决策点与 6B 最小清单规划；仅文档，不接入 Vue、FFmpeg、sidecar、第二窗口或二进制。
 - [x] Stage 6B-UI Checkpoint：工具箱 GIF 实验预览、独立 Vue 多页面入口与当前 Tauri app singleton 内部窗口已完成；未接入 sidecar、真实队列、进度、取消、命令或转码。浏览器在 1440×900、1100×720 下确认无横向溢出、入口/返回可达、开始处理禁用；等待用户视觉确认后停止。
 - [x] Stage 6B：真实 MP4/MOV → GIF 闭环。已提交 `5139ac1`。
-- [x] Stage 6C：首版可见水印已完成。文字/图片水印、单个/平铺、中文/英文、不覆盖原文件、取消/失败清理；macOS 实机通过静态 PNG、GIF 文字与图片水印，Rust 新增 7 项定向测试（总 22 tests）。`git diff --check`、`npm run verify:core`、`npm test -- --run`（271 tests / 40 files）、`npm run build`、`cargo fmt --check`、`cargo check`、`cargo test`（22 passed）均通过。
+- [x] Stage 6C：首版可见水印已完成。
+- [x] Stage 6D：GIF 时间范围、双预览与简易时间轴。Rust 新增 `probe_media`、`preview_gif_frame`、`cancel_preview_task`；Vue 新增媒体探针、原片预览、输出预览（真实 FFmpeg 临时 GIF）、时间轴（播放头+start/end handle+键盘操作）、debounce 预览生成、预览任务独立注册/取消/清理。macOS 实机 probe 和 preview 通过。`git diff --check`、`npm run verify:core`、`npm test -- --run`（270）、`npm run build`、`cargo fmt/check/test`（24）均通过。
 - [x] 工具箱最终视觉（cdd01c1）：图标 56px/28px、subtle shadow+hover glow、按钮 ~106px、两档截图、macOS .app/.dmg 本地构建通过。点击由浏览器人工验收。`git diff --check`、`npm run verify:core`、`npm test -- --run`（270）、`npm run build`、codesign verify 均通过；无 Rust 变更。
 
 ## 暂不处理

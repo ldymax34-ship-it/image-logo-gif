@@ -92,10 +92,35 @@ pub struct MediaTaskStarted {
     pub output_path: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProbeResult {
+    pub duration: f64,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub codec: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewGifRequest {
+    pub task_id: String,
+    pub input_path: String,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub width: Option<u32>,
+    pub fps: u32,
+    pub preset: String,
+    pub temp_dir: String,
+}
+
 #[derive(Default)]
 pub struct MediaTaskRegistry {
     children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
     cancelled: Mutex<HashSet<String>>,
+    preview_tasks: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
+    preview_cancelled: Mutex<HashSet<String>>,
 }
 
 impl MediaTaskRegistry {
@@ -138,6 +163,42 @@ impl MediaTaskRegistry {
         self.cancelled
             .lock()
             .expect("media child registry poisoned")
+            .insert(task_id.to_string());
+        Ok(())
+    }
+
+    fn insert_preview(&self, task_id: String, child: Arc<Mutex<Child>>) {
+        self.preview_tasks
+            .lock()
+            .expect("media preview registry poisoned")
+            .insert(task_id, child);
+    }
+
+    fn remove_preview(&self, task_id: &str) {
+        self.preview_tasks
+            .lock()
+            .expect("media preview registry poisoned")
+            .remove(task_id);
+    }
+
+    fn cancel_preview(&self, task_id: &str) -> Result<(), String> {
+        let child = self
+            .preview_tasks
+            .lock()
+            .expect("media preview registry poisoned")
+            .get(task_id)
+            .cloned();
+        let Some(child) = child else {
+            return Err("未找到预览任务".into());
+        };
+        child
+            .lock()
+            .map_err(|_| "无法终止预览任务".to_string())?
+            .kill()
+            .map_err(|error| format!("无法终止预览：{error}"))?;
+        self.preview_cancelled
+            .lock()
+            .expect("media preview registry poisoned")
             .insert(task_id.to_string());
         Ok(())
     }
@@ -216,16 +277,6 @@ pub fn engine_status(app: AppHandle) -> MediaEngineStatus {
             ),
             ffmpeg_version: ffmpeg.clone(),
             ffprobe_version: None,
-        },
-        _ => MediaEngineStatus {
-            ready: false,
-            message: format!(
-                "FFmpeg: {}；FFprobe: {}",
-                ffmpeg.as_deref().unwrap_or("启动失败"),
-                ffprobe.as_deref().unwrap_or("启动失败")
-            ),
-            ffmpeg_version: ffmpeg.clone(),
-            ffprobe_version: ffprobe.clone(),
         },
     }
 }
@@ -398,6 +449,188 @@ fn duration_seconds(app: &AppHandle, input: &Path) -> Result<f64, String> {
         .trim()
         .parse::<f64>()
         .map_err(|_| "FFprobe 返回的媒体时长无效".into())
+}
+
+#[tauri::command]
+pub fn probe_media(app: AppHandle, input_path: String) -> Result<MediaProbeResult, String> {
+    let input = Path::new(&input_path);
+    if !input.is_file() {
+        return Err("输入文件不存在或不可访问".into());
+    }
+    let ffprobe = sidecar_path(&app, "ffprobe")?;
+    let output = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=duration,width,height,r_frame_rate,codec_name:format=duration",
+            "-of",
+            "json",
+        ])
+        .arg(input)
+        .output()
+        .map_err(|error| format!("无法读取媒体信息：{error}"))?;
+    if !output.status.success() {
+        return Err("FFprobe 无法分析该媒体文件".into());
+    }
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|_| "FFprobe 返回数据无法解析".to_string())?;
+
+    let stream = json["streams"][0].clone();
+    let format_duration = json["format"]["duration"]
+        .as_str()
+        .and_then(|v| v.parse::<f64>().ok());
+    let stream_duration = stream["duration"]
+        .as_str()
+        .and_then(|v| v.parse::<f64>().ok());
+    let duration = format_duration.or(stream_duration).unwrap_or(0.0);
+
+    let (fps_num, fps_den) = stream["r_frame_rate"]
+        .as_str()
+        .and_then(|v| v.split_once('/'))
+        .and_then(|(n, d)| Some((n.parse::<f64>().ok()?, d.parse::<f64>().ok()?)))
+        .unwrap_or((25.0, 1.0));
+    let fps = if fps_den > 0.0 {
+        fps_num / fps_den
+    } else {
+        25.0
+    };
+
+    let width = stream["width"].as_u64().unwrap_or(0) as u32;
+    let height = stream["height"].as_u64().unwrap_or(0) as u32;
+    let codec = stream["codec_name"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+
+    Ok(MediaProbeResult {
+        duration,
+        width,
+        height,
+        fps,
+        codec,
+    })
+}
+
+#[tauri::command]
+pub fn preview_gif_frame(
+    app: AppHandle,
+    registry: tauri::State<'_, MediaTaskRegistry>,
+    request: PreviewGifRequest,
+) -> Result<MediaTaskStarted, String> {
+    let input = Path::new(&request.input_path);
+    if !input.is_file() {
+        return Err("输入文件不存在或不可访问".into());
+    }
+    let temp_dir = Path::new(&request.temp_dir);
+    if !temp_dir.is_dir() {
+        std::fs::create_dir_all(temp_dir).map_err(|e| format!("无法创建临时目录：{e}"))?;
+    }
+    // Cancel any existing preview with same task_id pattern
+    let _ = registry.cancel_preview(&request.task_id);
+    registry.remove_preview(&request.task_id);
+
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用".into());
+    }
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let output = temp_dir.join(format!("preview_{}.gif", request.task_id));
+
+    let duration = request.end_seconds - request.start_seconds;
+    if duration <= 0.0 {
+        return Err("预览时长必须大于0".into());
+    }
+
+    let mut args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-ss"),
+        OsString::from(request.start_seconds.to_string()),
+        OsString::from("-t"),
+        OsString::from(duration.min(3.0).to_string()),
+        OsString::from("-i"),
+        OsString::from(&request.input_path),
+    ];
+
+    let mut filters = Vec::new();
+    if let Some(w) = request.width {
+        filters.push(format!("scale={w}:-2:flags=lanczos"));
+    }
+    filters.push(format!("fps={}", request.fps));
+    let filter = filters.join(",");
+    let dither = if request.preset == "fast" {
+        "bayer:bayer_scale=5"
+    } else {
+        "sierra2_4a"
+    };
+    let palette = format!(
+        "{filter},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}"
+    );
+
+    args.extend([
+        OsString::from("-filter_complex"),
+        OsString::from(palette),
+        OsString::from("-loop"),
+        OsString::from("0"),
+        OsString::from("-nostats"),
+        output.as_os_str().to_owned(),
+    ]);
+
+    let child = Command::new(ffmpeg)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("无法生成预览：{error}"))?;
+
+    let child = Arc::new(Mutex::new(child));
+    registry.insert_preview(request.task_id.clone(), child.clone());
+
+    let task_id = request.task_id.clone();
+    let output_clone = output.clone();
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        let status = child.lock().ok().and_then(|mut c| c.wait().ok());
+        let registry = app_clone.state::<MediaTaskRegistry>();
+        let cancelled = registry
+            .preview_cancelled
+            .lock()
+            .expect("preview registry poisoned")
+            .remove(&task_id);
+        registry.remove_preview(&task_id);
+        if cancelled {
+            let _ = std::fs::remove_file(&output_clone);
+            return;
+        }
+        if status.map_or(false, |s| s.success()) {
+            if let Ok(meta) = std::fs::metadata(&output_clone) {
+                emit(
+                    &app_clone,
+                    MediaTaskEvent::Completed {
+                        task_id,
+                        output_path: output_clone.to_string_lossy().into_owned(),
+                        output_bytes: meta.len(),
+                    },
+                );
+            }
+        }
+    });
+
+    Ok(MediaTaskStarted {
+        task_id: request.task_id,
+        output_path: output.to_string_lossy().into_owned(),
+    })
+}
+
+#[tauri::command]
+pub fn cancel_preview_task(
+    registry: tauri::State<'_, MediaTaskRegistry>,
+    task_id: String,
+) -> Result<(), String> {
+    registry.cancel_preview(&task_id)
 }
 
 fn filter_graph(options: &GifMediaOptions) -> String {

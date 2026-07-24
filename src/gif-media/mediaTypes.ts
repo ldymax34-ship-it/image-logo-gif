@@ -48,6 +48,50 @@ export type MediaEngineStatus = {
   ffprobeVersion?: string;
 };
 
+export type MediaProbeResult = {
+  duration: number;
+  width: number;
+  height: number;
+  fps: number;
+  codec: string;
+};
+
+export type PreviewGifRequest = {
+  taskId: string;
+  inputPath: string;
+  startSeconds: number;
+  endSeconds: number;
+  width?: number;
+  fps: number;
+  preset: string;
+  tempDir: string;
+};
+
+export type TimelineRange = {
+  startSeconds: number;
+  endSeconds: number;
+  duration: number;
+};
+
+export const MIN_SEGMENT_DURATION = 0.1;
+
+export function clampRange(
+  start: number,
+  end: number,
+  duration: number
+): TimelineRange {
+  const s = Math.min(Math.max(0, start), Math.max(0, duration - MIN_SEGMENT_DURATION));
+  const e = Math.max(Math.min(duration, end), s + MIN_SEGMENT_DURATION);
+  return { startSeconds: s, endSeconds: e, duration };
+}
+
+export function formatSeconds(total: number): string {
+  if (!Number.isFinite(total) || total < 0) return '00:00';
+  const m = Math.floor(total / 60);
+  const s = Math.floor(total % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export type MediaTaskEvent =
   | { kind: 'progress'; taskId: string; progress: number }
   | { kind: 'completed'; taskId: string; outputPath: string; outputBytes: number }

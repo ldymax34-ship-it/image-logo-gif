@@ -1,5 +1,6 @@
 import { isDesktopBridgeAvailable } from '../platform/desktopBridge';
 import type { GifMediaOptions, MediaEngineStatus, MediaTaskEvent, WatermarkOptions } from './mediaTypes';
+import type { MediaProbeResult, PreviewGifRequest } from './mediaTypes';
 
 export type MediaDesktopApi = {
   getEngineStatus: () => Promise<MediaEngineStatus>;
@@ -9,6 +10,9 @@ export type MediaDesktopApi = {
   pickOutputDirectory: () => Promise<string | null>;
   startGifTask: (request: { taskId: string; inputPath: string; options: GifMediaOptions }) => Promise<{ taskId: string; outputPath: string }>;
   startWatermarkTask: (request: { taskId: string; inputPath: string; options: WatermarkOptions }) => Promise<{ taskId: string; outputPath: string }>;
+  probeMedia: (inputPath: string) => Promise<MediaProbeResult>;
+  previewGifFrame: (request: PreviewGifRequest) => Promise<{ taskId: string; outputPath: string }>;
+  cancelPreviewTask: (taskId: string) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   listenTaskEvents: (listener: (event: MediaTaskEvent) => void) => Promise<() => void>;
   listenDroppedPaths: (listener: (paths: string[]) => void) => Promise<() => void>;
@@ -59,6 +63,9 @@ export async function loadMediaDesktopApi(): Promise<MediaDesktopApi> {
     },
     startGifTask: (request) => invoke('start_gif_media_task', { request }),
     startWatermarkTask: (request) => invoke('start_watermark_media_task', { request }),
+    probeMedia: (inputPath) => invoke('probe_media', { inputPath }),
+    previewGifFrame: (request) => invoke('preview_gif_frame', { request }),
+    cancelPreviewTask: (taskId) => invoke('cancel_preview_task', { taskId }),
     cancelTask: (taskId) => invoke('cancel_gif_media_task', { taskId }),
     async listenTaskEvents(listener) {
       return listen<MediaTaskEvent>('gif-media://task', ({ payload }) => listener(payload));
