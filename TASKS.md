@@ -2,7 +2,7 @@
 
 ## 当前目标
 
-0.1.33 工具箱路线：Stage 5A 品宣工具箱启动器、Stage 5B 默认启动偏好和 Stage 6B-UI Checkpoint 均已完成。用户已解除内部工具的公开分发/许可证门禁；当前执行 Stage 6B 真实 MP4/MOV → GIF，固定 sidecar 的来源和运行时边界见 `docs/MEDIA_RUNTIME_SOURCES.md`。miniPaint 与专业静态编辑器已取消当前路线，不作为当前待办。
+0.1.33 工具箱路线：Stage 5A、5B、6B-UI Checkpoint、6B 真实 GIF 和 Stage 6C 首版可见水印均已完成。所有真实媒体处理使用同一份内置 FFmpeg/FFprobe sidecar、同一 Vue 窗口/队列与同一任务引擎；中文字体已随 Tauri bundle 打包。隐形指纹继续不做。miniPaint 与专业静态编辑器已取消当前路线，不作为当前待办。
 
 ## 本轮任务
 
@@ -13,8 +13,9 @@
 - [x] 设媒 Logo 与 CPR 的“连续缩放”滑块支持双击复位到 100%，保留现有画板更新、dirty、同步与 Render Plan 状态链；补齐行为与无障碍文案回归。`git diff --check`、`npm run verify:core`、`npm test -- --run`（262 tests / 36 files）与 `npm run build` 均通过；未涉及 Rust/Tauri，未重复 Cargo 门禁。
 - [x] Stage 6A：完成 GIF / 媒体工具产品范围、FFUI 隔离 PoC 边界、验收矩阵、许可证/包体/sidecar 决策点与 6B 最小清单规划；仅文档，不接入 Vue、FFmpeg、sidecar、第二窗口或二进制。
 - [x] Stage 6B-UI Checkpoint：工具箱 GIF 实验预览、独立 Vue 多页面入口与当前 Tauri app singleton 内部窗口已完成；未接入 sidecar、真实队列、进度、取消、命令或转码。浏览器在 1440×900、1100×720 下确认无横向溢出、入口/返回可达、开始处理禁用；等待用户视觉确认后停止。
-- [x] Stage 6B：真实 MP4/MOV → GIF 闭环。固定 macOS arm64 / Windows x64 sidecar、Vue 队列、参数、进度、取消、错误和结果均已完成；`git diff --check`、`npm run verify:core`、`npm test -- --run`（271 tests / 40 files）、`npm run build`、`cargo fmt --check`、`cargo check`、`cargo test`（15 passed）和 macOS `.app` bundle/codesign 均通过。
-- [ ] Stage 6C：可见水印。仅在 Stage 6B 独立验收/提交后开始；复用同一 Vue 窗口、队列与 sidecar，内置思源黑体 Regular，隐形指纹继续不做。
+- [x] Stage 6B：真实 MP4/MOV → GIF 闭环。已提交 `5139ac1`。
+- [x] Stage 6C：首版可见水印已完成。文字/图片水印、单个/平铺、中文/英文、不覆盖原文件、取消/失败清理；macOS 实机通过静态 PNG、GIF 文字与图片水印，Rust 新增 7 项定向测试（总 22 tests）。`git diff --check`、`npm run verify:core`、`npm test -- --run`（271 tests / 40 files）、`npm run build`、`cargo fmt --check`、`cargo check`、`cargo test`（22 passed）均通过。
+- [ ] 工具箱入口视觉优化：紧凑工具启动器（图标+名称）、返回胶囊按钮；Stage 6C 提交后单独实施。
 
 ## 暂不处理
 

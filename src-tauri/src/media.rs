@@ -34,6 +34,27 @@ pub struct GifMediaTaskRequest {
     pub options: GifMediaOptions,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkOptions {
+    pub kind: String,
+    pub text: String,
+    pub image_path: Option<String>,
+    pub position: String,
+    pub size_percent: u32,
+    pub opacity: f64,
+    pub tiled: bool,
+    pub output_directory: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkMediaTaskRequest {
+    pub task_id: String,
+    pub input_path: String,
+    pub options: WatermarkOptions,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum MediaTaskEvent {
@@ -213,6 +234,67 @@ fn validate_request(request: &GifMediaTaskRequest) -> Result<(), String> {
     Ok(())
 }
 
+fn media_extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+}
+
+fn is_static_image(path: &Path) -> bool {
+    matches!(
+        media_extension(path).as_deref(),
+        Some("png" | "jpg" | "jpeg" | "webp")
+    )
+}
+
+fn validate_watermark_request(request: &WatermarkMediaTaskRequest) -> Result<(), String> {
+    let input = Path::new(&request.input_path);
+    let output_directory = Path::new(&request.options.output_directory);
+    if !input.is_file() {
+        return Err("输入文件不存在或不可访问".into());
+    }
+    if !matches!(
+        media_extension(input).as_deref(),
+        Some("png" | "jpg" | "jpeg" | "webp" | "gif" | "mp4" | "mov")
+    ) {
+        return Err("可见水印仅支持 PNG、JPG、WebP、GIF、MP4 或 MOV".into());
+    }
+    if !output_directory.is_dir() {
+        return Err("输出文件夹不存在或不可访问".into());
+    }
+    if !matches!(request.options.kind.as_str(), "text" | "image") {
+        return Err("水印类型无效".into());
+    }
+    if !matches!(
+        request.options.position.as_str(),
+        "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right"
+    ) {
+        return Err("水印位置无效".into());
+    }
+    if request.options.size_percent == 0 || request.options.size_percent > 90 {
+        return Err("水印大小必须在 1% 到 90% 之间".into());
+    }
+    if !(0.0..=1.0).contains(&request.options.opacity) {
+        return Err("水印透明度必须在 0 到 1 之间".into());
+    }
+    if request.options.kind == "text" && request.options.text.trim().is_empty() {
+        return Err("请输入文字水印内容".into());
+    }
+    if request.options.kind == "image" {
+        let image = request.options.image_path.as_deref().map(Path::new);
+        if !image.is_some_and(|path| {
+            path.is_file()
+                && matches!(
+                    media_extension(path).as_deref(),
+                    Some("png" | "jpg" | "jpeg" | "webp")
+                )
+        }) {
+            return Err("请选择 PNG、JPG 或 WebP 图片水印".into());
+        }
+    }
+    Ok(())
+}
+
 fn next_available_path(directory: &Path, preferred_name: &str) -> PathBuf {
     let candidate = directory.join(preferred_name);
     if !candidate.exists() {
@@ -245,6 +327,20 @@ fn output_path(request: &GifMediaTaskRequest) -> PathBuf {
     next_available_path(
         Path::new(&request.options.output_directory),
         &format!("{source_stem}_gif.gif"),
+    )
+}
+
+fn watermark_output_path(request: &WatermarkMediaTaskRequest) -> PathBuf {
+    let input = Path::new(&request.input_path);
+    let source_stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("media");
+    let extension = media_extension(input).unwrap_or_else(|| "png".into());
+    next_available_path(
+        Path::new(&request.options.output_directory),
+        &format!("{source_stem}_watermarked.{extension}"),
     )
 }
 
@@ -315,6 +411,162 @@ fn ffmpeg_args(request: &GifMediaTaskRequest, output: &Path) -> Vec<OsString> {
     args
 }
 
+fn overlay_coordinates(position: &str) -> (&'static str, &'static str) {
+    match position {
+        "top-left" => ("20", "20"),
+        "top-center" => ("(main_w-overlay_w)/2", "20"),
+        "top-right" => ("main_w-overlay_w-20", "20"),
+        "bottom-left" => ("20", "main_h-overlay_h-20"),
+        "bottom-center" => ("(main_w-overlay_w)/2", "main_h-overlay_h-20"),
+        _ => ("main_w-overlay_w-20", "main_h-overlay_h-20"),
+    }
+}
+
+fn tiled_coordinates() -> [(&'static str, &'static str); 9] {
+    [
+        ("main_w*0.17-overlay_w/2", "main_h*0.17-overlay_h/2"),
+        ("main_w*0.50-overlay_w/2", "main_h*0.17-overlay_h/2"),
+        ("main_w*0.83-overlay_w/2", "main_h*0.17-overlay_h/2"),
+        ("main_w*0.17-overlay_w/2", "main_h*0.50-overlay_h/2"),
+        ("main_w*0.50-overlay_w/2", "main_h*0.50-overlay_h/2"),
+        ("main_w*0.83-overlay_w/2", "main_h*0.50-overlay_h/2"),
+        ("main_w*0.17-overlay_w/2", "main_h*0.83-overlay_h/2"),
+        ("main_w*0.50-overlay_w/2", "main_h*0.83-overlay_h/2"),
+        ("main_w*0.83-overlay_w/2", "main_h*0.83-overlay_h/2"),
+    ]
+}
+
+fn escape_filter_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace(':', "\\:")
+        .replace('\'', "\\'")
+        .replace(',', "\\,")
+}
+
+fn watermark_font_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = app
+        .path()
+        .resource_dir()
+        .map_err(|error| format!("无法定位应用资源目录：{error}"))?
+        .join("resources/fonts/SourceHanSansSC-Regular.otf");
+    if !path.is_file() {
+        return Err("内置中文水印字体未找到".into());
+    }
+    Ok(path)
+}
+
+fn watermark_text_file(task_id: &str, text: &str) -> Result<PathBuf, String> {
+    let path = std::env::temp_dir().join(format!("brand-material-watermark-{task_id}.txt"));
+    fs::write(&path, text).map_err(|error| format!("无法准备水印文字：{error}"))?;
+    Ok(path)
+}
+
+fn watermark_filter(
+    app: &AppHandle,
+    request: &WatermarkMediaTaskRequest,
+) -> Result<(String, Vec<PathBuf>), String> {
+    let options = &request.options;
+    let alpha = options.opacity.to_string();
+    let positions = if options.tiled {
+        tiled_coordinates().to_vec()
+    } else {
+        vec![overlay_coordinates(&options.position)]
+    };
+    if options.kind == "text" {
+        let font = escape_filter_value(&watermark_font_path(app)?.to_string_lossy());
+        let text_file = watermark_text_file(&request.task_id, &options.text)?;
+        let text_file_value = escape_filter_value(&text_file.to_string_lossy());
+        let font_size = format!("h*{}/100", options.size_percent);
+        let mut previous = "0:v".to_string();
+        let mut graph = Vec::new();
+        for (index, (x, y)) in positions.iter().enumerate() {
+            let next = if index + 1 == positions.len() {
+                "watermarked".to_string()
+            } else {
+                format!("text{index}")
+            };
+            graph.push(format!("[{previous}]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white@{alpha}:fontsize={font_size}:x={x}:y={y}[{next}]"));
+            previous = next;
+        }
+        return Ok((graph.join(";"), vec![text_file]));
+    }
+
+    let mut graph = vec![
+        format!("[1:v]format=rgba,colorchannelmixer=aa={alpha}[watermark-alpha]"),
+        format!(
+            "[watermark-alpha][0:v]scale2ref=w=main_w*{}/100:h=-1[watermark][base]",
+            options.size_percent
+        ),
+    ];
+    if positions.len() == 1 {
+        let (x, y) = positions[0];
+        graph.push(format!(
+            "[base][watermark]overlay=x={x}:y={y}:format=auto[watermarked]"
+        ));
+    } else {
+        let labels: Vec<String> = (0..positions.len())
+            .map(|index| format!("wm{index}"))
+            .collect();
+        graph.push(format!(
+            "[watermark]split={}[{}]",
+            positions.len(),
+            labels.join("][")
+        ));
+        let mut previous = "base".to_string();
+        for (index, (x, y)) in positions.iter().enumerate() {
+            let next = if index + 1 == positions.len() {
+                "watermarked".to_string()
+            } else {
+                format!("tile{index}")
+            };
+            graph.push(format!(
+                "[{previous}][{}]overlay=x={x}:y={y}:format=auto[{next}]",
+                labels[index]
+            ));
+            previous = next;
+        }
+    }
+    Ok((graph.join(";"), Vec::new()))
+}
+
+fn watermark_ffmpeg_args(
+    app: &AppHandle,
+    request: &WatermarkMediaTaskRequest,
+    output: &Path,
+) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
+    let mut args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-n"),
+        OsString::from("-i"),
+        OsString::from(&request.input_path),
+    ];
+    if request.options.kind == "image" {
+        args.extend([
+            OsString::from("-i"),
+            OsString::from(request.options.image_path.clone().unwrap_or_default()),
+        ]);
+    }
+    let (filter, cleanup) = watermark_filter(app, request)?;
+    args.extend([
+        OsString::from("-filter_complex"),
+        OsString::from(filter),
+        OsString::from("-map"),
+        OsString::from("[watermarked]"),
+    ]);
+    if is_static_image(Path::new(&request.input_path)) {
+        args.extend([OsString::from("-frames:v"), OsString::from("1")]);
+    }
+    args.extend([
+        OsString::from("-progress"),
+        OsString::from("pipe:1"),
+        OsString::from("-nostats"),
+        output.as_os_str().to_owned(),
+    ]);
+    Ok((args, cleanup))
+}
+
 fn parse_progress_line(line: &str, started_at: f64, duration: f64) -> Option<f64> {
     let timestamp = line.strip_prefix("out_time_ms=")?.parse::<f64>().ok()? / 1_000_000.0;
     Some(((timestamp - started_at) / duration.max(0.001)).clamp(0.0, 0.99))
@@ -338,18 +590,15 @@ fn emit(app: &AppHandle, event: MediaTaskEvent) {
     let _ = app.emit(MEDIA_EVENT, event);
 }
 
-#[tauri::command]
-pub fn media_engine_status(app: AppHandle) -> MediaEngineStatus {
-    engine_status(app)
-}
-
-#[tauri::command]
-pub fn start_gif_media_task(
+fn spawn_media_task(
     app: AppHandle,
     registry: tauri::State<'_, MediaTaskRegistry>,
-    request: GifMediaTaskRequest,
+    task_id: String,
+    output: PathBuf,
+    args: Vec<OsString>,
+    progress_window: Option<(f64, f64)>,
+    cleanup_paths: Vec<PathBuf>,
 ) -> Result<MediaTaskStarted, String> {
-    validate_request(&request)?;
     if !engine_status(app.clone()).ready {
         return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
     }
@@ -357,30 +606,25 @@ pub fn start_gif_media_task(
         .children
         .lock()
         .expect("media child registry poisoned")
-        .contains_key(&request.task_id)
+        .contains_key(&task_id)
     {
         return Err("该媒体任务已在运行".into());
     }
-    let output = output_path(&request);
     let ffmpeg = sidecar_path(&app, "ffmpeg")?;
-    let duration = duration_seconds(&app, Path::new(&request.input_path))?;
-    let started_at = request.options.start_seconds.unwrap_or(0.0);
-    let end_at = request.options.end_seconds.unwrap_or(duration);
-    let relevant_duration = (end_at - started_at).max(0.001);
     let mut command = Command::new(ffmpeg);
     command
-        .args(ffmpeg_args(&request, &output))
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let child = command
         .spawn()
         .map_err(|error| format!("无法启动应用内置 FFmpeg：{error}"))?;
     let child = Arc::new(Mutex::new(child));
-    registry.insert(request.task_id.clone(), child.clone());
+    registry.insert(task_id.clone(), child.clone());
 
     let app_for_task = app.clone();
-    let task_id = request.task_id.clone();
     let output_for_task = output.clone();
+    let task_id_for_thread = task_id.clone();
     thread::spawn(move || {
         let stderr = child.lock().ok().and_then(|mut child| child.stderr.take());
         let stderr_reader = thread::spawn(move || {
@@ -393,25 +637,35 @@ pub fn start_gif_media_task(
         let stdout = child.lock().ok().and_then(|mut child| child.stdout.take());
         if let Some(stdout) = stdout {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if let Some(progress) = parse_progress_line(&line, started_at, relevant_duration) {
-                    emit(
-                        &app_for_task,
-                        MediaTaskEvent::Progress {
-                            task_id: task_id.clone(),
-                            progress,
-                        },
-                    );
+                if let Some((started_at, duration)) = progress_window {
+                    if let Some(progress) = parse_progress_line(&line, started_at, duration) {
+                        emit(
+                            &app_for_task,
+                            MediaTaskEvent::Progress {
+                                task_id: task_id_for_thread.clone(),
+                                progress,
+                            },
+                        );
+                    }
                 }
             }
         }
         let status = child.lock().ok().and_then(|mut child| child.wait().ok());
         let stderr = stderr_reader.join().unwrap_or_default();
+        for path in cleanup_paths {
+            let _ = fs::remove_file(path);
+        }
         let registry = app_for_task.state::<MediaTaskRegistry>();
-        let cancelled = registry.take_cancelled(&task_id);
-        registry.remove(&task_id);
+        let cancelled = registry.take_cancelled(&task_id_for_thread);
+        registry.remove(&task_id_for_thread);
         if cancelled {
             remove_incomplete_output(&output_for_task);
-            emit(&app_for_task, MediaTaskEvent::Cancelled { task_id });
+            emit(
+                &app_for_task,
+                MediaTaskEvent::Cancelled {
+                    task_id: task_id_for_thread,
+                },
+            );
             return;
         }
         match status {
@@ -419,7 +673,7 @@ pub fn start_gif_media_task(
                 Ok(metadata) => emit(
                     &app_for_task,
                     MediaTaskEvent::Completed {
-                        task_id,
+                        task_id: task_id_for_thread,
                         output_path: output_for_task.to_string_lossy().into_owned(),
                         output_bytes: metadata.len(),
                     },
@@ -427,8 +681,8 @@ pub fn start_gif_media_task(
                 Err(_) => emit(
                     &app_for_task,
                     MediaTaskEvent::Failed {
-                        task_id,
-                        message: "FFmpeg 完成后未找到输出 GIF".into(),
+                        task_id: task_id_for_thread,
+                        message: "FFmpeg 完成后未找到输出文件".into(),
                     },
                 ),
             },
@@ -437,7 +691,7 @@ pub fn start_gif_media_task(
                 emit(
                     &app_for_task,
                     MediaTaskEvent::Failed {
-                        task_id,
+                        task_id: task_id_for_thread,
                         message: ffmpeg_failure_message(&stderr),
                     },
                 );
@@ -447,7 +701,7 @@ pub fn start_gif_media_task(
                 emit(
                     &app_for_task,
                     MediaTaskEvent::Failed {
-                        task_id,
+                        task_id: task_id_for_thread,
                         message: "无法读取 FFmpeg 任务状态".into(),
                     },
                 );
@@ -455,9 +709,65 @@ pub fn start_gif_media_task(
         }
     });
     Ok(MediaTaskStarted {
-        task_id: request.task_id,
+        task_id,
         output_path: output.to_string_lossy().into_owned(),
     })
+}
+
+#[tauri::command]
+pub fn media_engine_status(app: AppHandle) -> MediaEngineStatus {
+    engine_status(app)
+}
+
+#[tauri::command]
+pub fn start_gif_media_task(
+    app: AppHandle,
+    registry: tauri::State<'_, MediaTaskRegistry>,
+    request: GifMediaTaskRequest,
+) -> Result<MediaTaskStarted, String> {
+    validate_request(&request)?;
+    let output = output_path(&request);
+    let duration = duration_seconds(&app, Path::new(&request.input_path))?;
+    let started_at = request.options.start_seconds.unwrap_or(0.0);
+    let end_at = request.options.end_seconds.unwrap_or(duration);
+    let relevant_duration = (end_at - started_at).max(0.001);
+    let args = ffmpeg_args(&request, &output);
+    spawn_media_task(
+        app,
+        registry,
+        request.task_id,
+        output.clone(),
+        args,
+        Some((started_at, relevant_duration)),
+        Vec::new(),
+    )
+}
+
+#[tauri::command]
+pub fn start_watermark_media_task(
+    app: AppHandle,
+    registry: tauri::State<'_, MediaTaskRegistry>,
+    request: WatermarkMediaTaskRequest,
+) -> Result<MediaTaskStarted, String> {
+    validate_watermark_request(&request)?;
+    let output = watermark_output_path(&request);
+    let (args, cleanup_paths) = watermark_ffmpeg_args(&app, &request, &output)?;
+    let progress = if is_static_image(Path::new(&request.input_path)) {
+        None
+    } else {
+        duration_seconds(&app, Path::new(&request.input_path))
+            .ok()
+            .map(|duration| (0.0, duration))
+    };
+    spawn_media_task(
+        app,
+        registry,
+        request.task_id,
+        output,
+        args,
+        progress,
+        cleanup_paths,
+    )
 }
 
 #[tauri::command]
@@ -471,10 +781,12 @@ pub fn cancel_gif_media_task(
 #[cfg(test)]
 mod tests {
     use super::{
-        ffmpeg_args, next_available_path, output_path, parse_progress_line, GifMediaOptions,
-        GifMediaTaskRequest,
+        escape_filter_value, ffmpeg_args, is_static_image, next_available_path, output_path,
+        overlay_coordinates, parse_progress_line, tiled_coordinates, watermark_output_path,
+        GifMediaOptions, GifMediaTaskRequest, WatermarkMediaTaskRequest, WatermarkOptions,
     };
     use std::{
+        ffi::OsString,
         fs,
         path::{Path, PathBuf},
     };
@@ -493,6 +805,105 @@ mod tests {
                 output_directory: "/tmp/输出 文件夹".into(),
             },
         }
+    }
+
+    fn test_watermark_args(
+        request: &WatermarkMediaTaskRequest,
+        output: &Path,
+    ) -> (Vec<OsString>, Vec<PathBuf>) {
+        let options = &request.options;
+        let alpha = options.opacity.to_string();
+        let positions = if options.tiled {
+            tiled_coordinates().to_vec()
+        } else {
+            vec![overlay_coordinates(&options.position)]
+        };
+        let (filter, cleanup) = if options.kind == "text" {
+            let font = escape_filter_value("/tmp/test-font.otf");
+            let text_file_path = std::env::temp_dir()
+                .join(format!("brand-material-watermark-{}.txt", request.task_id));
+            fs::write(&text_file_path, &options.text).unwrap();
+            let text_file_value = escape_filter_value(&text_file_path.to_string_lossy());
+            let font_size = format!("h*{}/100", options.size_percent);
+            let mut previous = "0:v".to_string();
+            let mut graph = Vec::new();
+            for (index, (x, y)) in positions.iter().enumerate() {
+                let next = if index + 1 == positions.len() {
+                    "watermarked".to_string()
+                } else {
+                    format!("text{index}")
+                };
+                graph.push(format!("[{previous}]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white@{alpha}:fontsize={font_size}:x={x}:y={y}[{next}]"));
+                previous = next;
+            }
+            (graph.join(";"), vec![text_file_path])
+        } else {
+            let mut graph = vec![
+                format!("[1:v]format=rgba,colorchannelmixer=aa={alpha}[watermark-alpha]"),
+                format!(
+                    "[watermark-alpha][0:v]scale2ref=w=main_w*{}/100:h=-1[watermark][base]",
+                    options.size_percent
+                ),
+            ];
+            if positions.len() == 1 {
+                let (x, y) = positions[0];
+                graph.push(format!(
+                    "[base][watermark]overlay=x={x}:y={y}:format=auto[watermarked]"
+                ));
+            } else {
+                let labels: Vec<String> = (0..positions.len())
+                    .map(|index| format!("wm{index}"))
+                    .collect();
+                graph.push(format!(
+                    "[watermark]split={}[{}]",
+                    positions.len(),
+                    labels.join("][")
+                ));
+                let mut previous = "base".to_string();
+                for (index, (x, y)) in positions.iter().enumerate() {
+                    let next = if index + 1 == positions.len() {
+                        "watermarked".to_string()
+                    } else {
+                        format!("tile{index}")
+                    };
+                    graph.push(format!(
+                        "[{previous}][{}]overlay=x={x}:y={y}:format=auto[{next}]",
+                        labels[index]
+                    ));
+                    previous = next;
+                }
+            }
+            (graph.join(";"), Vec::new())
+        };
+        let mut args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-n"),
+            OsString::from("-i"),
+            OsString::from(&request.input_path),
+        ];
+        if request.options.kind == "image" {
+            args.extend([
+                OsString::from("-i"),
+                OsString::from(request.options.image_path.clone().unwrap_or_default()),
+            ]);
+        }
+        args.extend([
+            OsString::from("-filter_complex"),
+            OsString::from(filter),
+            OsString::from("-map"),
+            OsString::from("[watermarked]"),
+        ]);
+        if is_static_image(Path::new(&request.input_path)) {
+            args.extend([OsString::from("-frames:v"), OsString::from("1")]);
+        }
+        args.extend([
+            OsString::from("-progress"),
+            OsString::from("pipe:1"),
+            OsString::from("-nostats"),
+            output.as_os_str().to_owned(),
+        ]);
+        (args, cleanup)
     }
 
     #[test]
@@ -569,6 +980,183 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
+    }
+
+    fn watermark_request(
+        tmp_dir: &Path,
+        kind: &str,
+        text: &str,
+        image_path: Option<&str>,
+        position: &str,
+        size_percent: u32,
+        opacity: f64,
+        tiled: bool,
+    ) -> WatermarkMediaTaskRequest {
+        let input = tmp_dir.join("photo.jpg");
+        fs::write(&input, b"fake-image-data").unwrap();
+        WatermarkMediaTaskRequest {
+            task_id: "wm-1".into(),
+            input_path: input.to_string_lossy().into_owned(),
+            options: WatermarkOptions {
+                kind: kind.into(),
+                text: text.into(),
+                image_path: image_path.map(str::to_owned),
+                position: position.into(),
+                size_percent,
+                opacity,
+                tiled,
+                output_directory: tmp_dir.to_string_lossy().into_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn rejects_watermark_requests_with_invalid_inputs() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-valid-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        assert!(super::validate_watermark_request(&watermark_request(
+            &tmp,
+            "text",
+            "测试",
+            None,
+            "bottom-right",
+            10,
+            0.5,
+            false
+        ))
+        .is_ok());
+        assert!(
+            super::validate_watermark_request(&WatermarkMediaTaskRequest {
+                task_id: "wm-2".into(),
+                input_path: "/tmp/missing-file.jpg".into(),
+                options: watermark_request(&tmp, "text", "x", None, "bottom-right", 10, 0.5, false)
+                    .options
+                    .clone(),
+            })
+            .is_err()
+        );
+        let mut req = watermark_request(&tmp, "text", "", None, "bottom-right", 10, 0.5, false);
+        req.options.text = "".into();
+        assert!(super::validate_watermark_request(&req).is_err());
+        req.options.text = "中文".into();
+        req.options.size_percent = 0;
+        assert!(super::validate_watermark_request(&req).is_err());
+        req.options.size_percent = 10;
+        req.options.opacity = 1.5;
+        assert!(super::validate_watermark_request(&req).is_err());
+        req.options.opacity = 0.5;
+        req.options.kind = "invalid".into();
+        assert!(super::validate_watermark_request(&req).is_err());
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn creates_watermark_outputs_in_correct_paths() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-out-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let req = watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, false);
+        let expected = tmp
+            .join("photo_watermarked.jpg")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(watermark_output_path(&req).to_string_lossy(), expected);
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn overlay_coordinates_map_all_positions() {
+        assert_eq!(overlay_coordinates("top-left"), ("20", "20"));
+        assert_eq!(
+            overlay_coordinates("top-center"),
+            ("(main_w-overlay_w)/2", "20")
+        );
+        assert_eq!(
+            overlay_coordinates("top-right"),
+            ("main_w-overlay_w-20", "20")
+        );
+        assert_eq!(
+            overlay_coordinates("bottom-left"),
+            ("20", "main_h-overlay_h-20")
+        );
+        assert_eq!(
+            overlay_coordinates("bottom-center"),
+            ("(main_w-overlay_w)/2", "main_h-overlay_h-20")
+        );
+        assert_eq!(
+            overlay_coordinates("bottom-right"),
+            ("main_w-overlay_w-20", "main_h-overlay_h-20")
+        );
+    }
+
+    #[test]
+    fn tiled_coordinates_has_nine_positions() {
+        assert_eq!(tiled_coordinates().len(), 9);
+    }
+
+    #[test]
+    fn escape_filter_value_escapes_colons_and_commas() {
+        let s = escape_filter_value("path:with,chars");
+        assert_eq!(s, "path\\:with\\,chars");
+    }
+
+    #[test]
+    fn watermark_args_are_structured_without_shell_concatenation() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-args-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let args = test_watermark_args(
+            &watermark_request(
+                &tmp,
+                "text",
+                "测试水印",
+                None,
+                "bottom-right",
+                12,
+                0.6,
+                false,
+            ),
+            Path::new("/tmp/输出 文件夹/photo_watermarked.jpg"),
+        );
+        let values: Vec<_> = args
+            .0
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        let input_path = tmp.join("photo.jpg").to_string_lossy().into_owned();
+        assert!(values.contains(&input_path));
+        assert!(values.contains(&"-progress".into()));
+        assert!(values.contains(&"pipe:1".into()));
+        assert!(values.contains(&"-filter_complex".into()));
+        assert!(!values.contains(&"/bin/sh".into()));
+        assert!(!values.contains(&"-c".into()));
+        assert_eq!(args.1.len(), 1);
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn watermark_image_args_use_two_inputs() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-img-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let args = test_watermark_args(
+            &watermark_request(
+                &tmp,
+                "image",
+                "",
+                Some("/tmp/logo.png"),
+                "top-left",
+                15,
+                0.4,
+                false,
+            ),
+            Path::new("/tmp/output.png"),
+        );
+        let values: Vec<_> = args
+            .0
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert!(values.contains(&"/tmp/logo.png".into()));
+        assert_eq!(args.1.len(), 0);
+        fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[cfg(target_os = "macos")]

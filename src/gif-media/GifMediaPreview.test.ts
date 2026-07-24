@@ -8,7 +8,7 @@ describe('GifMediaPreview', () => {
     const markup = await renderToString(createSSRApp(GifMediaPreview));
 
     expect(markup).toContain('GIF / 媒体工具');
-    expect(markup).toContain('实验功能');
+    expect(markup).toContain('内部实验');
     expect(markup).toContain('拖入 MP4 或 MOV');
     expect(markup).toContain('高清');
     expect(markup).toContain('8MB 倾向');

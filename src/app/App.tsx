@@ -56,6 +56,10 @@ function AppContent() {
     setAppPreferences((previous) => previous.lastTool === 'gif-media' ? previous : { ...previous, lastTool: 'gif-media' });
     void openGifMediaPreview();
   }, [setAppPreferences]);
+  const openWatermarkTrace = useCallback(() => {
+    setAppPreferences((previous) => previous.lastTool === 'watermark-trace' ? previous : { ...previous, lastTool: 'watermark-trace' });
+    void openGifMediaPreview({ mode: 'watermark' });
+  }, [setAppPreferences]);
 
   useEffect(() => {
     if (startupMediaHandled.current || !shouldLaunchGifMediaOnStartup(appPreferences)) return;
@@ -72,7 +76,7 @@ function AppContent() {
 
   return <>
     <UncleanExitNotice />
-    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifMediaPreview={openGifMediaTool} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
+    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifMediaPreview={openGifMediaTool} onOpenWatermarkTrace={openWatermarkTrace} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
     <div hidden={activeTool !== 'logo-layout'}>
       <AppShell
         activeModule={activeModule}

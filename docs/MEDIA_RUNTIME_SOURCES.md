@@ -30,3 +30,12 @@
 
 - macOS arm64：已在本机使用仓库内 sidecar 真实验证 MP4/MOV → GIF、中文+空格路径、输出 GIF 元数据、两任务顺序、运行中终止、失败后继续和输入文件不覆盖。
 - Windows x64：已验证随包文件为 PE32+ x86-64，Tauri `externalBin` target-triple 命名正确；尚未完成 Windows 原生构建或交互式实机任务，不能宣称 Windows 实机通过。
+
+
+## 字体资源
+
+| 文件 | 字体 | 版本/来源 | 许可证 | SHA-256 | 文件大小 |
+|---|---|---|---|---:|
+| `resources/fonts/SourceHanSansSC-Regular.otf` | 思源黑体 Regular | Adobe Source Han Sans 2.005R | SIL OFL 1.1 | `f1d8611151880c6c336aabeac4640ef434fa13cbfbf1ffe82d0a71b2a5637256` | 16,529,832 B |
+
+字体只通过固定文件名/路径在 `watermark_font_path()` 中解析：Tauri 将其打包在 `bundle.resources`，运行时代码从 `app.path().resource_dir().join("resources/fonts/SourceHanSansSC-Regular.otf")` 加载；不搜索系统字体目录、不依赖 PATH 或联网下载。

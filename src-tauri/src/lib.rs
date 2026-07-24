@@ -105,6 +105,7 @@ pub fn run() {
             save_export_file,
             media::media_engine_status,
             media::start_gif_media_task,
+            media::start_watermark_media_task,
             media::cancel_gif_media_task,
             diagnostics::diagnostics_info,
             diagnostics::diagnostics_recent_errors,

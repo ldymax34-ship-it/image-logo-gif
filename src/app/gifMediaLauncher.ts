@@ -2,11 +2,13 @@ import { isDesktopBridgeAvailable } from '../platform/desktopBridge';
 
 export const GIF_MEDIA_PAGE_PATH = '/gif-media.html';
 export const GIF_MEDIA_WINDOW_LABEL = 'gif-media-preview';
+export type GifMediaWindowMode = 'gif' | 'watermark';
 
 export type GifMediaWindow = {
   show: () => Promise<void>;
   setFocus: () => Promise<void>;
   close: () => Promise<void>;
+  emit: (event: string, payload: unknown) => Promise<void>;
 };
 
 export type GifMediaWindowApi = {
@@ -26,6 +28,7 @@ export type GifMediaLaunchOptions = {
   isDesktop?: boolean;
   navigate?: (url: string) => void;
   desktopWindowApi?: GifMediaWindowApi;
+  mode?: GifMediaWindowMode;
 };
 
 export type GifMediaCloseOptions = {
@@ -34,17 +37,22 @@ export type GifMediaCloseOptions = {
   desktopWindow?: Pick<GifMediaWindow, 'close'>;
 };
 
-export async function openGifMediaDesktopWindow(api: GifMediaWindowApi): Promise<'desktop-existing' | 'desktop-created'> {
+function mediaPageUrl(mode: GifMediaWindowMode): string {
+  return mode === 'watermark' ? `${GIF_MEDIA_PAGE_PATH}?mode=watermark` : GIF_MEDIA_PAGE_PATH;
+}
+
+export async function openGifMediaDesktopWindow(api: GifMediaWindowApi, mode: GifMediaWindowMode = 'gif'): Promise<'desktop-existing' | 'desktop-created'> {
   const existing = await api.getByLabel(GIF_MEDIA_WINDOW_LABEL);
   if (existing) {
     await existing.show();
     await existing.setFocus();
+    await existing.emit('gif-media://mode', mode);
     return 'desktop-existing';
   }
 
   api.create(GIF_MEDIA_WINDOW_LABEL, {
     title: 'GIF / 媒体工具',
-    url: GIF_MEDIA_PAGE_PATH,
+    url: mediaPageUrl(mode),
     width: 1180,
     height: 800,
     minWidth: 960,
@@ -68,13 +76,14 @@ async function loadCurrentDesktopWindow(): Promise<Pick<GifMediaWindow, 'close'>
 }
 
 export async function openGifMediaPreview(options: GifMediaLaunchOptions = {}): Promise<'browser' | 'desktop-existing' | 'desktop-created'> {
+  const mode = options.mode ?? 'gif';
   const desktop = options.isDesktop ?? isDesktopBridgeAvailable();
   if (desktop) {
-    return openGifMediaDesktopWindow(options.desktopWindowApi ?? await loadDesktopWindowApi());
+    return openGifMediaDesktopWindow(options.desktopWindowApi ?? await loadDesktopWindowApi(), mode);
   }
 
   const navigate = options.navigate ?? ((url: string) => window.location.assign(url));
-  navigate(GIF_MEDIA_PAGE_PATH);
+  navigate(mediaPageUrl(mode));
   return 'browser';
 }
 

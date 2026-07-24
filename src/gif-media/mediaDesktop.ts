@@ -1,11 +1,14 @@
 import { isDesktopBridgeAvailable } from '../platform/desktopBridge';
-import type { GifMediaOptions, MediaEngineStatus, MediaTaskEvent } from './mediaTypes';
+import type { GifMediaOptions, MediaEngineStatus, MediaTaskEvent, WatermarkOptions } from './mediaTypes';
 
 export type MediaDesktopApi = {
   getEngineStatus: () => Promise<MediaEngineStatus>;
   pickMediaFiles: () => Promise<string[]>;
+  pickWatermarkFiles: () => Promise<string[]>;
+  pickWatermarkImage: () => Promise<string | null>;
   pickOutputDirectory: () => Promise<string | null>;
   startGifTask: (request: { taskId: string; inputPath: string; options: GifMediaOptions }) => Promise<{ taskId: string; outputPath: string }>;
+  startWatermarkTask: (request: { taskId: string; inputPath: string; options: WatermarkOptions }) => Promise<{ taskId: string; outputPath: string }>;
   cancelTask: (taskId: string) => Promise<void>;
   listenTaskEvents: (listener: (event: MediaTaskEvent) => void) => Promise<() => void>;
   listenDroppedPaths: (listener: (paths: string[]) => void) => Promise<() => void>;
@@ -33,11 +36,29 @@ export async function loadMediaDesktopApi(): Promise<MediaDesktopApi> {
       if (!result) return [];
       return Array.isArray(result) ? result : [result];
     },
+    async pickWatermarkFiles() {
+      const result = await open({
+        title: '选择需要添加水印的文件',
+        multiple: true,
+        filters: [{ name: '支持的媒体', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov'] }]
+      });
+      if (!result) return [];
+      return Array.isArray(result) ? result : [result];
+    },
+    async pickWatermarkImage() {
+      const result = await open({
+        title: '选择 Logo 或图片水印',
+        multiple: false,
+        filters: [{ name: '图片水印', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      });
+      return typeof result === 'string' ? result : null;
+    },
     async pickOutputDirectory() {
       const result = await open({ title: '选择 GIF 输出文件夹', directory: true, multiple: false });
       return typeof result === 'string' ? result : null;
     },
     startGifTask: (request) => invoke('start_gif_media_task', { request }),
+    startWatermarkTask: (request) => invoke('start_watermark_media_task', { request }),
     cancelTask: (taskId) => invoke('cancel_gif_media_task', { taskId }),
     async listenTaskEvents(listener) {
       return listen<MediaTaskEvent>('gif-media://task', ({ payload }) => listener(payload));

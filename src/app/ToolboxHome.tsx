@@ -1,6 +1,7 @@
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
   onOpenGifMediaPreview: () => void;
+  onOpenWatermarkTrace: () => void;
   onOpenSettings: () => void;
 };
 
@@ -24,20 +25,21 @@ const TOOLS = [
   {
     id: 'watermark-trace',
     label: '水印与追溯',
-    detail: '本地水印与追溯能力仍在规划中',
-    action: '即将开放',
-    available: false,
-    experimental: false
+    detail: '首版可见水印；隐形指纹暂未开放',
+    action: '打开水印工具',
+    available: true,
+    experimental: true
   }
 ] as const;
 
-export function getToolboxLaunchAction(toolId: typeof TOOLS[number]['id'], handlers: Pick<ToolboxHomeProps, 'onOpenLogoLayout' | 'onOpenGifMediaPreview'>): (() => void) | undefined {
+export function getToolboxLaunchAction(toolId: typeof TOOLS[number]['id'], handlers: Pick<ToolboxHomeProps, 'onOpenLogoLayout' | 'onOpenGifMediaPreview' | 'onOpenWatermarkTrace'>): (() => void) | undefined {
   if (toolId === 'logo-layout') return handlers.onOpenLogoLayout;
   if (toolId === 'gif-media') return handlers.onOpenGifMediaPreview;
+  if (toolId === 'watermark-trace') return handlers.onOpenWatermarkTrace;
   return undefined;
 }
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenSettings }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
   return (
     <main className="toolbox-home" aria-label="品宣工具箱">
       <header className="toolbox-home-header">
@@ -53,7 +55,7 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenSet
             type="button"
             className={`toolbox-launch-card ${tool.available ? 'is-available' : 'is-unavailable'}`}
             disabled={!tool.available}
-            onClick={getToolboxLaunchAction(tool.id, { onOpenLogoLayout, onOpenGifMediaPreview })}
+            onClick={getToolboxLaunchAction(tool.id, { onOpenLogoLayout, onOpenGifMediaPreview, onOpenWatermarkTrace })}
             aria-label={tool.available ? `${tool.label}，${tool.action}` : `${tool.label}，${tool.action}`}
           >
             <span className="toolbox-launch-status">{tool.experimental ? '内部实验' : tool.available ? '可用' : '暂不可用'}</span>

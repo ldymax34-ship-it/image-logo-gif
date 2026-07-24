@@ -35,6 +35,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .gif-media-status-legend { display: flex; flex-wrap: wrap; gap: 6px; }
 .gif-media-status-legend span { min-height: 24px; padding: 4px 7px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 11px; }
 .gif-media-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.gif-media-mode-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.gif-media-mode-tabs button { min-height: var(--control-height-compact); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-field); color: var(--color-text-muted); cursor: pointer; font-size: 12px; }
+.gif-media-mode-tabs button.selected { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-text); }
+.gif-media-mode-tabs button:disabled { cursor: not-allowed; opacity: .65; }
 .gif-media-presets button { min-height: var(--control-height-compact); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-field); color: var(--color-text-muted); font-size: 12px; text-align: left; }
 .gif-media-presets button { cursor: pointer; padding: 0 8px; }
 .gif-media-presets button:hover:not(:disabled) { border-color: var(--color-border-strong); background: var(--color-panel-raised); color: var(--color-text); }

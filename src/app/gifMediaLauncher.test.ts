@@ -26,9 +26,11 @@ describe('GIF media preview launcher', () => {
 
     const show = vi.fn().mockResolvedValue(undefined);
     const setFocus = vi.fn().mockResolvedValue(undefined);
-    await expect(openGifMediaDesktopWindow({ getByLabel: vi.fn().mockResolvedValue({ show, setFocus }), create })).resolves.toBe('desktop-existing');
+    const emit = vi.fn().mockResolvedValue(undefined);
+    await expect(openGifMediaDesktopWindow({ getByLabel: vi.fn().mockResolvedValue({ show, setFocus, emit }), create }, 'watermark')).resolves.toBe('desktop-existing');
     expect(show).toHaveBeenCalledOnce();
     expect(setFocus).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith('gif-media://mode', 'watermark');
   });
 
   it('keeps a browser return path to the toolbox', () => {
