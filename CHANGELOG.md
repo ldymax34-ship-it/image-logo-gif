@@ -1072,3 +1072,65 @@
 16. [重构-大] Goal 7：导出模型新增基础语种 + 追加语种选择、默认 / 自定义 / 不限制体积策略与结构化逐项结果；保持原有 PNG 超限、JPG 自动压缩和平台文件写入实现不变。
 17. [修复-高] Goal 7.1：聚焦状态将 Logo 显示与效果纳入 draft，Esc 使用最新 dirty 状态；点击画布品牌元素可直接选中拖动，批量应用范围改为同尺寸 / 同素材。
 18. [重构-中] Goal 7.1：导出基础语种锁定为当前画板语种；渲染、写入、失败继续与结果汇总收口至 `services/export/exportBatch.ts` 和 controller，Dialog 仅保留 UI。
+
+---
+
+## 四大工具总览 (v0.1.33)
+
+### 1. Logo 与版式
+
+设媒工作台，批量尺寸裁切 + Logo/CPR 组合导出。
+
+| 项 | 说明 |
+|----|------|
+| 技术栈 | React + SVG Render Plan |
+| 画布 | BoardCanvas (SVG) + CustomFabricOverlay (Fabric.js 透明交互层) |
+| 核心能力 | 素材导入 / 社媒尺寸矩阵 / Logo组合(游戏+公司) / CPR / 连续缩放 / 批量PNG/JPG导出 |
+| 交互 | 拖选画板 / 双击Focus / Logo拖缩 / 自定义构图 |
+| 状态 | ✅ 生产可用 |
+
+### 2. GIF 合成与压缩
+
+视频转 GIF，掐头去尾 + 8MB 自动收口。
+
+| 项 | 说明 |
+|----|------|
+| 技术栈 | Vue 3 (通过 VueToolWrapper 嵌入) + FFmpeg sidecar |
+| 核心能力 | MP4/MOV 输入 / 时间轴截取 / 输出预览 / 无限循环 / 8MB 自动压缩重试 |
+| 压缩策略 | 均衡 / 优先清晰 / 优先流畅 |
+| 后端 | Rust `start_gif_media_task` → FFmpeg 同步重试循环 |
+| 状态 | ✅ 可用 (Vue 组件，后续可迁移 React) |
+
+### 3. 批量模板 GIF 合成器
+
+Figma 模板 PNG + 视频 → 批量多语言 GIF。
+
+| 项 | 说明 |
+|----|------|
+| 技术栈 | React + Rust FFmpeg 色键合成 |
+| 模式 | 单视频多模板 / 多视频颜色映射 |
+| 核心能力 | 色键抠像(colorkey) / 视频cover/contain适配 / 模板预览 / 视频微调(缩放/位移) / job.json 持久化 / 统一规格8MB批量输出 |
+| 后端 | Rust `preview_template_frame` / `compose_batch_template_gifs` / `save_batch_job_json` |
+| 状态 | ⚠️ 功能完整，待实机验证色键合成效果 |
+
+### 4. 水印与追溯
+
+文字/图片水印，画布直接操作。
+
+| 项 | 说明 |
+|----|------|
+| 技术栈 | React + Fabric.js 画布 + FFmpeg 水印渲染 |
+| 核心能力 | 文字水印(字体/颜色/描边/投影) / 图片Logo水印 / 画布拖动旋转缩放 / 单个/平铺/斜向砖形 / 暗水印 / 参数双向同步 |
+| 交互 | Fabric.js 四角等比缩放 + 旋转手柄 / 滑块双击复位 / 0/45/90°吸附 |
+| 后端 | Rust `start_watermark_media_task` / `preview_watermark_frame` |
+| 生命周期 | mountedRef + genRef 竞态防护 / 22处 await后校验 |
+| 状态 | ✅ 可用 (已修复 NotFoundError 竞态) |
+
+### 共享底层
+
+| 层 | 内容 |
+|----|------|
+| FFmpeg/FFprobe | arm64 macOS / x64 Windows sidecar |
+| Rust 子进程 | MediaTaskRegistry / 进度事件 / 取消 / 8MB重试 |
+| 设计令牌 | tokens.css + theme.css (颜色/间距/圆角/字号/控件高度统一) |
+| 测试 | 271 TS + 24 Rust / verify:core OK |
