@@ -1,5 +1,22 @@
 # 更新日志
 
+## 2026-07-24｜工具箱最终视觉与本地验证包
+
+### 视觉
+- 图标容器扩大至 56px，SVG 28px（lucide strokeWidth 1.4）；水平垂直居中。
+- 默认图标容器 box-shadow: 0 2px 8px rgba(0,0,0,.12)；hover 增加弱蓝色外发光（0 0 14px rgba(61,131,213,.16)）与 scale(1.04)。
+- 按钮整体约 106px 高（不硬卡 <90px）；grid 不拉伸。
+
+### macOS 本地验证包
+- `.app`：87,332 KB（含 FFmpeg/FFprobe + 思源黑体 15.8 MiB），codesign --verify 通过（ad-hoc）。
+- `.dmg`：41.8 MB。
+- 路径：`src-tauri/target/release/bundle/macos/品宣物料工作台.app` 和 `src-tauri/target/release/bundle/dmg/品宣物料工作台_0.1.33_aarch64.dmg`。
+- 未生成 updater 签名产物。
+
+### 门禁
+- `git diff --check`、`npm run verify:core`、`npm test -- --run`（270）、`npm run build` 均通过；无 Rust 变更。
+- 浏览器截图：`/private/tmp/brand-toolbox-final/toolbox-1440x900.png`、`toolbox-1100x720.png`。
+
 ## 2026-07-24｜工具箱视觉收尾修复（第二次追加）
 
 ### 修复
