@@ -1849,3 +1849,75 @@ textarea {
     grid-column: auto;
   }
 }
+
+/* ---- Embedded Tool Wrapper ---- */
+.embedded-tool-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: #1a1c20;
+  color: #e1e3e6;
+}
+
+.embedded-tool-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #333840;
+  background: #1a1c20;
+  flex-shrink: 0;
+}
+
+.embedded-tool-back {
+  font-size: 13px;
+  color: #5b8def;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.embedded-tool-back:hover {
+  background: #24272d;
+}
+
+.embedded-tool-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e1e3e6;
+}
+
+.embedded-tool-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+.embedded-tool-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+.embedded-tool-placeholder h2 {
+  font-size: 18px;
+  margin-bottom: 12px;
+  color: #e1e3e6;
+}
+.embedded-tool-placeholder p {
+  color: #9298a0;
+  font-size: 14px;
+  max-width: 480px;
+  line-height: 1.6;
+}
+.embedded-tool-placeholder ul {
+  text-align: left;
+  color: #9298a0;
+  font-size: 13px;
+  margin-top: 8px;
+  line-height: 1.8;
+}

@@ -1,4 +1,4 @@
-export type StartupTool = 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark-trace' | 'last';
+export type StartupTool = 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark-trace' | 'gif-compress' | 'batch-template-gif' | 'last';
 export type LastTool = Exclude<StartupTool, 'last'>;
 
 export type AppPreferencesV1 = {
@@ -7,7 +7,7 @@ export type AppPreferencesV1 = {
   lastTool: LastTool;
 };
 
-export type AvailableAppTool = 'toolbox' | 'logo-layout';
+export type AvailableAppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark-trace';
 
 export const APP_PREFERENCES_STORAGE_KEY = 'brand-material-workbench.app-preferences.v1';
 export const DEFAULT_APP_PREFERENCES: AppPreferencesV1 = {
@@ -16,8 +16,8 @@ export const DEFAULT_APP_PREFERENCES: AppPreferencesV1 = {
   lastTool: 'toolbox'
 };
 
-const STARTUP_TOOLS: StartupTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark-trace', 'last'];
-const LAST_TOOLS: LastTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark-trace'];
+const STARTUP_TOOLS: StartupTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark-trace', 'gif-compress', 'batch-template-gif', 'last'];
+const LAST_TOOLS: LastTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark-trace', 'gif-compress', 'batch-template-gif'];
 
 function isStartupTool(value: unknown): value is StartupTool {
   return typeof value === 'string' && STARTUP_TOOLS.includes(value as StartupTool);

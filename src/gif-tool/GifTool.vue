@@ -381,17 +381,13 @@ onUnmounted(() => {
 
 <template>
   <main class="gif-tool" aria-label="GIF 合成与压缩">
-    <!-- Header -->
+    <!-- Header (embedded mode - top bar provided by parent) -->
     <header class="gif-tool-header">
       <div class="gif-tool-title-line">
         <h1>GIF 合成与压缩</h1>
         <span class="gif-tool-badge">内部实验</span>
       </div>
       <p>从视频掐头去尾截取片段并转换为 GIF。所有处理使用应用内置引擎。</p>
-      <div class="gif-tool-header-actions">
-        <button type="button" class="gif-tool-link" @click="openWatermarkTool">切换到水印与追溯</button>
-        <button type="button" class="gif-tool-close" @click="returnToToolbox">返回工具箱</button>
-      </div>
     </header>
 
     <!-- Sub-mode tabs -->

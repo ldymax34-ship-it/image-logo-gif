@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { ModuleStatus, WorkbenchModule } from '../components/ModuleNav';
 import { WorkbenchHeader } from '../components';
 import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
@@ -8,10 +8,12 @@ import { AppShell } from './AppShell';
 import { ApplicationSettingsDialog } from './ApplicationSettingsDialog';
 import { GlobalDialogs } from './GlobalDialogs';
 import { ToolboxHome } from './ToolboxHome';
-import { openGifMediaPreview } from './gifMediaLauncher';
-import { shouldLaunchGifMediaOnStartup } from './appPreferences';
+import { VueToolWrapper } from './VueToolWrapper';
+import { BatchTemplateGif } from '../batch-template-gif/BatchTemplateGif';
+import '../batch-template-gif/batchTemplateGif.css';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 import { UncleanExitNotice } from '../diagnostics';
+import type { AppTool } from './AppRuntimeProvider';
 
 function resolveModuleStatuses(
   active: WorkbenchModule,
@@ -41,7 +43,6 @@ function AppContent() {
     setApplicationSettingsOpen,
     updateActivity
   } = useAppRuntime();
-  const startupMediaHandled = useRef(false);
   const { checkForUpdate } = useUpdate();
   const logoAssets = brandAssets.filter((asset) => asset.type === 'logo');
   const cprAssets = brandAssets.filter((asset) => asset.type === 'cpr');
@@ -53,54 +54,83 @@ function AppContent() {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
 
-  // Open GIF tool (separate window)
-  const openGifTool = useCallback(() => {
-    setAppPreferences((previous) => previous.lastTool === 'gif-media' ? previous : { ...previous, lastTool: 'gif-media' });
-    void openGifMediaPreview({ mode: 'gif' });
-  }, [setAppPreferences]);
-
-  // Open watermark tool (separate window)
-  const openWatermarkTool = useCallback(() => {
-    setAppPreferences((previous) => previous.lastTool === 'watermark-trace' ? previous : { ...previous, lastTool: 'watermark-trace' });
-    void openGifMediaPreview({ mode: 'watermark' });
-  }, [setAppPreferences]);
-
-  useEffect(() => {
-    if (startupMediaHandled.current || !shouldLaunchGifMediaOnStartup(appPreferences)) return;
-    startupMediaHandled.current = true;
-    void openGifMediaPreview();
-  }, [appPreferences]);
+  const navigateTo = useCallback((tool: AppTool) => {
+    setActiveTool(tool);
+    setAppPreferences((prev) => prev.lastTool === tool ? prev : { ...prev, lastTool: tool });
+  }, [setActiveTool, setAppPreferences]);
 
   const moduleStatuses = useMemo(
     () => resolveModuleStatuses(activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled),
     [activeModule, brandLayer.logoEnabled, brandLayer.cprEnabled]
   );
 
-  const appSettings = applicationSettingsOpen ? <ApplicationSettingsDialog preferences={appPreferences} onPreferencesChange={setAppPreferences} onClose={() => setApplicationSettingsOpen(false)} /> : null;
+  const appSettings = applicationSettingsOpen ? (
+    <ApplicationSettingsDialog
+      preferences={appPreferences}
+      onPreferencesChange={setAppPreferences}
+      onClose={() => setApplicationSettingsOpen(false)}
+    />
+  ) : null;
 
   return <>
     <UncleanExitNotice />
-    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifTool={openGifTool} onOpenWatermarkTool={openWatermarkTool} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
+
+    {/* Toolbox Home */}
+    {activeTool === 'toolbox' && (
+      <ToolboxHome
+        onOpenLogoLayout={() => navigateTo('logo-layout')}
+        onOpenGifCompress={() => navigateTo('gif-compress')}
+        onOpenBatchTemplateGif={() => navigateTo('batch-template-gif')}
+        onOpenWatermarkTrace={() => navigateTo('watermark-trace')}
+        onOpenSettings={() => setApplicationSettingsOpen(true)}
+      />
+    )}
+
+    {/* Logo & Layout (existing) */}
     <div hidden={activeTool !== 'logo-layout'}>
       <AppShell
         activeModule={activeModule}
         onModuleChange={requestModuleChange}
         onReturnToToolbox={requestToolbox}
         moduleStatuses={moduleStatuses}
-        header={<WorkbenchHeader {...mediaHeader} onOpenSettings={() => setSettingsDialogOpen(true)} onCheckUpdate={() => void checkForUpdate(true)} />}
+        header={
+          <WorkbenchHeader
+            {...mediaHeader}
+            onOpenSettings={() => setSettingsDialogOpen(true)}
+            onCheckUpdate={() => void checkForUpdate(true)}
+          />
+        }
       >
         <MediaWorkbench active={activeModule === 'media'} />
-        {activeModule === 'custom' ? <CustomWorkbench
-          brandLayer={brandLayer}
-          logoAsset={selectedLogo}
-          cprAsset={selectedCpr}
-          companyLogo={companyLogo}
-          gameLogo={gameLogo}
-          gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
-          onDirtyChange={handleCustomWorkbenchDirty}
-        /> : null}
+        {activeModule === 'custom' ? (
+          <CustomWorkbench
+            brandLayer={brandLayer}
+            logoAsset={selectedLogo}
+            cprAsset={selectedCpr}
+            companyLogo={companyLogo}
+            gameLogo={gameLogo}
+            gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
+            onDirtyChange={handleCustomWorkbenchDirty}
+          />
+        ) : null}
       </AppShell>
     </div>
+
+    {/* GIF Compress (embedded Vue) */}
+    {activeTool === 'gif-compress' && (
+      <VueToolWrapper mountKey="gif-compress" onReturn={requestToolbox} />
+    )}
+
+    {/* Batch Template GIF */}
+    {activeTool === 'batch-template-gif' && (
+      <BatchTemplateGif onReturn={requestToolbox} />
+    )}
+
+    {/* Watermark Trace (embedded Vue) */}
+    {activeTool === 'watermark-trace' && (
+      <VueToolWrapper mountKey="watermark-trace" onReturn={requestToolbox} />
+    )}
+
     <GlobalDialogs />
     <UpdateDialog />
     {appSettings}
@@ -108,5 +138,11 @@ function AppContent() {
 }
 
 export function App() {
-  return <AppRuntimeProvider><UpdateProvider><AppContent /></UpdateProvider></AppRuntimeProvider>;
+  return (
+    <AppRuntimeProvider>
+      <UpdateProvider>
+        <AppContent />
+      </UpdateProvider>
+    </AppRuntimeProvider>
+  );
 }

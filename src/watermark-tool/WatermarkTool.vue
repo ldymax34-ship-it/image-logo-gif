@@ -192,10 +192,6 @@ onUnmounted(() => { unlistenTaskEvents?.(); unlistenDroppedPaths?.(); });
         <span class="watermark-tool-badge">内部实验</span>
       </div>
       <p>首版仅提供可见水印；隐形指纹暂未开放。</p>
-      <div class="watermark-tool-header-actions">
-        <button type="button" class="watermark-tool-link" @click="openGifTool">切换到 GIF 合成与压缩</button>
-        <button type="button" class="watermark-tool-close" @click="returnToToolbox">返回工具箱</button>
-      </div>
     </header>
 
     <div class="watermark-tool-layout">

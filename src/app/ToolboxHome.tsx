@@ -1,9 +1,10 @@
-import { Palette, Film, ShieldCheck, Settings } from 'lucide-react';
+import { Palette, Film, Layers, ShieldCheck, Settings } from 'lucide-react';
 
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
-  onOpenGifTool: () => void;
-  onOpenWatermarkTool: () => void;
+  onOpenGifCompress: () => void;
+  onOpenBatchTemplateGif: () => void;
+  onOpenWatermarkTrace: () => void;
   onOpenSettings: () => void;
 };
 
@@ -16,11 +17,12 @@ type ToolEntry = {
   experimental: boolean;
 };
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenGifTool, onOpenWatermarkTool, onOpenSettings }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenGifCompress, onOpenBatchTemplateGif, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
   const tools: ToolEntry[] = [
     { id: 'logo-layout', label: 'Logo 与版式', icon: Palette, action: onOpenLogoLayout, available: true, experimental: false },
-    { id: 'gif-tool', label: 'GIF 合成与压缩', icon: Film, action: onOpenGifTool, available: true, experimental: true },
-    { id: 'watermark-tool', label: '水印与追溯', icon: ShieldCheck, action: onOpenWatermarkTool, available: true, experimental: true },
+    { id: 'gif-compress', label: 'GIF 合成与压缩', icon: Film, action: onOpenGifCompress, available: true, experimental: false },
+    { id: 'batch-template-gif', label: '批量模板 GIF 合成器', icon: Layers, action: onOpenBatchTemplateGif, available: true, experimental: true },
+    { id: 'watermark-trace', label: '水印与追溯', icon: ShieldCheck, action: onOpenWatermarkTrace, available: true, experimental: true },
     { id: 'settings', label: '设置', icon: Settings, action: onOpenSettings, available: true, experimental: false },
   ];
 
