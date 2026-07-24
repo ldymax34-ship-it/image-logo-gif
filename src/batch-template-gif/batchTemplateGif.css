@@ -165,3 +165,5 @@
 .btg-json-modal textarea { width: 100%; background: #1a1c20; border: 1px solid #333840; border-radius: 5px; color: #e1e3e6; font-size: 11px; font-family: monospace; padding: 8px; resize: vertical; }
 
 .embedded-tool-badge { font-size: 11px; background: #5b8def; color: #fff; padding: 1px 7px; border-radius: 10px; margin-left: 8px; }
+.btg-message-row { display: flex; align-items: center; gap: 6px; }
+.btg-retry-btn { font-size: 11px; color: #fff; background: #e0556a; border: none; border-radius: 4px; cursor: pointer; padding: 3px 10px; }

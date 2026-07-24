@@ -132,7 +132,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       fc.backgroundImage = img;
       fc.renderAll();
       setPreviewError('');
-    } catch { setPreviewError('无法加载图片'); }
+    } catch (e: any) { setPreviewError(`无法加载图片: ${e?.message || '未知错误'}`); }
   }, []);
 
   /* ── render watermark ── */
@@ -180,7 +180,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
           img.scaleToWidth(cw * state.scale * 0.25);
           obj = img;
         }
-      } catch {}
+      } catch {} // Image watermark load failure non-critical
     }
 
     if (obj) { fc.add(obj); wmObjRef.current = obj; }
@@ -246,6 +246,14 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       setTasks(prev => prev.map(t => t.id===next.id ? {...t,status:'failed',error:e?.message??String(e)} : t));
     }
     setActiveTaskId(undefined);
+    // Auto-process next waiting task
+    setTimeout(() => {
+      setTasks(prev => {
+        const nextUp = prev.find(t => t.status === 'waiting');
+        if (nextUp) startProcessing();
+        return prev;
+      });
+    }, 300);
   }
 
   function removeTask(id:string) {
@@ -305,10 +313,10 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
       <div className="wm-layout">
         {/* LEFT */}
-        <aside className="wm-left">
+        <aside className="wm-left" aria-label="素材与任务">
           <div className="wm-section">
             <div className="wm-section-head"><h3>素材</h3></div>
-            <button className="wm-btn wm-btn-upload" onClick={pickFiles} disabled={!desktop}>导入图片</button>
+            <button className="wm-btn wm-btn-upload" aria-label="导入图片素材" onClick={pickFiles} disabled={!desktop}>导入图片</button>
             <div className="wm-file-list">
               {tasks.map(t => (
                 <div key={t.id} className={`wm-file ${t.status}`}>
@@ -326,12 +334,12 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
               {state.outputDirectory || '选择文件夹'}
             </button>
           </div>
-          <button className="wm-btn wm-btn-run" disabled={!canProcess} onClick={startProcessing}>开始添加水印</button>
+          <button className="wm-btn wm-btn-run" aria-label="开始添加水印到所有素材" disabled={!canProcess} onClick={startProcessing}>开始添加水印</button>
           {message && <p className="wm-error">{message}</p>}
         </aside>
 
         {/* CENTER */}
-        <main className="wm-canvas-wrap" ref={containerRef}
+        <main className="wm-canvas-wrap" aria-label="水印预览画布" role="img" ref={containerRef}
           onPointerDown={()=>setShowOriginal(true)} onPointerUp={()=>setShowOriginal(false)} onPointerLeave={()=>setShowOriginal(false)}>
           {!currentFile && <div className="wm-empty-canvas">{desktop ? '导入素材后在此预览水印效果' : '桌面环境初始化中…'}</div>}
           {verifyState === 'fail' && <div className="wm-preview-error"><span>⚠ 图片加载验证失败。请确认文件路径不含特殊字符，或尝试重新导入。</span><button onClick={() => currentFile && setVerifyState('idle')}>重试</button></div>}
@@ -343,7 +351,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
         </main>
 
         {/* RIGHT */}
-        <aside className="wm-right">
+        <aside className="wm-right" aria-label="水印属性">
           {/* 水印类型 */}
           <div className="wm-section">
             <div className="wm-section-head"><h3>水印类型</h3></div>
@@ -363,7 +371,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
               </label>
               <label className="wm-prop">
                 <span>字体</span>
-                <select value={state.fontFamily}
+                <select value={state.fontFamily} aria-label="字体选择"
                   onChange={e=>updateProp('fontFamily', e.target.value)}>
                   <option value="Source Han Sans SC">思源黑体</option>
                   <option value="PingFang SC">苹方</option>
@@ -467,7 +475,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
             <div className="wm-prop-grid">
               <label className="wm-prop">
                 <span>排列</span>
-                <select value={state.pattern} onChange={e=>updateProp('pattern',e.target.value as WatermarkPattern)}>
+                <select value={state.pattern} aria-label="水印排列方式" onChange={e=>updateProp('pattern',e.target.value as WatermarkPattern)}>
                   <option value="single">单个</option>
                   <option value="tiled">网格平铺</option>
                   <option value="diagonal">斜向砖形</option>
@@ -476,7 +484,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
               {state.pattern !== 'single' && (
                 <label className="wm-prop">
                   <span>密度</span>
-                  <select value={state.density} onChange={e=>updateProp('density',e.target.value as 'low'|'medium'|'high')}>
+                  <select value={state.density} aria-label="水印密度" onChange={e=>updateProp('density',e.target.value as 'low'|'medium'|'high')}>
                     <option value="low">低</option>
                     <option value="medium">中等</option>
                     <option value="high">高</option>

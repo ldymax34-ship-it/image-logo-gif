@@ -153,7 +153,9 @@ export function BatchTemplateGif({ onReturn }: Props) {
       setPreviewPath(`asset://localhost/${encodeURIComponent(result)}`);
       setHasPreviewed(true);
     } catch (e) {
+      setPreviewLoading(false);
       setMessage(e instanceof Error ? e.message : '预览生成失败');
+      return;
     } finally {
       setPreviewLoading(false);
     }
@@ -173,8 +175,15 @@ export function BatchTemplateGif({ onReturn }: Props) {
   function setPref(p: CompressionPreference) { setJob(prev => ({ ...prev, compression: { ...prev.compression, preference: p } })); }
 
   // ---- batch run ----
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+
   async function startBatch() {
     if (!apiRef.current || !desktop) return;
+    setShowBatchConfirm(true);
+  }
+
+  async function confirmBatch() {
+    setShowBatchConfirm(false);
     setTaskStatus('running'); setResults([]); setMessage('');
 
     try {
@@ -260,14 +269,14 @@ export function BatchTemplateGif({ onReturn }: Props) {
 
       <div className="btg-layout">
         {/* Mode tabs */}
-        <nav className="btg-mode-tabs">
+        <nav className="btg-mode-tabs" aria-label="合成模式">
           <button className={mode === 'single-video-multi-template' ? 'selected' : ''} onClick={() => requestModeSwitch('single-video-multi-template')}>单视频批量套模板</button>
           <button className={mode === 'multi-video-multi-template' ? 'selected' : ''} onClick={() => requestModeSwitch('multi-video-multi-template')}>多视频映射批量合成</button>
         </nav>
 
         <div className="btg-body">
           {/* CENTER: Preview canvas */}
-          <section className="btg-preview-area">
+          <section className="btg-preview-area" aria-label="模板预览画布">
             {currentTemplate ? (
               <>
                 <div className="btg-preview-header">
@@ -305,7 +314,7 @@ export function BatchTemplateGif({ onReturn }: Props) {
 
             {/* Template list at bottom */}
             {job.templateFiles.length > 0 && (
-              <div className="btg-template-strip">
+              <div className="btg-template-strip" aria-label="模板列表">
                 <span className="btg-strip-label">模板列表</span>
                 <div className="btg-template-thumbs">
                   {job.templateFiles.map((tpl, i) => (
@@ -325,7 +334,7 @@ export function BatchTemplateGif({ onReturn }: Props) {
           </section>
 
           {/* RIGHT: Parameters */}
-          <aside className="btg-sidebar">
+          <aside className="btg-sidebar" aria-label="合成参数">
             {/* Video input */}
             <div className="btg-section">
               <div className="btg-section-header"><h3>视频</h3></div>
@@ -436,7 +445,7 @@ export function BatchTemplateGif({ onReturn }: Props) {
               <span>{engine.message}</span>
             </div>
 
-            {message && <p className="btg-message">{message}</p>}
+            {message && <div className="btg-message-row"><p className="btg-message">{message}</p>{message.includes('预览') && <button className="btg-retry-btn" onClick={generatePreview}>重试</button>}</div>}
 
             {/* Actions */}
             <button className="btg-preview-btn" disabled={!desktop || !currentTemplate || !activeVideoPath || !job.outputDir || previewLoading} onClick={generatePreview}>
@@ -469,6 +478,20 @@ export function BatchTemplateGif({ onReturn }: Props) {
           </aside>
         </div>
       </div>
+
+      {/* Batch confirm */}
+      {showBatchConfirm && (
+        <div className="btg-modal-overlay" onClick={() => setShowBatchConfirm(false)}>
+          <div className="btg-confirm">
+            <p><strong>确认开始批量合成？</strong></p>
+            <p>{job.templateFiles.length} 个模板将使用当前参数批量生成 GIF，处理时间取决于模板数量和视频时长。</p>
+            <div className="btg-confirm-actions">
+              <button onClick={() => setShowBatchConfirm(false)}>取消</button>
+              <button onClick={confirmBatch}>开始合成</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mode switch confirm */}
       {showModeConfirm && (
