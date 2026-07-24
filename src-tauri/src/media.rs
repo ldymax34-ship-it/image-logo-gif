@@ -1330,13 +1330,348 @@ pub struct TemplateOutput {
     pub output_bytes: u64,
 }
 
-/// 多语言模板 GIF 合成（暂未开放）
+/// Build FFmpeg filter for chroma key compositing.
+/// Inputs: [0:v] template PNG, [1:v] video
+/// Output: composited frame with video in chroma key areas
+fn chroma_key_filter(template_w: u32, template_h: u32, color_hex: &str, fit_mode: &str, similarity: f64, blend: f64) -> String {
+    let color = color_hex.trim_start_matches('#');
+    let fit = if fit_mode == "contain" {
+        format!("scale={template_w}:{template_h}:force_original_aspect_ratio=decrease")
+    } else {
+        format!("scale={template_w}:{template_h}:force_original_aspect_ratio=increase,crop={template_w}:{template_h}")
+    };
+
+    format!(
+        "[0:v]colorkey=0x{color}:{similarity}:{blend}[tk];         [tk]split[tm][ta];         [ta]alphaextract[mask];         [1:v]{fit}[vs];         [vs][mask]alphamerge[vid];         [tm][vid]overlay[out]"
+    )
+}
+
+/// Build multi-video chroma key filter chain.
+/// Each color slot maps to a different video input.
+fn multi_chroma_filter(template_w: u32, template_h: u32, slots: &[(String, usize)], fit_mode: &str) -> String {
+    let mut parts = Vec::new();
+    parts.push(format!("[0:v]null[base]"));
+
+    let fit = if fit_mode == "contain" {
+        format!("scale={template_w}:{template_h}:force_original_aspect_ratio=decrease")
+    } else {
+        format!("scale={template_w}:{template_h}:force_original_aspect_ratio=increase,crop={template_w}:{template_h}")
+    };
+
+    for (i, (color, input_idx)) in slots.iter().enumerate() {
+        let hex = color.trim_start_matches('#');
+        let next = if i + 1 == slots.len() { "composited".to_string() } else { format!("step{i}") };
+        parts.push(format!(
+            "[base]colorkey=0x{hex}:0.1:0.02[tk{i}];             [tk{i}]split[tm{i}][ta{i}];             [ta{i}]alphaextract[mask{i}];             [{input_idx}:v]{fit}[vs{i}];             [vs{i}][mask{i}]alphamerge[vid{i}];             [tm{i}][vid{i}]overlay[{next}]"
+        ));
+        if i + 1 < slots.len() {
+            parts.push(format!("[{next}]null[base]"));
+        }
+    }
+    parts.join(";")
+}
+
+/// Generate a single template GIF with chroma key compositing.
+/// Returns (output_path, file_size) or error.
+fn compose_single_template_gif(
+    ffmpeg: &Path,
+    template_path: &Path,
+    video_path: &Path,
+    output_path: &Path,
+    start_seconds: f64,
+    duration: f64,
+    color_hex: &str,
+    fit_mode: &str,
+    fps: u32,
+    width: Option<u32>,
+    target_bytes: u64,
+) -> Result<(String, u64), String> {
+    let template_w: u32;
+    let template_h: u32;
+    // Probe template dimensions
+    {
+        let output = Command::new(ffmpeg)
+            .args(["-hide_banner", "-v", "error", "-show_entries", "stream=width,height", "-of", "json"])
+            .arg(template_path)
+            .output()
+            .map_err(|e| format!("无法读取模板信息：{e}"))?;
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "无法解析模板信息".to_string())?;
+        template_w = json["streams"][0]["width"].as_u64().unwrap_or(1920) as u32;
+        template_h = json["streams"][0]["height"].as_u64().unwrap_or(1080) as u32;
+    }
+
+    let filter = chroma_key_filter(template_w, template_h, color_hex, fit_mode, 0.1, 0.02);
+
+    // Try encoding with different quality levels
+    let mut current_fps = fps;
+    let mut current_width = width;
+    let max_retries = 8u32;
+
+    for step in 0..max_retries {
+        let mut filters = Vec::new();
+        if let Some(w) = current_width {
+            filters.push(format!("scale={w}:-2:flags=lanczos"));
+        }
+        filters.push(format!("fps={current_fps}"));
+        let post_filter = filters.join(",");
+
+        let palette = format!(
+            "{filter}[out];[out]{post_filter},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a"
+        );
+
+        let mut args = vec![
+            OsString::from("-hide_banner"), OsString::from("-nostdin"), OsString::from("-y"),
+            OsString::from("-i"), OsString::from(template_path.to_str().unwrap()),
+            OsString::from("-ss"), OsString::from(start_seconds.to_string()),
+            OsString::from("-t"), OsString::from(duration.to_string()),
+            OsString::from("-i"), OsString::from(video_path.to_str().unwrap()),
+            OsString::from("-filter_complex"), OsString::from(palette),
+            OsString::from("-loop"), OsString::from("0"),
+            output_path.as_os_str().to_owned(),
+        ];
+
+        let output = Command::new(ffmpeg)
+            .args(&args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .map_err(|e| format!("FFmpeg 执行失败：{e}"))?;
+
+        if output.status.success() {
+            if let Ok(meta) = fs::metadata(output_path) {
+                let size = meta.len();
+                if target_bytes == 0 || size <= target_bytes || step + 1 >= max_retries {
+                    return Ok((output_path.to_string_lossy().into_owned(), size));
+                }
+                // Reduce params and retry
+                current_fps = (current_fps - 2).max(6);
+                if step > 2 { current_width = current_width.map(|w| (w as f64 * 0.8) as u32); }
+            } else {
+                return Err("FFmpeg 完成后未找到输出文件".into());
+            }
+        } else {
+            return Err(format!("FFmpeg 合成失败：{}", String::from_utf8_lossy(&output.stderr)));
+        }
+    }
+
+    Err("压缩重试次数已用尽".into())
+}
+
+/// 多语言模板 GIF 合成（单视频 + 多模板）
 #[tauri::command]
 pub fn compose_template_gifs(
-    _app: AppHandle,
-    _request: TemplateGifComposeRequest,
+    app: AppHandle,
+    request: TemplateGifComposeRequest,
 ) -> Result<TemplateGifComposeResult, String> {
-    Err("多语言模板 GIF 合成暂未开放。色键抠像与模板合成功能仍在开发中。".into())
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用".into());
+    }
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let output_dir = Path::new(&request.output_directory);
+    if !output_dir.is_dir() {
+        std::fs::create_dir_all(output_dir).map_err(|e| format!("无法创建输出目录：{e}"))?;
+    }
+
+    let duration = request.end_seconds - request.start_seconds;
+    if duration <= 0.0 {
+        return Err("截取区间无效".into());
+    }
+
+    let mut outputs = Vec::new();
+    let target_bytes = request.compression.target_bytes;
+    let fps = request.compression.min_fps.unwrap_or(24);
+    let width = request.compression.min_width;
+
+    for template_path in &request.template_paths {
+        let template = Path::new(template_path);
+        let stem = template.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let output = output_dir.join(format!("{stem}.gif"));
+
+        match compose_single_template_gif(
+            &ffmpeg, template, Path::new(&request.video_path), &output,
+            request.start_seconds, duration,
+            &request.chroma_key.color.as_deref().unwrap_or("#00FF00"),
+            &request.fit_mode,
+            fps, width, target_bytes,
+        ) {
+            Ok((path, bytes)) => {
+                outputs.push(TemplateOutput {
+                    template_path: template_path.clone(),
+                    output_path: path,
+                    output_bytes: bytes,
+                });
+            }
+            Err(e) => {
+                log::error!("TEMPLATE_COMPOSE_FAILED {}: {}", template_path, e);
+                // Continue with other templates even if one fails
+            }
+        }
+    }
+
+    Ok(TemplateGifComposeResult {
+        task_id: request.task_id,
+        outputs,
+    })
+}
+
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchComposeRequest {
+    pub mode: String,
+    pub template_paths: Vec<String>,
+    pub output_directory: String,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub fit_mode: String,
+    pub fps: u32,
+    pub width: Option<u32>,
+    pub compression_preference: String,
+    pub target_bytes: u64,
+    pub min_width: Option<u32>,
+    pub min_fps: Option<u32>,
+    pub allow_strong_compression: bool,
+    pub single_video_path: Option<String>,
+    pub video_slots: Vec<BatchVideoSlot>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchVideoSlot {
+    pub color: String,
+    pub video_path: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchComposeResult {
+    pub results: Vec<BatchTemplateOutput>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchTemplateOutput {
+    pub template_path: String,
+    pub template_name: String,
+    pub output_path: String,
+    pub output_bytes: u64,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// Save job configuration as JSON to a file
+#[tauri::command]
+pub fn save_batch_job_json(directory: String, job_json: String) -> Result<(), String> {
+    let dir = Path::new(&directory);
+    if !dir.is_dir() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("无法创建目录：{e}"))?;
+    }
+    let path = dir.join("job.json");
+    fs::write(&path, job_json).map_err(|e| format!("保存 job.json 失败：{e}"))?;
+    Ok(())
+}
+
+/// Load job configuration from a JSON file
+#[tauri::command]
+pub fn load_batch_job_json(path: String) -> Result<String, String> {
+    let file_path = Path::new(&path);
+    if !file_path.is_file() {
+        return Err("job.json 文件不存在".into());
+    }
+    fs::read_to_string(file_path).map_err(|e| format!("读取 job.json 失败：{e}"))
+}
+
+/// Batch compose: single video → multiple templates
+#[tauri::command]
+pub fn compose_batch_template_gifs(
+    app: AppHandle,
+    request: BatchComposeRequest,
+) -> Result<BatchComposeResult, String> {
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用".into());
+    }
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let output_dir = Path::new(&request.output_directory);
+    if !output_dir.is_dir() {
+        std::fs::create_dir_all(output_dir).map_err(|e| format!("无法创建输出目录：{e}"))?;
+    }
+
+    let duration = request.end_seconds - request.start_seconds;
+    if duration <= 0.0 {
+        return Err("截取区间无效".into());
+    }
+
+    let video_path = request.single_video_path.as_deref().unwrap_or("");
+    if video_path.is_empty() {
+        return Err("未指定视频文件".into());
+    }
+
+    // Step 1: Try encoding the first template to find optimal params
+    let mut best_fps = request.fps;
+    let mut best_width = request.width;
+    let prefer = request.compression_preference.as_str();
+
+    if !request.template_paths.is_empty() {
+        let first_tpl = &request.template_paths[0];
+        let first_output = output_dir.join(format!(
+            "{}.gif",
+            Path::new(first_tpl).file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+        ));
+
+        if let Ok((_, size)) = compose_single_template_gif(
+            &ffmpeg, Path::new(first_tpl), Path::new(video_path), &first_output,
+            request.start_seconds, duration,
+            "#00FF00", &request.fit_mode,
+            request.fps, request.width, request.target_bytes,
+        ) {
+            // If the first template needed retries, use those params for the batch
+            if size > request.target_bytes && request.target_bytes > 0 {
+                // Lower params for the batch
+                best_fps = (request.fps - 2).max(request.min_fps.unwrap_or(6));
+                if best_width.is_some() { best_width = best_width.map(|w| (w as f64 * 0.85) as u32); }
+            }
+        }
+    }
+
+    // Step 2: Run the full batch with unified params
+    let mut results = Vec::new();
+    for template_path in &request.template_paths {
+        let template = Path::new(template_path);
+        let stem = template.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let output = output_dir.join(format!("{stem}.gif"));
+        let name = template.file_name().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
+
+        match compose_single_template_gif(
+            &ffmpeg, template, Path::new(video_path), &output,
+            request.start_seconds, duration,
+            "#00FF00", &request.fit_mode,
+            best_fps, best_width, request.target_bytes,
+        ) {
+            Ok((path, bytes)) => {
+                results.push(BatchTemplateOutput {
+                    template_path: template_path.clone(),
+                    template_name: name,
+                    output_path: path,
+                    output_bytes: bytes,
+                    status: "success".into(),
+                    error: None,
+                });
+            }
+            Err(e) => {
+                log::error!("BATCH_COMPOSE_FAILED {}: {}", template_path, e);
+                results.push(BatchTemplateOutput {
+                    template_path: template_path.clone(),
+                    template_name: name,
+                    output_path: String::new(),
+                    output_bytes: 0,
+                    status: "failed".into(),
+                    error: Some(e),
+                });
+            }
+        }
+    }
+
+    Ok(BatchComposeResult { results })
 }
 
 

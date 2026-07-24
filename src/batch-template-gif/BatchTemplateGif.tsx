@@ -124,32 +124,38 @@ export function BatchTemplateGif({ onReturn }: Props) {
     setResults([]);
     setMessage('');
 
-    const templates = job.templateFiles;
-    const videos = job.mode === 'single-video-multi-template'
-      ? [{ color: CHROMA_COLORS.green, path: job.singleVideoPath! }]
-      : job.videoSlots.filter(s => s.videoPath).map(s => ({ color: s.color, path: s.videoPath }));
-
-    // For now: placeholder - will implement full compositing later
-    const out: TemplateResult[] = [];
-    for (const tpl of templates) {
-      const name = tpl.split('/').pop() ?? tpl;
-      out.push({
-        templatePath: tpl,
-        templateName: name,
-        outputPath: `${job.outputDir}/${name.replace('.png', '.gif')}`,
-        outputBytes: 0,
-        status: 'failed',
-        error: '色键合成暂未实现（下一阶段开发）',
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{ results: TemplateResult[] }>('compose_batch_template_gifs', {
+        request: {
+          mode: job.mode,
+          templatePaths: job.templateFiles,
+          outputDirectory: job.outputDir,
+          startSeconds: job.startSeconds,
+          endSeconds: job.endSeconds,
+          fitMode: job.fitMode,
+          fps: 24,
+          width: undefined,
+          compressionPreference: job.compression.preference,
+          targetBytes: job.compression.targetBytes,
+          minWidth: job.compression.minWidth,
+          minFps: job.compression.minFps,
+          allowStrongCompression: job.compression.allowStrongCompression,
+          singleVideoPath: job.singleVideoPath ?? undefined,
+          videoSlots: job.videoSlots.filter(s => s.videoPath).map(s => ({ color: s.color, videoPath: s.videoPath })),
+        }
       });
+      setResults(result.results);
+      setMessage(`完成：${result.results.filter(r => r.status === 'success').length}/${result.results.length} 个模板成功`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTaskStatus('done');
     }
-
-    setResults(out);
-    setTaskStatus('done');
-    setMessage('色键合成功能仍在开发中。当前已预留完整接口和批任务结构。');
   }
 
   // ---- job.json ----
-  function generateJobJson() {
+  async function generateJobJson() {
     const json = JSON.stringify({
       mode: job.mode,
       templatesDir: job.templateDir,
@@ -163,6 +169,36 @@ export function BatchTemplateGif({ onReturn }: Props) {
     }, null, 2);
     setJobJsonText(json);
     setShowJobJson(true);
+
+    // Also save to job.outputDir/job.json if possible
+    if (desktop && job.outputDir) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('save_batch_job_json', { directory: job.outputDir, jobJson: json });
+      } catch {}
+    }
+  }
+
+  async function loadJobFromFolder() {
+    if (!apiRef.current || !job.templateDir) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const jsonStr: string = await invoke('load_batch_job_json', { path: `${job.templateDir}/job.json` });
+      const data = JSON.parse(jsonStr);
+      setJob(prev => ({
+        ...prev,
+        mode: data.mode || prev.mode,
+        singleVideoPath: data.singleVideoPath,
+        videoSlots: data.videoSlots || [],
+        startSeconds: data.startSeconds ?? 0,
+        endSeconds: data.endSeconds ?? 0,
+        fitMode: data.fitMode || 'cover',
+        compression: { ...prev.compression, ...data.compression },
+      }));
+      setMessage('已从 job.json 加载配置');
+    } catch {
+      // No job.json found, that's fine
+    }
   }
 
   // ---- init ----
