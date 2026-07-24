@@ -151,14 +151,15 @@ fn target_sidecar_name(tool: &str) -> OsString {
     }
 }
 
-pub fn sidecar_path(app: &AppHandle, tool: &str) -> Result<PathBuf, String> {
-    let path = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("无法定位应用资源目录：{error}"))?
-        .join(target_sidecar_name(tool));
+pub fn sidecar_path(_app: &AppHandle, tool: &str) -> Result<PathBuf, String> {
+    let exe_dir = std::env::current_exe()
+        .map_err(|error| format!("无法定位应用可执行文件：{error}"))?
+        .parent()
+        .ok_or_else(|| "无法确定应用可执行文件目录".to_string())?
+        .to_path_buf();
+    let path = exe_dir.join(target_sidecar_name(tool));
     if !path.is_file() {
-        return Err(format!("内置 {tool} 未找到"));
+        return Err(format!("内置 {tool} 未找到（路径：{}）", path.display()));
     }
     Ok(path)
 }
@@ -179,20 +180,52 @@ fn read_sidecar_version(path: &Path) -> Result<String, String> {
 }
 
 pub fn engine_status(app: AppHandle) -> MediaEngineStatus {
-    let ffmpeg = sidecar_path(&app, "ffmpeg").and_then(|path| read_sidecar_version(&path));
-    let ffprobe = sidecar_path(&app, "ffprobe").and_then(|path| read_sidecar_version(&path));
+    let ffmpeg_path = sidecar_path(&app, "ffmpeg");
+    let ffprobe_path = sidecar_path(&app, "ffprobe");
+    let ffmpeg = ffmpeg_path
+        .as_ref()
+        .ok()
+        .and_then(|path| read_sidecar_version(path).ok());
+    let ffprobe = ffprobe_path
+        .as_ref()
+        .ok()
+        .and_then(|path| read_sidecar_version(path).ok());
     match (&ffmpeg, &ffprobe) {
-        (Ok(ffmpeg_version), Ok(ffprobe_version)) => MediaEngineStatus {
+        (Some(ffmpeg_version), Some(ffprobe_version)) => MediaEngineStatus {
             ready: true,
             message: "已就绪：仅使用应用内置 FFmpeg / FFprobe。".into(),
             ffmpeg_version: Some(ffmpeg_version.clone()),
             ffprobe_version: Some(ffprobe_version.clone()),
         },
+        (None, _) => MediaEngineStatus {
+            ready: false,
+            message: format!(
+                "{}",
+                ffmpeg_path.err().unwrap_or_else(|| "FFmpeg 未找到".into())
+            ),
+            ffmpeg_version: None,
+            ffprobe_version: ffprobe.clone(),
+        },
+        (_, None) => MediaEngineStatus {
+            ready: false,
+            message: format!(
+                "{}",
+                ffprobe_path
+                    .err()
+                    .unwrap_or_else(|| "FFprobe 未找到".into())
+            ),
+            ffmpeg_version: ffmpeg.clone(),
+            ffprobe_version: None,
+        },
         _ => MediaEngineStatus {
             ready: false,
-            message: "转换引擎不可用：未找到或无法启动应用内置 sidecar。".into(),
-            ffmpeg_version: ffmpeg.ok(),
-            ffprobe_version: ffprobe.ok(),
+            message: format!(
+                "FFmpeg: {}；FFprobe: {}",
+                ffmpeg.as_deref().unwrap_or("启动失败"),
+                ffprobe.as_deref().unwrap_or("启动失败")
+            ),
+            ffmpeg_version: ffmpeg.clone(),
+            ffprobe_version: ffprobe.clone(),
         },
     }
 }
@@ -782,8 +815,9 @@ pub fn cancel_gif_media_task(
 mod tests {
     use super::{
         escape_filter_value, ffmpeg_args, is_static_image, next_available_path, output_path,
-        overlay_coordinates, parse_progress_line, tiled_coordinates, watermark_output_path,
-        GifMediaOptions, GifMediaTaskRequest, WatermarkMediaTaskRequest, WatermarkOptions,
+        overlay_coordinates, parse_progress_line, sidecar_path, target_sidecar_name,
+        tiled_coordinates, watermark_output_path, GifMediaOptions, GifMediaTaskRequest,
+        WatermarkMediaTaskRequest, WatermarkOptions,
     };
     use std::{
         ffi::OsString,
@@ -1300,5 +1334,27 @@ mod tests {
         assert!(run_fixture_conversion(&ffmpeg, &successful, &output).success());
         assert_eq!(fs::read(output).unwrap()[..6], *b"GIF89a");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn target_sidecar_name_uses_exe_extension_only_on_windows() {
+        if cfg!(target_os = "windows") {
+            assert_eq!(
+                target_sidecar_name("ffmpeg").to_string_lossy(),
+                "ffmpeg.exe"
+            );
+        } else {
+            assert_eq!(target_sidecar_name("ffmpeg").to_string_lossy(), "ffmpeg");
+        }
+    }
+
+    #[test]
+    fn sidecar_path_resolves_from_exe_directory() {
+        let exe = std::env::current_exe().unwrap();
+        let exe_dir = exe.parent().unwrap();
+        let expected = exe_dir.join(target_sidecar_name("ffmpeg"));
+        if expected.exists() {
+            assert!(expected.is_file());
+        }
     }
 }
