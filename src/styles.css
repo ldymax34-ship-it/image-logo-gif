@@ -1856,37 +1856,39 @@ textarea {
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  background: #1a1c20;
-  color: #e1e3e6;
+  background: var(--color-app);
+  color: var(--color-text);
+  font-family: var(--font-sans);
 }
 
 .embedded-tool-topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid #333840;
-  background: #1a1c20;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-app);
   flex-shrink: 0;
 }
 
 .embedded-tool-back {
-  font-size: 13px;
-  color: #5b8def;
+  font-size: var(--font-size-body);
+  color: var(--color-primary);
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
 }
 .embedded-tool-back:hover {
-  background: #24272d;
+  background: var(--color-panel);
 }
 
 .embedded-tool-title {
-  font-size: 15px;
+  font-size: var(--font-size-page);
   font-weight: 600;
-  color: #e1e3e6;
+  color: var(--color-text);
 }
 
 .embedded-tool-container {
@@ -1900,24 +1902,32 @@ textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: var(--space-8);
   text-align: center;
 }
 .embedded-tool-placeholder h2 {
-  font-size: 18px;
-  margin-bottom: 12px;
-  color: #e1e3e6;
+  font-size: var(--font-size-title);
+  margin-bottom: var(--space-3);
+  color: var(--color-text);
 }
 .embedded-tool-placeholder p {
-  color: #9298a0;
-  font-size: 14px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
   max-width: 480px;
-  line-height: 1.6;
+  line-height: var(--line-height-body);
 }
 .embedded-tool-placeholder ul {
   text-align: left;
-  color: #9298a0;
-  font-size: 13px;
-  margin-top: 8px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body);
+  margin-top: var(--space-2);
   line-height: 1.8;
+}
+.embedded-tool-badge {
+  font-size: 11px;
+  background: var(--color-primary);
+  color: #fff;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  margin-left: var(--space-2);
 }
