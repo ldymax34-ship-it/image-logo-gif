@@ -1743,6 +1743,120 @@ pub fn preview_template_frame(
     Ok(output_path)
 }
 
+/// Generate a single preview frame with watermark applied
+#[tauri::command]
+pub fn preview_watermark_frame(
+    app: AppHandle,
+    input_path: String,
+    output_path: String,
+    kind: String,
+    text: String,
+    image_path: Option<String>,
+    position: String,
+    size_percent: u32,
+    opacity: f64,
+    tiled: bool,
+    timestamp_seconds: Option<f64>,
+) -> Result<String, String> {
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用".into());
+    }
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let input = Path::new(&input_path);
+    let output = Path::new(&output_path);
+    if !input.is_file() { return Err("输入文件不存在".into()); }
+
+    let alpha = opacity.to_string();
+    let font_size = format!("h*{size_percent}/100");
+
+    let positions: Vec<(&str, &str)> = if tiled {
+        vec![
+            ("main_w*0.17-overlay_w/2", "main_h*0.17-overlay_h/2"),
+            ("main_w*0.50-overlay_w/2", "main_h*0.17-overlay_h/2"),
+            ("main_w*0.83-overlay_w/2", "main_h*0.17-overlay_h/2"),
+            ("main_w*0.17-overlay_w/2", "main_h*0.50-overlay_h/2"),
+            ("main_w*0.50-overlay_w/2", "main_h*0.50-overlay_h/2"),
+            ("main_w*0.83-overlay_w/2", "main_h*0.50-overlay_h/2"),
+            ("main_w*0.17-overlay_w/2", "main_h*0.83-overlay_h/2"),
+            ("main_w*0.50-overlay_w/2", "main_h*0.83-overlay_h/2"),
+            ("main_w*0.83-overlay_w/2", "main_h*0.83-overlay_h/2"),
+        ]
+    } else {
+        let (x, y) = match position.as_str() {
+            "top-left" => ("20", "20"),
+            "top-center" => ("(main_w-overlay_w)/2", "20"),
+            "top-right" => ("main_w-overlay_w-20", "20"),
+            "bottom-left" => ("20", "main_h-overlay_h-20"),
+            "bottom-center" => ("(main_w-overlay_w)/2", "main_h-overlay_h-20"),
+            _ => ("main_w-overlay_w-20", "main_h-overlay_h-20"),
+        };
+        vec![(x, y)]
+    };
+
+    let filter: String;
+    let mut cleanup_paths: Vec<PathBuf> = Vec::new();
+    let has_second_input: bool;
+
+    if kind == "text" {
+        let font_path = watermark_font_path(&app)?;
+        let text_file = watermark_text_file("preview", &text)?;
+        let font = escape_filter_value(&font_path.to_string_lossy());
+        let textfile = escape_filter_value(&text_file.to_string_lossy());
+        cleanup_paths.push(text_file.clone());
+
+        let mut parts = Vec::new();
+        let mut prev = "0:v".to_string();
+        for (i, (x, y)) in positions.iter().enumerate() {
+            let next = if i + 1 == positions.len() { "out".to_string() } else { format!("t{i}") };
+            parts.push(format!("[{prev}]drawtext=fontfile='{font}':textfile='{textfile}':fontcolor=white@{alpha}:fontsize={font_size}:x={x}:y={y}[{next}]"));
+            prev = next;
+        }
+        filter = parts.join(";");
+        has_second_input = false;
+    } else {
+        let img = image_path.as_deref().unwrap_or("");
+        filter = format!(
+            "[1:v]format=rgba,colorchannelmixer=aa={alpha}[wo];             [wo][0:v]scale2ref=w=main_w*{size_percent}/100:h=-1[wm][base];             [base][wm]overlay=x={}:y={}:format=auto[out]",
+            positions[0].0, positions[0].1
+        );
+        has_second_input = true;
+    }
+
+    let mut args = vec![
+        OsString::from("-hide_banner"), OsString::from("-nostdin"), OsString::from("-y"),
+        OsString::from("-i"), OsString::from(input_path),
+    ];
+    if has_second_input {
+        args.push(OsString::from("-i"));
+        args.push(OsString::from(image_path.unwrap_or_default()));
+    }
+    if let Some(ts) = timestamp_seconds {
+        args.push(OsString::from("-ss"));
+        args.push(OsString::from(ts.to_string()));
+    }
+    args.extend([
+        OsString::from("-vframes"), OsString::from("1"),
+        OsString::from("-filter_complex"), OsString::from(filter),
+        OsString::from("-map"), OsString::from("[out]"),
+        OsString::from(output_path.clone()),
+    ]);
+
+    let result = Command::new(&ffmpeg)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| format!("FFmpeg 水印预览失败：{e}"))?;
+
+    for p in cleanup_paths { let _ = fs::remove_file(p); }
+
+    if !result.status.success() {
+        return Err(format!("水印预览合成失败：{}", String::from_utf8_lossy(&result.stderr)));
+    }
+
+    Ok(output_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

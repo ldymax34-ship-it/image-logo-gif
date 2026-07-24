@@ -25,7 +25,7 @@ body {
 
 .watermark-tool {
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: 260px 1fr 300px;
   grid-template-rows: auto 1fr;
   height: 100vh;
   overflow: hidden;
@@ -147,3 +147,26 @@ body {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--wm-border); border-radius: 3px; }
+
+/* ---- Preview Area ---- */
+.watermark-tool-preview-area {
+  display: flex; flex-direction: column;
+  padding: 14px 18px; overflow: hidden; gap: 10px;
+}
+.watermark-tool-canvas { flex: 1; display: flex; align-items: center; justify-content: center; }
+.watermark-tool-preview-dual { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; max-width: 800px; }
+.watermark-tool-preview-original, .watermark-tool-preview-output {
+  display: flex; flex-direction: column; gap: 6px; align-items: center;
+}
+.watermark-tool-preview-label {
+  font-size: 11px; color: #9298a0; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.watermark-tool-preview-frame {
+  width: 100%; aspect-ratio: 16/10; background: #111; border-radius: 6px;
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+  border: 1px solid #333840;
+}
+.watermark-tool-preview-frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.watermark-tool-preview-placeholder {
+  font-size: 12px; color: #555;
+}

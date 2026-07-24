@@ -23,6 +23,10 @@ const tasks = ref<WatermarkTask[]>([]);
 const options = ref<WatermarkOptions>({ ...DEFAULT_WATERMARK_OPTIONS, outputDirectory: '' });
 const activeTaskId = ref<string>();
 const message = ref('');
+// ---- preview state ----
+const previewPath = ref('');
+const previewLoading = ref(false);
+let previewDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
 // ---- confirm dialogs ----
 const showSwitchConfirm = ref(false);
@@ -69,6 +73,41 @@ async function chooseWatermarkImage() {
 }
 
 // ---- task lifecycle ----
+// ---- preview ----
+function schedulePreview() {
+  if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(() => generatePreview(), 500);
+}
+
+async function generatePreview() {
+  if (!api.value || !desktop.value || tasks.value.length === 0) return;
+  const inputPath = tasks.value[0].inputPath;
+  const tempDir = `${options.value.outputDirectory || '/tmp'}/.preview`;
+
+  previewLoading.value = true;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const outPath = `${tempDir}/wm_preview_${Date.now()}.png`;
+    const result: string = await invoke('preview_watermark_frame', {
+      inputPath,
+      outputPath: outPath,
+      kind: options.value.kind,
+      text: options.value.text,
+      imagePath: options.value.imagePath ?? null,
+      position: options.value.position,
+      sizePercent: options.value.sizePercent,
+      opacity: options.value.opacity,
+      tiled: options.value.tiled,
+      timestampSeconds: null,
+    });
+    previewPath.value = `asset://localhost/${encodeURIComponent(result)}`;
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : '预览生成失败';
+  } finally {
+    previewLoading.value = false;
+  }
+}
+
 function handleTaskEvent(event: MediaTaskEvent) {
   tasks.value = applyWatermarkTaskEvent(tasks.value, event);
   if ((event.kind === 'completed' || event.kind === 'failed' || event.kind === 'cancelled') && event.taskId === activeTaskId.value) {
@@ -181,7 +220,13 @@ async function initDesktop() {
 }
 
 onMounted(() => initDesktop());
-onUnmounted(() => { unlistenTaskEvents?.(); unlistenDroppedPaths?.(); });
+
+// Auto-preview when parameters change
+import { watch } from 'vue';
+watch(() => [options.value.kind, options.value.text, options.value.imagePath, options.value.position, options.value.sizePercent, options.value.opacity, options.value.tiled, tasks.value], () => {
+  if (tasks.value.length > 0) schedulePreview();
+}, { deep: true });
+onUnmounted(() => { unlistenTaskEvents?.(); unlistenDroppedPaths?.(); if (previewDebounceTimer) clearTimeout(previewDebounceTimer); });
 </script>
 
 <template>
@@ -195,6 +240,32 @@ onUnmounted(() => { unlistenTaskEvents?.(); unlistenDroppedPaths?.(); });
     </header>
 
     <div class="watermark-tool-layout">
+      <!-- Center: Preview canvas -->
+      <section class="watermark-tool-preview-area" aria-label="水印预览">
+        <div class="watermark-tool-section-header">
+          <div><span class="watermark-tool-kicker">预览</span><h2>水印效果</h2></div>
+        </div>
+        <div class="watermark-tool-canvas">
+          <div class="watermark-tool-preview-dual">
+            <div class="watermark-tool-preview-original">
+              <span class="watermark-tool-preview-label">原图</span>
+              <div class="watermark-tool-preview-frame">
+                <img v-if="tasks.length && tasks[0].inputPath" :src="'asset://localhost/' + encodeURIComponent(tasks[0].inputPath)" alt="原图" />
+                <span v-else class="watermark-tool-preview-placeholder">导入文件后显示</span>
+              </div>
+            </div>
+            <div class="watermark-tool-preview-output">
+              <span class="watermark-tool-preview-label">水印后</span>
+              <div class="watermark-tool-preview-frame">
+                <img v-if="previewPath" :src="previewPath" alt="水印预览" />
+                <span v-else-if="previewLoading" class="watermark-tool-preview-placeholder">生成中…</span>
+                <span v-else class="watermark-tool-preview-placeholder">调整参数后自动预览</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Left: queue -->
       <section class="watermark-tool-queue" aria-labelledby="watermark-tool-queue-title">
         <div class="watermark-tool-section-header">
