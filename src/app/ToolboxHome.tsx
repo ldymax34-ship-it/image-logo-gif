@@ -24,7 +24,7 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenWat
     { id: 'settings', label: '设置', icon: Settings, action: onOpenSettings, available: true, experimental: false },
   ];
 
-  const Icon = ({ icon: IconComponent }: { icon: typeof Palette }) => <IconComponent size={22} strokeWidth={1.5} aria-hidden="true" />;
+  const Icon = ({ icon: IconComponent }: { icon: typeof Palette }) => <IconComponent size={28} strokeWidth={1.4} aria-hidden="true" />;
 
   return (
     <main className="toolbox-home" aria-label="品宣工具箱">

@@ -532,10 +532,10 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  width: 80px;
+  gap: 6px;
+  width: 96px;
   flex-shrink: 0;
-  padding: 8px 6px 6px;
+  padding: 12px 8px 10px;
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
@@ -601,7 +601,8 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 
 @media (max-width: 420px) {
   .toolbox-launcher { gap: 4px; }
-  .toolbox-tool-button { width: 68px; padding: 6px 4px 4px; }
+  .toolbox-tool-button { width: 72px; padding: 10px 4px 8px; }
+  .toolbox-tool-icon { width: 48px; height: 48px; }
 }
 
 /* ---- capsule return button ---- */
