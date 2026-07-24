@@ -58,6 +58,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const queueTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const unlistenRef = useRef<(() => void)|null>(null);
 
   const currentFile = tasks[0]?.path;
 
@@ -70,6 +71,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     return () => {
       mountedRef.current = false;
       if (queueTimerRef.current) clearTimeout(queueTimerRef.current);
+      unlistenRef.current?.();
       // disconnect observer
       roRef.current?.disconnect();
       roRef.current = null;
@@ -252,34 +254,39 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   }
 
   /* ── task ── */
-  async function startProcessing() {
-    if (!apiRef.current || !tasks.length) return;
-    const next = tasks.find(t => t.status === 'waiting');
-    if (!next) return;
-    setActiveTaskId(next.id);
-    setTasks(prev => prev.map(t => t.id===next.id ? {...t,status:'running',progress:0} : t));
+  async function startSingle(task: WatermarkTask) {
+    if (!apiRef.current || task.status !== 'waiting') return;
+    setActiveTaskId(task.id);
+    setTasks(prev => prev.map(t => t.id===task.id ? {...t,status:'running',progress:0} : t));
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const result: any = await invoke('start_watermark_media_task', { request: {
-        taskId:next.id, inputPath:next.path,
-        options: {
-          kind:state.kind, text:state.text, imagePath:state.imagePath??null,
+      await invoke('start_watermark_media_task', { request: {
+        taskId:task.id, inputPath:task.path,
+        options: { kind:state.kind, text:state.text, imagePath:state.imagePath??null,
           position:'bottom-right', sizePercent:Math.round(state.scale*10),
-          opacity:state.darkMode?0.06:state.opacity,
-          pattern:state.pattern, density:state.density, angle:Math.round(state.rotation),
-          darkMode:state.darkMode, outputDirectory:state.outputDirectory,
-        }
+          opacity:state.darkMode?0.06:state.opacity, pattern:state.pattern, density:state.density,
+          angle:Math.round(state.rotation), darkMode:state.darkMode, outputDirectory:state.outputDirectory }
       }});
-      if (!mountedRef.current) return;
-      setTasks(prev => prev.map(t => t.id===next.id ? {...t,status:'success',outputPath:result.outputPath} : t));
+      // Completion handled by gif-media://task event listener
     } catch(e:any) {
       if (!mountedRef.current) return;
-      setTasks(prev => prev.map(t => t.id===next.id ? {...t,status:'failed',error:e?.message??String(e)} : t));
+      setTasks(prev => prev.map(t => t.id===task.id ? {...t,status:'failed',error:e?.message??String(e)} : t));
+      setActiveTaskId(undefined);
     }
-    setActiveTaskId(undefined);
-    if (mountedRef.current) {
-      queueTimerRef.current = setTimeout(() => { if (mountedRef.current) startProcessing(); }, 300);
-    }
+  }
+
+  async function startProcessing() {
+    const next = tasks.find(t => t.status === 'waiting');
+    if (!next) return;
+    await startSingle(next);
+  }
+
+  async function cancelActive() {
+    if (!apiRef.current || !activeTaskId) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('cancel_gif_media_task', { taskId: activeTaskId });
+    } catch(e:any) { setMessage(e?.message??'取消失败'); }
   }
 
   function removeTask(id:string) {
@@ -292,6 +299,40 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   }
 
   /* ── init ── */
+  /* ── real task events ── */
+  useEffect(() => {
+    if (!desktop) return;
+    let cancelled = false;
+    (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const unlisten = await listen('gif-media://task', (event: any) => {
+        if (cancelled || !mountedRef.current) return;
+        const p = event.payload;
+        setTasks(prev => {
+          const updated = prev.map(t => {
+            if (t.id !== p.taskId) return t;
+            if (p.kind === 'progress') return { ...t, status: 'running' as WatermarkTask['status'], progress: Math.min(1, Math.max(0, p.progress)) };
+            if (p.kind === 'completed') return { ...t, status: 'success' as WatermarkTask['status'], progress: 1, outputPath: p.outputPath, outputBytes: p.outputBytes, error: undefined };
+            if (p.kind === 'cancelled') return { ...t, status: 'cancelled' as WatermarkTask['status'], error: undefined };
+            if (p.kind === 'failed') return { ...t, status: 'failed' as WatermarkTask['status'], error: p.message || '失败' };
+            return t;
+          });
+          const done = updated.find(t => t.id === p.taskId);
+          if (done && (done.status === 'success' || done.status === 'failed' || done.status === 'cancelled')) {
+            if (done.id === activeTaskId) setActiveTaskId(undefined);
+            setTimeout(() => {
+              if (!mountedRef.current) return;
+              setTasks(prev2 => { const n = prev2.find(t2 => t2.status === 'waiting'); if (n) startSingle(n); return prev2; });
+            }, 200);
+          }
+          return updated;
+        });
+      });
+      if (!cancelled) unlistenRef.current = unlisten;
+    })().catch(() => {});
+    return () => { cancelled = true; unlistenRef.current?.(); };
+  }, [desktop]);
+
   useEffect(() => { initFabric(); }, [initFabric]);
   useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
   useEffect(() => { renderWatermark(); }, [renderWatermark]);
@@ -354,7 +395,11 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
               {state.outputDirectory || '选择文件夹'}
             </button>
           </div>
+          {!activeTaskId ? (
           <button className="wm-btn wm-btn-run" disabled={!canProcess} onClick={startProcessing} aria-label="开始添加水印到所有素材">开始添加水印</button>
+        ) : (
+          <button className="wm-btn wm-btn-run" style={{background:"var(--color-danger)"}} onClick={cancelActive}>取消处理</button>
+        )}
           {message && <p className="wm-error">{message}</p>}
         </aside>
 
