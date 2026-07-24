@@ -21,6 +21,28 @@
         "resizable": true,
         "maximizable": true,
         "fullscreen": false
+      },
+      {
+        "title": "GIF 合成与压缩",
+        "label": "gif-tool",
+        "url": "/gif-tool.html",
+        "width": 1180,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "visible": false
+      },
+      {
+        "title": "水印与追溯",
+        "label": "watermark-tool",
+        "url": "/watermark-tool.html",
+        "width": 1180,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "visible": false
       }
     ],
     "security": {

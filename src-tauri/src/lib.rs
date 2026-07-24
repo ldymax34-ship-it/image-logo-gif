@@ -110,6 +110,7 @@ pub fn run() {
             media::preview_gif_frame,
             media::cancel_preview_task,
             media::cancel_gif_media_task,
+            media::compose_template_gifs,
             diagnostics::diagnostics_info,
             diagnostics::diagnostics_recent_errors,
             diagnostics::diagnostics_open_log_dir,

@@ -21,9 +21,23 @@ pub struct GifMediaOptions {
     pub end_seconds: Option<f64>,
     pub width: Option<u32>,
     pub fps: u32,
-    pub loop_playback: bool,
     pub preset: String,
     pub output_directory: String,
+    /// 目标文件体积（bytes），用于 8MB 自动收口
+    #[serde(default)]
+    pub target_bytes: Option<u64>,
+    /// 压缩偏好：balanced / clarity / smoothness
+    #[serde(default)]
+    pub compression_preference: Option<String>,
+    /// 最低输出宽度
+    #[serde(default)]
+    pub min_width: Option<u32>,
+    /// 最低帧率
+    #[serde(default)]
+    pub min_fps: Option<u32>,
+    /// 是否允许强压缩
+    #[serde(default)]
+    pub allow_strong_compression: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -668,7 +682,7 @@ fn ffmpeg_args(request: &GifMediaTaskRequest, output: &Path) -> Vec<OsString> {
         OsString::from("-filter_complex"),
         OsString::from(palette),
         OsString::from("-loop"),
-        OsString::from(if options.loop_playback { "0" } else { "-1" }),
+        OsString::from("0"), // always infinite loop
         OsString::from("-progress"),
         OsString::from("pipe:1"),
         OsString::from("-nostats"),
@@ -985,6 +999,94 @@ pub fn media_engine_status(app: AppHandle) -> MediaEngineStatus {
     engine_status(app)
 }
 
+/// Adjust GIF encoding parameters to reduce file size based on compression preference.
+fn reduce_gif_params(current_fps: u32, current_width: Option<u32>, step: u32, preference: &str) -> (u32, Option<u32>) {
+    match preference {
+        "clarity" => {
+            // Prefer keeping resolution; reduce colors first (fewer colors = smaller palette), then fps, then size
+            let fps = if current_fps > 12 && step <= 3 { current_fps - 4 } else { current_fps - 2 };
+            let width = if step > 3 { current_width.map(|w| (w as f64 * 0.75) as u32) } else { current_width };
+            (fps.max(6), width)
+        }
+        "smoothness" => {
+            // Prefer keeping fps; reduce colors first, then size, then fps
+            let fps = if step > 4 { (current_fps - 4).max(4) } else { current_fps };
+            let width = if step > 1 { current_width.map(|w| (w as f64 * 0.8) as u32) } else { current_width };
+            (fps.max(4), width)
+        }
+        _ => {
+            // balanced: adjust everything
+            let fps = if step % 2 == 0 { (current_fps - 2).max(8) } else { current_fps };
+            let width = if step % 2 == 1 { current_width.map(|w| (w as f64 * 0.85) as u32) } else { current_width };
+            (fps.max(8), width)
+        }
+    }
+}
+
+/// Run FFmpeg synchronously for a GIF encode, returning the output file size on success.
+fn run_gif_encode(ffmpeg: &Path, args: &[OsString]) -> Result<u64, (String, String)> {
+    let output = Command::new(ffmpeg)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| (format!("无法启动 FFmpeg：{e}"), String::new()))?;
+
+    if output.status.success() {
+        // Find output path from args (last arg)
+        let out_path = args.last().map(|s| Path::new(s));
+        if let Some(path) = out_path {
+            match fs::metadata(path) {
+                Ok(meta) => return Ok(meta.len()),
+                Err(_) => return Err(("FFmpeg 完成后未找到输出文件".into(), String::new())),
+            }
+        }
+        Err(("无法确定输出路径".into(), String::new()))
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        Err((ffmpeg_failure_message(&stderr), stderr))
+    }
+}
+
+fn build_gif_encode_args(request: &GifMediaTaskRequest, output: &Path, fps: u32, width: Option<u32>) -> Vec<OsString> {
+    let options = &request.options;
+    let mut args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-n"),
+    ];
+    if let Some(start) = options.start_seconds {
+        args.extend([OsString::from("-ss"), OsString::from(start.to_string())]);
+    }
+    args.extend([OsString::from("-i"), OsString::from(&request.input_path)]);
+    if let Some(end) = options.end_seconds {
+        let duration = end - options.start_seconds.unwrap_or(0.0);
+        args.extend([OsString::from("-t"), OsString::from(duration.to_string())]);
+    }
+
+    let mut filters = Vec::new();
+    if let Some(w) = width {
+        filters.push(format!("scale={w}:-2:flags=lanczos"));
+    }
+    filters.push(format!("fps={fps}"));
+
+    let filter = filters.join(",");
+    let dither = if options.preset == "fast" { "bayer:bayer_scale=5" } else { "sierra2_4a" };
+    let palette = format!("{filter},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}");
+
+    args.extend([
+        OsString::from("-filter_complex"),
+        OsString::from(palette),
+        OsString::from("-loop"),
+        OsString::from("0"), // always infinite loop
+        OsString::from("-progress"),
+        OsString::from("pipe:1"),
+        OsString::from("-nostats"),
+        output.as_os_str().to_owned(),
+    ]);
+    args
+}
+
 #[tauri::command]
 pub fn start_gif_media_task(
     app: AppHandle,
@@ -996,17 +1098,146 @@ pub fn start_gif_media_task(
     let duration = duration_seconds(&app, Path::new(&request.input_path))?;
     let started_at = request.options.start_seconds.unwrap_or(0.0);
     let end_at = request.options.end_seconds.unwrap_or(duration);
-    let relevant_duration = (end_at - started_at).max(0.001);
-    let args = ffmpeg_args(&request, &output);
-    spawn_media_task(
-        app,
-        registry,
-        request.task_id,
-        output.clone(),
-        args,
-        Some((started_at, relevant_duration)),
-        Vec::new(),
-    )
+    let _relevant_duration = (end_at - started_at).max(0.001);
+
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
+    }
+    if registry.children.lock().expect("media child registry poisoned").contains_key(&request.task_id) {
+        return Err("该媒体任务已在运行".into());
+    }
+
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let target_bytes = request.options.target_bytes.unwrap_or(0);
+    let compression_pref = request.options.compression_preference.as_deref().unwrap_or("balanced");
+    let min_width = request.options.min_width;
+    let min_fps = request.options.min_fps;
+    let allow_strong = request.options.allow_strong_compression.unwrap_or(false);
+
+    let app_for_task = app.clone();
+    let output_for_task = output.clone();
+    let task_id_for_thread = request.task_id.clone();
+    let initial_fps = request.options.fps;
+    let initial_width = request.options.width;
+    let compression_pref_owned = compression_pref.to_string();
+    let min_fps_val = min_fps.unwrap_or(4);
+    let min_width_val = min_width.unwrap_or(160);
+    let request_for_thread = request.clone();
+
+    // Progress reporting (simple for now: approximate progress by step)
+    let total_steps = if target_bytes > 0 { 8u32 } else { 1u32 };
+    let progress_step = 1.0 / total_steps as f64;
+
+    thread::spawn(move || {
+        let task_id = task_id_for_thread.clone();
+        let output_path_str = output_for_task.to_string_lossy().into_owned();
+
+        let mut current_fps = initial_fps;
+        let mut current_width = initial_width;
+        let max_retries: u32 = 8;
+
+        for step in 0..max_retries {
+            // Check cancellation
+            {
+                let registry = app_for_task.state::<MediaTaskRegistry>();
+                if registry.take_cancelled(&task_id) {
+                    remove_incomplete_output(&output_for_task);
+                    emit(&app_for_task, MediaTaskEvent::Cancelled { task_id: task_id.clone() });
+                    registry.remove(&task_id);
+                    return;
+                }
+            }
+
+            // Report progress
+            emit(&app_for_task, MediaTaskEvent::Progress {
+                task_id: task_id.clone(),
+                progress: (step as f64 * progress_step).min(0.99),
+            });
+
+            let args = build_gif_encode_args(&request_for_thread, &output_for_task, current_fps, current_width);
+
+            match run_gif_encode(&ffmpeg, &args) {
+                Ok(file_size) => {
+                    if target_bytes == 0 || file_size <= target_bytes {
+                        // Success: within target or no target
+                        emit(&app_for_task, MediaTaskEvent::Completed {
+                            task_id: task_id.clone(),
+                            output_path: output_path_str,
+                            output_bytes: file_size,
+                        });
+                        let registry = app_for_task.state::<MediaTaskRegistry>();
+                        registry.remove(&task_id);
+                        return;
+                    }
+
+                    // Too large, need retry
+                    if step + 1 >= max_retries {
+                        // Last retry exhausted
+                        if allow_strong {
+                            // One final try with very aggressive params
+                            current_fps = min_fps_val;
+                            current_width = Some(min_width_val);
+                            continue;
+                        }
+                        emit(&app_for_task, MediaTaskEvent::Failed {
+                            task_id: task_id.clone(),
+                            message: format!(
+                                "当前时长和画面复杂度无法在现有质量下压缩至 8MB。
+请缩短截取区间，或允许更强压缩。
+最后一次文件大小：{}",
+                                format_file_size(file_size)
+                            ),
+                        });
+                        let registry = app_for_task.state::<MediaTaskRegistry>();
+                        registry.remove(&task_id);
+                        return;
+                    }
+
+                    let (next_fps, next_width) = reduce_gif_params(current_fps, current_width, step + 1, &compression_pref_owned);
+                    current_fps = next_fps.max(min_fps_val);
+                    current_width = match (next_width, min_width) {
+                        (Some(w), Some(min_w)) => Some(w.max(min_w)),
+                        (Some(w), None) => Some(w),
+                        (None, _) => None,
+                    };
+                    // Continue to next iteration
+                }
+                Err((message, _stderr)) => {
+                    remove_incomplete_output(&output_for_task);
+                    emit(&app_for_task, MediaTaskEvent::Failed {
+                        task_id: task_id.clone(),
+                        message,
+                    });
+                    let registry = app_for_task.state::<MediaTaskRegistry>();
+                    registry.remove(&task_id);
+                    return;
+                }
+            }
+        }
+
+        // Should not reach here normally
+        remove_incomplete_output(&output_for_task);
+        emit(&app_for_task, MediaTaskEvent::Failed {
+            task_id: task_id.clone(),
+            message: "压缩重试次数已用尽".into(),
+        });
+        let registry = app_for_task.state::<MediaTaskRegistry>();
+        registry.remove(&task_id);
+    });
+
+
+    Ok(MediaTaskStarted {
+        task_id: request.task_id,
+        output_path: output.to_string_lossy().into_owned(),
+    })
+}
+
+fn format_file_size(bytes: u64) -> String {
+    if bytes < 1024 * 1024 {
+        format!("{} KB", bytes / 1024)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 #[tauri::command]
@@ -1044,6 +1275,71 @@ pub fn cancel_gif_media_task(
     registry.cancel(&task_id)
 }
 
+// ---- Chroma Key types (reserved for multi-language template) ----
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChromaKeyOptions {
+    pub mode: String, // "disabled" | "green" | "blue" | "custom"
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub similarity: Option<f64>,
+    #[serde(default)]
+    pub blend: Option<f64>,
+    #[serde(default)]
+    pub invert: Option<bool>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateGifComposeRequest {
+    pub task_id: String,
+    pub video_path: String,
+    pub template_paths: Vec<String>,
+    pub output_directory: String,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub fit_mode: String, // "cover" | "contain"
+    pub chroma_key: ChromaKeyOptions,
+    pub compression: TemplateCompressionOptions,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateCompressionOptions {
+    pub target_bytes: u64,
+    pub preference: String,
+    pub min_width: Option<u32>,
+    pub min_fps: Option<u32>,
+    pub allow_strong_compression: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateGifComposeResult {
+    pub task_id: String,
+    pub outputs: Vec<TemplateOutput>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateOutput {
+    pub template_path: String,
+    pub output_path: String,
+    pub output_bytes: u64,
+}
+
+/// 多语言模板 GIF 合成（暂未开放）
+#[tauri::command]
+pub fn compose_template_gifs(
+    _app: AppHandle,
+    _request: TemplateGifComposeRequest,
+) -> Result<TemplateGifComposeResult, String> {
+    Err("多语言模板 GIF 合成暂未开放。色键抠像与模板合成功能仍在开发中。".into())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1067,9 +1363,13 @@ mod tests {
                 end_seconds: Some(4.0),
                 width: Some(640),
                 fps: 12,
-                loop_playback: true,
                 preset: "fast".into(),
                 output_directory: "/tmp/输出 文件夹".into(),
+                target_bytes: None,
+                compression_preference: None,
+                min_width: None,
+                min_fps: None,
+                allow_strong_compression: None,
             },
         }
     }
@@ -1462,9 +1762,13 @@ mod tests {
             end_seconds: Some(1.5),
             width: Some(120),
             fps: 12,
-            loop_playback: true,
             preset: "fast".into(),
             output_directory: output_directory.to_string_lossy().into_owned(),
+            target_bytes: None,
+            compression_preference: None,
+            min_width: None,
+            min_fps: None,
+            allow_strong_compression: None,
         };
         let mp4_request = GifMediaTaskRequest {
             task_id: "mp4".into(),
@@ -1548,9 +1852,13 @@ mod tests {
             end_seconds: None,
             width: None,
             fps: 12,
-            loop_playback: true,
             preset: "high".into(),
             output_directory: directory.to_string_lossy().into_owned(),
+            target_bytes: None,
+            compression_preference: None,
+            min_width: None,
+            min_fps: None,
+            allow_strong_compression: None,
         };
         let failed = GifMediaTaskRequest {
             task_id: "failed".into(),

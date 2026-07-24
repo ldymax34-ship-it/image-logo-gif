@@ -7,6 +7,7 @@ export type MediaDesktopApi = {
   pickMediaFiles: () => Promise<string[]>;
   pickWatermarkFiles: () => Promise<string[]>;
   pickWatermarkImage: () => Promise<string | null>;
+  pickTemplateFiles: () => Promise<string[]>;
   pickOutputDirectory: () => Promise<string | null>;
   startGifTask: (request: { taskId: string; inputPath: string; options: GifMediaOptions }) => Promise<{ taskId: string; outputPath: string }>;
   startWatermarkTask: (request: { taskId: string; inputPath: string; options: WatermarkOptions }) => Promise<{ taskId: string; outputPath: string }>;
@@ -57,8 +58,17 @@ export async function loadMediaDesktopApi(): Promise<MediaDesktopApi> {
       });
       return typeof result === 'string' ? result : null;
     },
+    async pickTemplateFiles() {
+      const result = await open({
+        title: '选择模板图片（PNG）',
+        multiple: true,
+        filters: [{ name: '模板图片', extensions: ['png'] }]
+      });
+      if (!result) return [];
+      return Array.isArray(result) ? result : [result];
+    },
     async pickOutputDirectory() {
-      const result = await open({ title: '选择 GIF 输出文件夹', directory: true, multiple: false });
+      const result = await open({ title: '选择输出文件夹', directory: true, multiple: false });
       return typeof result === 'string' ? result : null;
     },
     startGifTask: (request) => invoke('start_gif_media_task', { request }),

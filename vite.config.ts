@@ -9,7 +9,9 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
-        gifMedia: fileURLToPath(new URL('./gif-media.html', import.meta.url))
+        gifMedia: fileURLToPath(new URL('./gif-media.html', import.meta.url)),
+        gifTool: fileURLToPath(new URL('./gif-tool.html', import.meta.url)),
+        watermarkTool: fileURLToPath(new URL('./watermark-tool.html', import.meta.url))
       }
     }
   },

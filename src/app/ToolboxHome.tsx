@@ -2,8 +2,8 @@ import { Palette, Film, ShieldCheck, Settings } from 'lucide-react';
 
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
-  onOpenGifMediaPreview: () => void;
-  onOpenWatermarkTrace: () => void;
+  onOpenGifTool: () => void;
+  onOpenWatermarkTool: () => void;
   onOpenSettings: () => void;
 };
 
@@ -16,11 +16,11 @@ type ToolEntry = {
   experimental: boolean;
 };
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenGifTool, onOpenWatermarkTool, onOpenSettings }: ToolboxHomeProps) {
   const tools: ToolEntry[] = [
     { id: 'logo-layout', label: 'Logo 与版式', icon: Palette, action: onOpenLogoLayout, available: true, experimental: false },
-    { id: 'gif-media', label: 'GIF / 媒体工具', icon: Film, action: onOpenGifMediaPreview, available: true, experimental: true },
-    { id: 'watermark-trace', label: '水印与追溯', icon: ShieldCheck, action: onOpenWatermarkTrace, available: true, experimental: true },
+    { id: 'gif-tool', label: 'GIF 合成与压缩', icon: Film, action: onOpenGifTool, available: true, experimental: true },
+    { id: 'watermark-tool', label: '水印与追溯', icon: ShieldCheck, action: onOpenWatermarkTool, available: true, experimental: true },
     { id: 'settings', label: '设置', icon: Settings, action: onOpenSettings, available: true, experimental: false },
   ];
 

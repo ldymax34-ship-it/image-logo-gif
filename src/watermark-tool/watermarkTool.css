@@ -1,0 +1,149 @@
+/* Watermark Tool - standalone styles */
+:root {
+  --wm-surface: #1a1c20;
+  --wm-surface-raised: #24272d;
+  --wm-border: #333840;
+  --wm-text: #e1e3e6;
+  --wm-text-secondary: #9298a0;
+  --wm-accent: #5b8def;
+  --wm-danger: #e0556a;
+  --wm-success: #4caf88;
+  --wm-radius: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--wm-surface);
+  color: var(--wm-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  height: 100vh;
+}
+
+.watermark-tool {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.watermark-tool-header {
+  grid-column: 1 / -1;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--wm-border);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px;
+}
+.watermark-tool-title-line { display: flex; align-items: center; gap: 8px; }
+.watermark-tool-title-line h1 { font-size: 16px; font-weight: 600; }
+.watermark-tool-badge { font-size: 11px; background: var(--wm-accent); color: #fff; padding: 1px 7px; border-radius: 10px; }
+.watermark-tool-header p { width: 100%; font-size: 12px; color: var(--wm-text-secondary); margin-top: 2px; }
+.watermark-tool-header-actions { display: flex; gap: 8px; align-items: center; }
+.watermark-tool-link { font-size: 12px; color: var(--wm-accent); background: none; border: none; cursor: pointer; padding: 4px 0; }
+.watermark-tool-link:hover { text-decoration: underline; }
+.watermark-tool-close { font-size: 12px; color: var(--wm-text-secondary); background: none; border: 1px solid var(--wm-border); border-radius: var(--wm-radius); cursor: pointer; padding: 4px 12px; }
+.watermark-tool-close:hover { background: var(--wm-surface-raised); }
+
+.watermark-tool-layout { display: contents; }
+
+/* sections */
+.watermark-tool-section-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.watermark-tool-kicker { font-size: 10px; text-transform: uppercase; color: var(--wm-accent); letter-spacing: 0.5px; font-weight: 600; }
+.watermark-tool-section-header h2 { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.watermark-tool-count { font-size: 12px; color: var(--wm-text-secondary); }
+
+/* queue */
+.watermark-tool-queue { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; overflow-y: auto; }
+.watermark-tool-dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 28px 16px;
+  border: 2px dashed var(--wm-border); border-radius: var(--wm-radius);
+  background: var(--wm-surface-raised); color: var(--wm-text-secondary);
+  cursor: pointer; font-size: 13px; transition: border-color 0.15s;
+}
+.watermark-tool-dropzone:hover:not(:disabled) { border-color: var(--wm-accent); }
+.watermark-tool-dropzone:disabled { opacity: 0.4; cursor: not-allowed; }
+.watermark-tool-dropzone strong { font-size: 14px; color: var(--wm-text); }
+.watermark-tool-task-list { display: flex; flex-direction: column; gap: 6px; }
+.watermark-tool-task {
+  display: flex; gap: 10px; align-items: center; padding: 8px 10px;
+  background: var(--wm-surface-raised); border-radius: var(--wm-radius);
+  border: 1px solid var(--wm-border);
+}
+.watermark-tool-task-main { flex: 1; min-width: 0; }
+.watermark-tool-task-main strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.watermark-tool-task-main > span { font-size: 11px; color: var(--wm-text-secondary); }
+.watermark-tool-output { font-size: 11px; color: var(--wm-success); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.watermark-tool-progress { height: 3px; background: var(--wm-border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.watermark-tool-progress span { display: block; height: 100%; background: var(--wm-accent); border-radius: 2px; transition: width 0.2s; }
+.watermark-tool-icon-button { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: none; border: none; color: var(--wm-text-secondary); cursor: pointer; font-size: 16px; border-radius: 4px; flex-shrink: 0; }
+.watermark-tool-icon-button:hover { background: var(--wm-border); color: var(--wm-text); }
+.watermark-tool-empty-state { text-align: center; padding: 24px; color: var(--wm-text-secondary); }
+.watermark-tool-empty-state strong { display: block; margin-bottom: 4px; }
+.watermark-tool-status-legend { display: flex; gap: 6px; font-size: 11px; color: var(--wm-text-secondary); }
+
+/* settings */
+.watermark-tool-settings {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px 18px; border-left: 1px solid var(--wm-border);
+  overflow-y: auto;
+}
+.watermark-tool-engine-status { font-size: 11px; color: var(--wm-text-secondary); }
+.watermark-tool-form { display: flex; flex-direction: column; gap: 8px; }
+.watermark-tool-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--wm-text-secondary); }
+.watermark-tool-form input, .watermark-tool-form select {
+  height: 30px; background: var(--wm-surface-raised); border: 1px solid var(--wm-border);
+  border-radius: 4px; color: var(--wm-text); font-size: 13px; padding: 0 8px;
+}
+.watermark-tool-form input:disabled, .watermark-tool-form select:disabled { opacity: 0.4; }
+.watermark-tool-form input[type="number"] { width: 100%; }
+.watermark-tool-directory {
+  height: 30px; background: var(--wm-surface-raised); border: 1px solid var(--wm-border);
+  border-radius: 4px; color: var(--wm-text-secondary); font-size: 12px; cursor: pointer;
+  padding: 0 10px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  width: 100%;
+}
+.watermark-tool-directory:hover:not(:disabled) { border-color: var(--wm-accent); }
+.watermark-tool-engine-note { padding: 8px 10px; background: var(--wm-surface-raised); border-radius: var(--wm-radius); font-size: 12px; }
+.watermark-tool-engine-note.ready { border-left: 3px solid var(--wm-success); }
+.watermark-tool-engine-note:not(.ready) { border-left: 3px solid var(--wm-danger); }
+.watermark-tool-engine-note strong { display: block; margin-bottom: 2px; }
+.watermark-tool-engine-note span { color: var(--wm-text-secondary); }
+.watermark-tool-engine-message { font-size: 11px; color: var(--wm-text-secondary); }
+.watermark-tool-start, .watermark-tool-cancel, .watermark-tool-clean {
+  width: 100%; height: 34px; border: none; border-radius: var(--wm-radius);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.watermark-tool-start { background: var(--wm-accent); color: #fff; }
+.watermark-tool-start:disabled { opacity: 0.4; cursor: not-allowed; }
+.watermark-tool-cancel { background: var(--wm-danger); color: #fff; }
+.watermark-tool-clean { background: var(--wm-surface-raised); color: var(--wm-text-secondary); border: 1px solid var(--wm-border); }
+
+/* confirm dialog */
+.watermark-tool-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.watermark-tool-confirm-dialog {
+  background: var(--wm-surface-raised); border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius); padding: 20px 24px; max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.watermark-tool-confirm-dialog p { font-size: 13px; margin-bottom: 8px; line-height: 1.6; }
+.watermark-tool-confirm-actions { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
+.watermark-tool-confirm-cancel {
+  padding: 6px 16px; background: var(--wm-surface); border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius); color: var(--wm-text); font-size: 13px; cursor: pointer;
+}
+.watermark-tool-confirm-proceed {
+  padding: 6px 16px; background: var(--wm-accent); border: none;
+  border-radius: var(--wm-radius); color: #fff; font-size: 13px; cursor: pointer;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--wm-border); border-radius: 3px; }

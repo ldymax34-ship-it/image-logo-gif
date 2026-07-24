@@ -1,9 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "gif-media-preview",
-  "description": "minimal permissions for the isolated GIF media task window",
+  "description": "permissions for GIF tool, watermark tool, and legacy media preview windows",
   "windows": [
-    "gif-media-preview"
+    "gif-media-preview",
+    "gif-tool",
+    "watermark-tool"
   ],
   "permissions": [
     "core:default",

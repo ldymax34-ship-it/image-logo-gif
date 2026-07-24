@@ -52,11 +52,15 @@ function AppContent() {
   const handleCustomWorkbenchDirty = useCallback((customWorkbenchDirty: boolean) => {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
-  const openGifMediaTool = useCallback(() => {
+
+  // Open GIF tool (separate window)
+  const openGifTool = useCallback(() => {
     setAppPreferences((previous) => previous.lastTool === 'gif-media' ? previous : { ...previous, lastTool: 'gif-media' });
-    void openGifMediaPreview();
+    void openGifMediaPreview({ mode: 'gif' });
   }, [setAppPreferences]);
-  const openWatermarkTrace = useCallback(() => {
+
+  // Open watermark tool (separate window)
+  const openWatermarkTool = useCallback(() => {
     setAppPreferences((previous) => previous.lastTool === 'watermark-trace' ? previous : { ...previous, lastTool: 'watermark-trace' });
     void openGifMediaPreview({ mode: 'watermark' });
   }, [setAppPreferences]);
@@ -76,7 +80,7 @@ function AppContent() {
 
   return <>
     <UncleanExitNotice />
-    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifMediaPreview={openGifMediaTool} onOpenWatermarkTrace={openWatermarkTrace} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
+    {activeTool === 'toolbox' ? <ToolboxHome onOpenLogoLayout={() => setActiveTool('logo-layout')} onOpenGifTool={openGifTool} onOpenWatermarkTool={openWatermarkTool} onOpenSettings={() => setApplicationSettingsOpen(true)} /> : null}
     <div hidden={activeTool !== 'logo-layout'}>
       <AppShell
         activeModule={activeModule}
