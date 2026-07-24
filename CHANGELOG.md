@@ -1,5 +1,25 @@
 # 更新日志
 
+## 2026-07-24｜工具箱视觉收尾修复
+
+### 修复
+- 修复工具箱按钮因 grid `1fr` 行被拉伸（实际高约 503px），改为 `grid-template-rows: auto auto` 并固定按钮宽 80px。
+- 修复 `.capsule-back-button` 被父级 flex 拉伸失去彩色胶囊效果，显式设 `height: 30px`、`line-height: 1`、`flex-shrink: 0`，追加 `.app-shell-header > .capsule-back-button` 隔离规则。
+- 重写 ToolboxHome 测试：补充紧凑布局类名回归，callback 逐个验证。
+
+## 2026-07-24｜Stage 6C｜首版可见水印
+
+### 主要改动
+- 同一媒体窗口新增 GIF/水印模式切换：文字水印（中文/英文，内置思源黑体 Regular SIL OFL 1.1）和图片/Logo 水印。
+- 复用 Stage 6B 的同一 Vue 队列、Rust 任务引擎与唯一 FFmpeg/FFprobe sidecar。`drawtext` 通过 `textfile` 安全传递中文。
+- Rust 新增 7 项测试（总 22 passed）；macOS 实机通过静态 PNG、GIF 文字与图片水印。
+
+### 未完成
+- Windows x64 未实机。隐形指纹不做。
+
+
+# 更新日志
+
 ## 2026-07-23｜Stage 6B｜真实 GIF / 媒体处理
 
 ### 主要改动
