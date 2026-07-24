@@ -1675,6 +1675,74 @@ pub fn compose_batch_template_gifs(
 }
 
 
+/// Generate a single composite preview frame from template + video
+#[tauri::command]
+pub fn preview_template_frame(
+    app: AppHandle,
+    template_path: String,
+    video_path: String,
+    output_path: String,
+    timestamp_seconds: f64,
+    color_hex: String,
+    fit_mode: String,
+) -> Result<String, String> {
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用".into());
+    }
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let template = Path::new(&template_path);
+    let video = Path::new(&video_path);
+    let output = Path::new(&output_path);
+
+    if !template.is_file() { return Err("模板文件不存在".into()); }
+    if !video.is_file() { return Err("视频文件不存在".into()); }
+
+    // Probe template size
+    let probe_out = Command::new(&ffmpeg)
+        .args(["-hide_banner", "-v", "error", "-show_entries", "stream=width,height", "-of", "json"])
+        .arg(template)
+        .output()
+        .map_err(|e| format!("无法读取模板：{e}"))?;
+    let json: serde_json::Value = serde_json::from_slice(&probe_out.stdout)
+        .map_err(|_| "无法解析模板信息".to_string())?;
+    let tw = json["streams"][0]["width"].as_u64().unwrap_or(1920) as u32;
+    let th = json["streams"][0]["height"].as_u64().unwrap_or(1080) as u32;
+
+    let hex = color_hex.trim_start_matches('#');
+    let fit = if fit_mode == "contain" {
+        format!("scale={tw}:{th}:force_original_aspect_ratio=decrease")
+    } else {
+        format!("scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th}")
+    };
+
+    let filter = format!(
+        "[0:v]colorkey=0x{hex}:0.1:0.02[tk];         [tk]split[tm][ta];         [ta]alphaextract[mask];         [1:v]{fit}[vs];         [vs][mask]alphamerge[vid];         [tm][vid]overlay[out]"
+    );
+
+    let args = [
+        OsString::from("-hide_banner"), OsString::from("-nostdin"), OsString::from("-y"),
+        OsString::from("-i"), OsString::from(template_path.clone()),
+        OsString::from("-ss"), OsString::from(timestamp_seconds.to_string()),
+        OsString::from("-i"), OsString::from(video_path.clone()),
+        OsString::from("-vframes"), OsString::from("1"),
+        OsString::from("-filter_complex"), OsString::from(filter),
+        OsString::from(output_path.clone()),
+    ];
+
+    let result = Command::new(&ffmpeg)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| format!("FFmpeg 预览生成失败：{e}"))?;
+
+    if !result.status.success() {
+        return Err(format!("预览合成失败：{}", String::from_utf8_lossy(&result.stderr)));
+    }
+
+    Ok(output_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

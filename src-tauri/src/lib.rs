@@ -114,6 +114,7 @@ pub fn run() {
             media::compose_batch_template_gifs,
             media::save_batch_job_json,
             media::load_batch_job_json,
+            media::preview_template_frame,
             diagnostics::diagnostics_info,
             diagnostics::diagnostics_recent_errors,
             diagnostics::diagnostics_open_log_dir,
