@@ -53,6 +53,8 @@ export function BatchTemplateGif({ onReturn }: Props) {
   const [showJobJson, setShowJobJson] = useState(false);
 
   const apiRef = useRef<any>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   // ---- helpers ----
@@ -150,10 +152,12 @@ export function BatchTemplateGif({ onReturn }: Props) {
         colorHex: activeColor,
         fitMode: job.fitMode,
       });
+      if (!mountedRef.current) return;
       setPreviewPath(`asset://localhost/${encodeURIComponent(result)}`);
       setHasPreviewed(true);
     } catch (e) {
       setPreviewLoading(false);
+      if (!mountedRef.current) return;
       setMessage(e instanceof Error ? e.message : '预览生成失败');
       return;
     } finally {
@@ -207,14 +211,17 @@ export function BatchTemplateGif({ onReturn }: Props) {
           videoSlots: job.videoSlots.filter(s => s.videoPath).map(s => ({ color: s.color, videoPath: s.videoPath })),
         }
       });
+      if (!mountedRef.current) return;
       setResults(result.results);
       const ok = result.results.filter(r => r.status === 'success').length;
       const total = result.results.length;
+      if (!mountedRef.current) return;
       setMessage(`完成：${ok}/${total} 个模板成功`);
     } catch (e) {
+      if (!mountedRef.current) return;
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
-      setTaskStatus('done');
+      if (mountedRef.current) setTaskStatus('done');
     }
   }
 

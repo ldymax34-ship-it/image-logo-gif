@@ -57,6 +57,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const apiRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const roRef = useRef<ResizeObserver | null>(null);
+  const queueTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const currentFile = tasks[0]?.path;
 
@@ -68,6 +69,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (queueTimerRef.current) clearTimeout(queueTimerRef.current);
       // disconnect observer
       roRef.current?.disconnect();
       roRef.current = null;
@@ -276,7 +278,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     }
     setActiveTaskId(undefined);
     if (mountedRef.current) {
-      setTimeout(() => startProcessing(), 300);
+      queueTimerRef.current = setTimeout(() => { if (mountedRef.current) startProcessing(); }, 300);
     }
   }
 
