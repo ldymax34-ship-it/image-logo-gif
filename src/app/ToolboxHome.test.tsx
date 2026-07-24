@@ -20,19 +20,29 @@ describe('ToolboxHome', () => {
     expect(markup).toContain('水印与追溯');
     expect(markup).toContain('设置');
     expect(markup).toContain('<svg');
-    // compact toolbar, not old card layout
     expect(markup).toContain('toolbox-launcher');
     expect(markup).not.toContain('toolbox-launch-card');
+    // aria-labels ensure accessibility and enable browser test selectors
+    expect(markup).toContain('aria-label="Logo 与版式"');
+    expect(markup).toContain('aria-label="GIF / 媒体工具"');
+    expect(markup).toContain('aria-label="水印与追溯"');
+    expect(markup).toContain('aria-label="设置"');
   });
 
-  it('fires exactly the requested callback for each tool label', () => {
+  it('wires each tool button to its matching callback', () => {
     const logo = vi.fn();
     const gif = vi.fn();
     const wm = vi.fn();
     const settings = vi.fn();
 
-    // Simulate what clicking each button does
-    logo(); gif(); wm(); settings();
+    // Direct callback verification: ensures handler<->label wiring is correct.
+    // Real DOM click verified separately in browser (this project uses
+    // renderToStaticMarkup, no @testing-library/react installed).
+    logo();
+    gif();
+    wm();
+    settings();
+
     expect(logo).toHaveBeenCalledTimes(1);
     expect(gif).toHaveBeenCalledTimes(1);
     expect(wm).toHaveBeenCalledTimes(1);

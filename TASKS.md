@@ -15,7 +15,7 @@
 - [x] Stage 6B-UI Checkpoint：工具箱 GIF 实验预览、独立 Vue 多页面入口与当前 Tauri app singleton 内部窗口已完成；未接入 sidecar、真实队列、进度、取消、命令或转码。浏览器在 1440×900、1100×720 下确认无横向溢出、入口/返回可达、开始处理禁用；等待用户视觉确认后停止。
 - [x] Stage 6B：真实 MP4/MOV → GIF 闭环。已提交 `5139ac1`。
 - [x] Stage 6C：首版可见水印已完成。文字/图片水印、单个/平铺、中文/英文、不覆盖原文件、取消/失败清理；macOS 实机通过静态 PNG、GIF 文字与图片水印，Rust 新增 7 项定向测试（总 22 tests）。`git diff --check`、`npm run verify:core`、`npm test -- --run`（271 tests / 40 files）、`npm run build`、`cargo fmt --check`、`cargo check`、`cargo test`（22 passed）均通过。
-- [ ] 工具箱入口视觉优化：紧凑工具启动器（图标+名称）、返回胶囊按钮；Stage 6C 提交后单独实施。
+- [x] 工具箱视觉修复（cf069e9+）：修复按钮拉伸、胶囊 token 引用、CSS 规则嵌套、图标居中与测试覆盖。`git diff --check`、`npm run verify:core`、`npm test -- --run`（271）、`npm run build` 均通过；无 Rust 变更。
 
 ## 暂不处理
 
