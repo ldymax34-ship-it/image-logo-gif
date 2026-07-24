@@ -86,7 +86,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     fabricRef.current = fc;
     const ro = new ResizeObserver(() => {
       if (!containerRef.current || !fabricRef.current) return;
-      fabricRef.current.setDimensions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight });
+      try { fabricRef.current.setDimensions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }); } catch {}
       fabricRef.current.renderAll();
     });
     ro.observe(containerRef.current!);
@@ -129,7 +129,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       const img = await FabricImage.fromURL(url);
       if (!img) return;
       bgImageRef.current = img;
-      fc.backgroundImage = img;
+      try { fc.backgroundImage = img; } catch {}
       fc.renderAll();
       setPreviewError('');
     } catch (e: any) { setPreviewError(`无法加载图片: ${e?.message || '未知错误'}`); }
@@ -290,13 +290,14 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     // cleanup Fabric.js resources
     const fc = fabricRef.current;
     if (fc) {
-      wmObjRef.current && fc.remove(wmObjRef.current);
-      fc.off('object:modified'); fc.off('object:moving');
-      fc.off('object:scaling'); fc.off('object:rotating');
-      (fc as any).__ro?.disconnect();
-      fc.dispose();
-      fabricRef.current = null;
+      try { wmObjRef.current && fc.remove(wmObjRef.current); } catch {}
+
+      try { fc.off('object:modified'); fc.off('object:moving'); } catch {}
+      try { fc.off('object:scaling'); fc.off('object:rotating'); } catch {}
+      try { (fc as any).__ro?.disconnect(); } catch {}
+      try { fc.dispose(); } catch {}
     }
+    fabricRef.current = null;
   }; }, [initFabric]);
   useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
   useEffect(() => { renderWatermark(); }, [renderWatermark]);
