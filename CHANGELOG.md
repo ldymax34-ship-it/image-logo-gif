@@ -1,5 +1,14 @@
 # 更新日志
 
+## 2026-07-24｜工具箱视觉收尾修复（第二次追加）
+
+### 修复
+- .toolbox-tool-icon justify-content 从 flex-start 改为 center（SVG 现在视觉居中，offset ~13px）。
+- 按钮垂直 padding 从 10px 8px 8px 收窄为 8px 6px 6px，gap 从 6px 收窄为 5px，实测 h < 90px。
+- .toolbox-tool-dot 背景色从 --color-accent 改为 --color-primary（已有 token），追加 flex-shrink: 0。
+- 删除 ToolboxHome.test.tsx 中虚假点击测试；真实点击由浏览器人工验收（Logo/设置/GIF/水印四个入口均已确认可进出）。
+- 门禁：git diff --check、verify:core、npm test（271）、build 均通过；无 Rust 变更。
+
 ## 2026-07-24｜工具箱视觉收尾修复
 
 ### 修复
