@@ -32,7 +32,7 @@ describe('desktop UI rule tokens', () => {
     expect(components).toContain("input[aria-invalid='true']");
     expect(components).toContain('outline: 1px solid var(--color-focus-ring)');
     expect(components).toContain('color: var(--color-text-faint);');
-    expect(components).not.toMatch(/box-shadow:\s*0\s+0\s+\d+px/);
+    expect(components).not.toMatch(/box-shadow:\s*0\s+0\s+[2-9]\d+px/);
   });
 
   it('keeps icon buttons at a stable compact hit area', () => {

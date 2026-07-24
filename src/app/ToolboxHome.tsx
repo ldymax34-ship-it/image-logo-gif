@@ -1,3 +1,5 @@
+import { Palette, Film, ShieldCheck, Settings } from 'lucide-react';
+
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
   onOpenGifMediaPreview: () => void;
@@ -5,72 +7,47 @@ type ToolboxHomeProps = {
   onOpenSettings: () => void;
 };
 
-const TOOLS = [
-  {
-    id: 'logo-layout',
-    label: 'Logo 与版式',
-    detail: '设媒工作台与自定义构图',
-    action: '进入工作台',
-    available: true,
-    experimental: false
-  },
-  {
-    id: 'gif-media',
-    label: 'GIF / 媒体工具',
-    detail: 'MP4 / MOV 转 GIF，本地队列处理',
-    action: '打开 GIF 工具',
-    available: true,
-    experimental: true
-  },
-  {
-    id: 'watermark-trace',
-    label: '水印与追溯',
-    detail: '首版可见水印；隐形指纹暂未开放',
-    action: '打开水印工具',
-    available: true,
-    experimental: true
-  }
-] as const;
-
-export function getToolboxLaunchAction(toolId: typeof TOOLS[number]['id'], handlers: Pick<ToolboxHomeProps, 'onOpenLogoLayout' | 'onOpenGifMediaPreview' | 'onOpenWatermarkTrace'>): (() => void) | undefined {
-  if (toolId === 'logo-layout') return handlers.onOpenLogoLayout;
-  if (toolId === 'gif-media') return handlers.onOpenGifMediaPreview;
-  if (toolId === 'watermark-trace') return handlers.onOpenWatermarkTrace;
-  return undefined;
-}
+type ToolEntry = {
+  id: string;
+  label: string;
+  icon: typeof Palette;
+  action: () => void;
+  available: boolean;
+  experimental: boolean;
+};
 
 export function ToolboxHome({ onOpenLogoLayout, onOpenGifMediaPreview, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
+  const tools: ToolEntry[] = [
+    { id: 'logo-layout', label: 'Logo 与版式', icon: Palette, action: onOpenLogoLayout, available: true, experimental: false },
+    { id: 'gif-media', label: 'GIF / 媒体工具', icon: Film, action: onOpenGifMediaPreview, available: true, experimental: true },
+    { id: 'watermark-trace', label: '水印与追溯', icon: ShieldCheck, action: onOpenWatermarkTrace, available: true, experimental: true },
+    { id: 'settings', label: '设置', icon: Settings, action: onOpenSettings, available: true, experimental: false },
+  ];
+
+  const Icon = ({ icon: IconComponent }: { icon: typeof Palette }) => <IconComponent size={22} strokeWidth={1.5} aria-hidden="true" />;
+
   return (
     <main className="toolbox-home" aria-label="品宣工具箱">
       <header className="toolbox-home-header">
-        <div>
-          <h1>品宣工具箱</h1>
-          <p>选择要使用的本地工具。</p>
-        </div>
+        <h1>品宣工具箱</h1>
+        <p>选择要使用的本地工具</p>
       </header>
-      <section className="toolbox-tool-grid" aria-label="工具入口">
-        {TOOLS.map((tool) => (
+      <nav className="toolbox-launcher" aria-label="工具入口">
+        {tools.map((tool) => (
           <button
             key={tool.id}
             type="button"
-            className={`toolbox-launch-card ${tool.available ? 'is-available' : 'is-unavailable'}`}
+            className={`toolbox-tool-button ${tool.available ? '' : 'is-unavailable'}`}
             disabled={!tool.available}
-            onClick={getToolboxLaunchAction(tool.id, { onOpenLogoLayout, onOpenGifMediaPreview, onOpenWatermarkTrace })}
-            aria-label={tool.available ? `${tool.label}，${tool.action}` : `${tool.label}，${tool.action}`}
+            onClick={tool.action}
+            aria-label={tool.label}
           >
-            <span className="toolbox-launch-status">{tool.experimental ? '内部实验' : tool.available ? '可用' : '暂不可用'}</span>
-            <strong>{tool.label}</strong>
-            <small>{tool.detail}</small>
-            <span className="toolbox-launch-action">{tool.action}</span>
+            <span className="toolbox-tool-icon"><Icon icon={tool.icon} /></span>
+            <span className="toolbox-tool-name">{tool.label}</span>
+            {tool.experimental && <span className="toolbox-tool-dot" aria-hidden="true" />}
           </button>
         ))}
-        <button type="button" className="toolbox-launch-card is-available" onClick={onOpenSettings} aria-label="设置，打开应用设置">
-          <span className="toolbox-launch-status">可用</span>
-          <strong>设置</strong>
-          <small>查看应用级偏好与当前版本信息</small>
-          <span className="toolbox-launch-action">打开设置</span>
-        </button>
-      </section>
+      </nav>
     </main>
   );
 }

@@ -20,7 +20,7 @@ export function AppShell({
   return (
     <main className="app-shell">
       <div className="app-shell-header">
-        <button type="button" className="return-toolbox-button" onClick={onReturnToToolbox} title="返回品宣工具箱">返回工具箱</button>
+        <button type="button" className="capsule-back-button" onClick={onReturnToToolbox} title="返回品宣工具箱">返回工具箱</button>
         {header}
       </div>
       <div className="app-module-shell">
