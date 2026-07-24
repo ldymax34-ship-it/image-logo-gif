@@ -10,6 +10,8 @@ import { GlobalDialogs } from './GlobalDialogs';
 import { ToolboxHome } from './ToolboxHome';
 import { VueToolWrapper } from './VueToolWrapper';
 import { BatchTemplateGif } from '../batch-template-gif/BatchTemplateGif';
+import { WatermarkWorkbench } from '../watermark-workbench/WatermarkWorkbench';
+import '../watermark-workbench/watermarkWorkbench.css';
 import '../batch-template-gif/batchTemplateGif.css';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
 import { UncleanExitNotice } from '../diagnostics';
@@ -126,9 +128,9 @@ function AppContent() {
       <BatchTemplateGif onReturn={requestToolbox} />
     )}
 
-    {/* Watermark Trace (embedded Vue) */}
+    {/* Watermark Trace */}
     {activeTool === 'watermark-trace' && (
-      <VueToolWrapper mountKey="watermark-trace" onReturn={requestToolbox} />
+      <WatermarkWorkbench onReturn={requestToolbox} />
     )}
 
     <GlobalDialogs />

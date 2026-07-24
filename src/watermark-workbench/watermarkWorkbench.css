@@ -1,0 +1,67 @@
+/* Watermark Workbench - matching 设媒 patterns */
+.wm-layout { display: grid; grid-template-columns: 220px 1fr 280px; flex:1; overflow:hidden; }
+
+/* ── Left panel ── */
+.wm-left { padding:10px 12px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; border-right:1px solid #333840; }
+.wm-section { display:flex; flex-direction:column; gap:6px; }
+.wm-section-head h3 { font-size:12px; font-weight:600; color:#9298a0; text-transform:uppercase; letter-spacing:0.5px; margin:0; }
+.wm-label { font-size:11px; color:#9298a0; }
+.wm-hint { font-size:11px; color:#555; margin:4px 0; }
+.wm-error { font-size:11px; color:#e0556a; word-break:break-all; }
+
+.wm-btn { height:30px; border:none; border-radius:5px; font-size:12px; cursor:pointer; font-weight:500; }
+.wm-btn:disabled { opacity:0.4; cursor:not-allowed; }
+.wm-btn-upload { background:#24272d; border:1px dashed #444; color:#9298a0; width:100%; }
+.wm-btn-upload:hover:not(:disabled) { border-color:#5b8def; color:#e1e3e6; }
+.wm-btn-pick { background:#24272d; border:1px solid #333840; color:#9298a0; text-align:left; padding:0 10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100%; }
+.wm-btn-pick:hover:not(:disabled) { border-color:#5b8def; }
+.wm-btn-run { background:#5b8def; color:#fff; width:100%; height:34px; font-size:13px; }
+.wm-btn-sm { font-size:11px; color:#5b8def; background:none; border:1px solid #333840; border-radius:4px; cursor:pointer; padding:2px 8px; }
+
+.wm-file-list { display:flex; flex-direction:column; gap:4px; max-height:200px; overflow-y:auto; }
+.wm-file { display:flex; align-items:center; gap:6px; padding:5px 8px; background:#24272d; border-radius:4px; font-size:12px; border:1px solid transparent; }
+.wm-file.success { border-color:#4caf88; }
+.wm-file.failed { border-color:#e0556a; }
+.wm-file-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e1e3e6; }
+.wm-file-size { font-size:10px; color:#4caf88; }
+.wm-file-err { font-size:10px; color:#e0556a; max-width:80px; overflow:hidden; text-overflow:ellipsis; }
+.wm-file-remove { background:none; border:none; color:#e0556a; cursor:pointer; font-size:14px; padding:0 2px; }
+
+/* ── Center canvas ── */
+.wm-canvas-wrap {
+  position:relative; display:flex; align-items:center; justify-content:center;
+  background:#111; overflow:hidden; cursor:crosshair;
+}
+.wm-empty-canvas { position:absolute; color:#555; font-size:14px; z-index:1; pointer-events:none; }
+.wm-canvas-hint { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); font-size:11px; color:#555; pointer-events:none; }
+.wm-preview-error { position:absolute; top:8px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; background:rgba(224,85,106,0.15); border:1px solid #e0556a; border-radius:6px; padding:6px 14px; font-size:12px; color:#e0556a; z-index:2; }
+.wm-preview-error button { font-size:11px; color:#fff; background:#e0556a; border:none; border-radius:4px; padding:3px 10px; cursor:pointer; }
+
+/* ── Right panel ── */
+.wm-right { padding:10px 12px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; border-left:1px solid #333840; }
+.wm-segmented { display:flex; gap:0; }
+.wm-segmented button { flex:1; height:28px; background:#24272d; border:1px solid #333840; color:#9298a0; font-size:12px; cursor:pointer; }
+.wm-segmented button:first-child { border-radius:4px 0 0 4px; }
+.wm-segmented button:last-child { border-radius:0 4px 4px 0; }
+.wm-segmented button.active { background:#5b8def; color:#fff; border-color:#5b8def; }
+
+.wm-prop-grid { display:flex; flex-direction:column; gap:7px; }
+.wm-prop { display:flex; flex-direction:column; gap:3px; }
+.wm-prop span { font-size:11px; color:#9298a0; }
+.wm-prop input[type="text"], .wm-prop input[type="number"], .wm-prop select {
+  height:28px; background:#24272d; border:1px solid #333840; border-radius:4px; color:#e1e3e6; font-size:12px; padding:0 8px;
+}
+.wm-prop input[type="range"] { accent-color:#5b8def; }
+.wm-prop input[type="color"] {
+  width:32px; height:24px; background:none; border:1px solid #333840; border-radius:4px; cursor:pointer; padding:0;
+}
+.wm-prop-row { display:flex; gap:6px; align-items:flex-end; }
+.wm-prop-row .wm-prop { flex:1; }
+.wm-prop-toggle { flex-direction:row !important; align-items:center; gap:6px !important; font-size:12px; color:#e1e3e6; cursor:pointer; }
+.wm-snap-btns { display:flex; gap:4px; margin-top:2px; }
+.wm-snap-btns button { font-size:10px; color:#5b8def; background:#1a1c20; border:1px solid #333840; border-radius:3px; cursor:pointer; padding:2px 8px; }
+.wm-snap-btns button:hover { background:#24272d; }
+
+/* scrollbar */
+.wm-left::-webkit-scrollbar, .wm-right::-webkit-scrollbar { width:5px; }
+.wm-left::-webkit-scrollbar-thumb, .wm-right::-webkit-scrollbar-thumb { background:#333840; border-radius:3px; }
