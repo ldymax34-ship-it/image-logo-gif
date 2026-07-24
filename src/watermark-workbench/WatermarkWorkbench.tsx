@@ -63,6 +63,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [message, setMessage] = useState('');
   const [showOriginal, setShowOriginal] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [verifyState, setVerifyState] = useState<'idle'|'ok'|'fail'>('idle');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
@@ -119,7 +120,9 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     const fc = fabricRef.current;
     fc.clear(); wmObjRef.current = null;
     try {
-      const img = await FabricImage.fromURL(`asset://localhost/${encodeURIComponent(path)}`);
+      const { convertFileSrc } = await import('@tauri-apps/api/core');
+      const url = convertFileSrc(path);
+      const img = await FabricImage.fromURL(url);
       if (!img) return;
       bgImageRef.current = img;
       fc.backgroundImage = img;
@@ -162,7 +165,8 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       obj = text;
     } else if (state.imagePath) {
       try {
-        const img = await FabricImage.fromURL(`asset://localhost/${encodeURIComponent(state.imagePath)}`);
+        const { convertFileSrc: cfs } = await import('@tauri-apps/api/core');
+        const img = await FabricImage.fromURL(cfs(state.imagePath!));
         if (img) {
           img.set({
             opacity: alpha, selectable: true, hasControls: true, lockUniScaling: true,
@@ -247,6 +251,29 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   /* ── init ── */
   useEffect(() => { async function init() { try { const m=await import('../gif-media/mediaDesktop'); if(!m.isMediaDesktopAvailable())return; setDesktop(true); apiRef.current=await m.loadMediaDesktopApi(); } catch{} } init(); }, []);
+
+  /* ── self-verify image loading ── */
+  useEffect(() => {
+    if (!desktop || !currentFile) return;
+    async function verify() {
+      try {
+        const { convertFileSrc } = await import('@tauri-apps/api/core');
+        const url = convertFileSrc(currentFile!);
+        const testImg = new Image();
+        await new Promise<void>((resolve, reject) => {
+          testImg.onload = () => resolve();
+          testImg.onerror = () => reject(new Error('Image load failed'));
+          testImg.src = url;
+        });
+        setPreviewError('');
+        setVerifyState('ok');
+      } catch (e: any) {
+        setPreviewError(`图片加载失败: ${e?.message || '未知错误'}。路径: ${currentFile}`);
+        setVerifyState('fail');
+      }
+    }
+    verify();
+  }, [desktop, currentFile]);
   useEffect(() => { initFabric(); }, [initFabric]);
   useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
   useEffect(() => { renderWatermark(); }, [renderWatermark]);
@@ -291,7 +318,9 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
         {/* CENTER */}
         <main className="wm-canvas-wrap" ref={containerRef}
           onPointerDown={()=>setShowOriginal(true)} onPointerUp={()=>setShowOriginal(false)} onPointerLeave={()=>setShowOriginal(false)}>
-          {!currentFile && <div className="wm-empty-canvas">导入素材后在此预览水印效果</div>}
+          {!currentFile && <div className="wm-empty-canvas">{desktop ? '导入素材后在此预览水印效果' : '桌面环境初始化中…'}</div>}
+          {verifyState === 'fail' && <div className="wm-preview-error"><span>⚠ 图片加载验证失败。请确认文件路径不含特殊字符，或尝试重新导入。</span><button onClick={() => currentFile && setVerifyState('idle')}>重试</button></div>}
+          {verifyState === 'ok' && currentFile && <div className="wm-verify-ok">✓ 图片加载正常</div>}
           <canvas ref={canvasRef} style={{ opacity: showOriginal ? 1 : 1 }} />
           {previewError && <div className="wm-preview-error"><span>{previewError}</span>
             <button onClick={()=>currentFile&&loadImage(currentFile)}>重试</button></div>}

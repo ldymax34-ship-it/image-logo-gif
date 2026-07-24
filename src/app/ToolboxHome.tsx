@@ -43,6 +43,7 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenGifCompress, onOpenBatchTe
             disabled={!tool.available}
             onClick={tool.action}
             aria-label={tool.label}
+            title={tool.label}
           >
             <span className="toolbox-tool-icon"><Icon icon={tool.icon} /></span>
             <span className="toolbox-tool-name">{tool.label}</span>

@@ -65,3 +65,5 @@
 /* scrollbar */
 .wm-left::-webkit-scrollbar, .wm-right::-webkit-scrollbar { width:5px; }
 .wm-left::-webkit-scrollbar-thumb, .wm-right::-webkit-scrollbar-thumb { background:#333840; border-radius:3px; }
+
+.wm-verify-ok { position:absolute; top:8px; right:8px; font-size:11px; color:#4caf88; z-index:2; pointer-events:none; }
