@@ -318,13 +318,7 @@ async function openWatermarkTool() {
 
 async function navigateToWatermark() {
   showSwitchConfirm.value = false;
-  try {
-    const { openGifMediaPreview } = await import('../app/gifMediaLauncher');
-    await import('@tauri-apps/api/webviewWindow').then(m =>
-      m.getCurrentWebviewWindow().close()
-    );
-    await openGifMediaPreview({ mode: 'watermark' });
-  } catch {}
+  // In embedded mode, navigation is handled by parent React app
 }
 
 function confirmToolSwitch() {

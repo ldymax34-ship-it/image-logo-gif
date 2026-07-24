@@ -178,11 +178,7 @@ async function openGifTool() {
 
 async function navigateToGif() {
   showSwitchConfirm.value = false;
-  try {
-    const { openGifMediaPreview } = await import('../app/gifMediaLauncher');
-    await import('@tauri-apps/api/webviewWindow').then(m => m.getCurrentWebviewWindow().close());
-    await openGifMediaPreview({ mode: 'gif' });
-  } catch {}
+  // In embedded mode, navigation is handled by parent React app
 }
 
 function confirmToolSwitch() {
