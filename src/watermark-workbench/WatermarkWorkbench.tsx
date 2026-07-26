@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Canvas as FabricCanvas, FabricImage, FabricObject } from 'fabric';
+import { ToolPageHeader } from '../components';
 import { FABRIC_CANVAS_OPTIONS } from '../components/canvas/fabricSelection';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 
@@ -406,10 +407,12 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   return (
     <div className="embedded-tool-wrapper">
-      <header className="embedded-tool-topbar">
-        <button className="embedded-tool-back" onClick={requestReturn}>← 返回工具箱</button>
-        <span className="embedded-tool-title">水印与追溯</span>
-      </header>
+      <ToolPageHeader
+        title="水印与追溯"
+        description="在画布中调整文字或 Logo 水印，再按队列批量落盘。"
+        status="experimental"
+        onReturn={requestReturn}
+      />
 
       <div className="wm-layout">
         <aside className="wm-left" aria-label="素材与任务">

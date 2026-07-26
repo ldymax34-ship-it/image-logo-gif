@@ -376,15 +376,6 @@ onUnmounted(() => {
 
 <template>
   <main class="gif-tool" aria-label="GIF 合成与压缩">
-    <!-- Header (embedded mode - top bar provided by parent) -->
-    <header class="gif-tool-header">
-      <div class="gif-tool-title-line">
-        <h1>GIF 合成与压缩</h1>
-        <span class="gif-tool-badge">内部实验</span>
-      </div>
-      <p>从视频掐头去尾截取片段并转换为 GIF。所有处理使用应用内置引擎。</p>
-    </header>
-
     <!-- Sub-mode tabs -->
     <nav class="gif-tool-mode-tabs" role="tablist" aria-label="GIF 处理模式">
       <button type="button" role="tab" :aria-selected="mode === 'template'" :class="{ selected: mode === 'template' }" @click="requestModeSwitch('template')">多语言模板合成</button>

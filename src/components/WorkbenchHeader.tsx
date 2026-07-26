@@ -7,7 +7,11 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
   onCheckUpdate?: () => void;
 }) {
   return <header className="topbar">
-    <div><h1>品宣物料工作台</h1></div>
+    <div className="tool-page-heading">
+      <h1>Logo 与版式</h1>
+      <span className="tool-status-badge is-stable">可用</span>
+      <p className="tool-page-description">批量套用 Logo、CPR 与常用画板尺寸。</p>
+    </div>
     <div className="topbar-status" aria-label="当前工作台状态">
       <span>{assetCount} 张素材</span>
       <span>{boardCount} 个画板</span>

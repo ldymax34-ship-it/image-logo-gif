@@ -26,36 +26,13 @@ body {
 .gif-tool {
   display: grid;
   grid-template-columns: 1fr 300px;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto 1fr;
   height: 100%;
   min-height: 0;
   gap: 12px;
   padding: 0;
   overflow: hidden;
 }
-
-.gif-tool-header {
-  grid-column: 1 / -1;
-  padding: 14px 18px 10px;
-  border: 1px solid var(--gif-border);
-  border-radius: 12px;
-  background: var(--gif-surface);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.gif-tool-title-line { display: flex; align-items: center; gap: 8px; }
-.gif-tool-title-line h1 { font-size: 16px; font-weight: 600; }
-.gif-tool-badge { font-size: 11px; background: var(--gif-accent); color: #fff; padding: 1px 7px; border-radius: 10px; }
-.gif-tool-header p { width: 100%; font-size: 12px; color: var(--gif-text-secondary); margin-top: 2px; }
-.gif-tool-header-actions { display: flex; gap: 8px; align-items: center; }
-.gif-tool-link { font-size: 12px; color: var(--gif-accent); background: none; border: none; cursor: pointer; padding: 4px 0; }
-.gif-tool-link:hover { text-decoration: underline; }
-.gif-tool-close { font-size: 12px; color: var(--gif-text-secondary); background: none; border: 1px solid var(--gif-border); border-radius: var(--gif-radius); cursor: pointer; padding: 4px 12px; }
-.gif-tool-close:hover { background: var(--gif-surface-raised); }
 
 /* mode tabs */
 .gif-tool-mode-tabs {

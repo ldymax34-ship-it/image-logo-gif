@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { ToolPageHeader } from '../components';
 
 type VueToolWrapperProps = {
   mountKey: string;
@@ -49,14 +50,14 @@ export function VueToolWrapper({ mountKey, onReturn }: VueToolWrapperProps) {
 
   return (
     <div className="embedded-tool-wrapper">
-      <header className="embedded-tool-topbar">
-        <button type="button" className="embedded-tool-back" onClick={() => window.dispatchEvent(new CustomEvent('gif-tool-request-return'))}>
-          ← 返回工具箱
-        </button>
-        <span className="embedded-tool-title">
-          {mountKey === 'gif-compress' ? 'GIF 合成与压缩' : '水印与追溯'}
-        </span>
-      </header>
+      <ToolPageHeader
+        title={mountKey === 'gif-compress' ? 'GIF 合成与压缩' : '水印与追溯'}
+        description={mountKey === 'gif-compress'
+          ? '截取视频片段、预览压缩结果，并自动控制在 8MB 以内。'
+          : '为图片与视频批量添加可见水印，不覆盖原文件。'}
+        status={mountKey === 'gif-compress' ? 'available' : 'experimental'}
+        onReturn={() => window.dispatchEvent(new CustomEvent('gif-tool-request-return'))}
+      />
       <div ref={containerRef} className="embedded-tool-container" />
     </div>
   );

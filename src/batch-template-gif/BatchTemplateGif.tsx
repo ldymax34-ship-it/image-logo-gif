@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ToolPageHeader } from '../components';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import {
   CHROMA_COLORS,
@@ -283,11 +284,12 @@ export function BatchTemplateGif({ onReturn }: Props) {
   // ---- render ----
   return (
     <div className="embedded-tool-wrapper">
-      <header className="embedded-tool-topbar">
-        <button className="embedded-tool-back" onClick={requestReturn}>← 返回工具箱</button>
-        <span className="embedded-tool-title">批量模板 GIF 合成器</span>
-        <span className="embedded-tool-badge">内部实验</span>
-      </header>
+      <ToolPageHeader
+        title="批量模板 GIF 合成器"
+        description="把视频批量装入 PNG 模板，面向多语言与多版位生产。"
+        status="experimental"
+        onReturn={requestReturn}
+      />
 
       <div className="btg-layout">
         {/* Mode tabs */}
