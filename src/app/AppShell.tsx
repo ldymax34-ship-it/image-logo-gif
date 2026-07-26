@@ -25,7 +25,7 @@ export function AppShell({
       </div>
       <div className="app-module-shell">
         <ModuleNav active={activeModule} onChange={onModuleChange} statuses={moduleStatuses} />
-        <div className="app-module-content">
+        <div className={`app-module-content app-module-content-${activeModule}`}>
           {children}
         </div>
       </div>

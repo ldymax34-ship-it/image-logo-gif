@@ -28,8 +28,13 @@ body {
 
 .app-shell { height: 100dvh; min-height: 0; max-width: none; padding: 16px; overflow: hidden; background: var(--color-app); }
 .app-shell-header { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 48px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-panel); overflow: hidden; }
-.app-shell-header .topbar { min-width: 0; border-bottom: 0; }
+.app-shell-header .topbar { min-width: 0; overflow: hidden; border-bottom: 0; }
+.app-shell-header .tool-page-heading { flex: 1 1 auto; overflow: hidden; }
+.app-shell-header .topbar-status { flex: 0 0 auto; min-width: 0; flex-wrap: nowrap; }
+.workbench-summary { white-space: nowrap; }
 .app-module-content { min-width: 0; min-height: 0; border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; background: var(--color-panel); }
+.app-module-content-media { border: 0; background: transparent; }
+.app-module-content-media > .focus-workspace { border: 1px solid var(--color-border); border-radius: 14px; }
 .return-toolbox-button { align-self: stretch; min-width: 112px; padding: 0 12px; border: 0; border-right: 1px solid var(--color-border); border-radius: 0; background: transparent; color: var(--color-text-muted); font-size: 12px; font-weight: 600; }
 .return-toolbox-button:hover:not(:disabled) { background: var(--color-panel-raised); color: var(--color-text); }
 .app-module-shell { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: calc(100dvh - 48px); min-height: 0; overflow: hidden; }
@@ -40,7 +45,8 @@ body {
 .module-nav button.active::before { content: ''; position: absolute; left: -6px; top: 20px; width: 3px; height: 18px; border-radius: 2px; background: var(--color-primary); }
 .module-nav button::after { content: attr(aria-label); position: absolute; left: 64px; top: 6px; z-index: 70; display: none; width: max-content; padding: 5px 7px; border: 1px solid var(--color-border-strong); border-radius: 4px; background: var(--color-canvas-deep); color: var(--color-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: var(--shadow-dialog); }
 .module-nav button:hover::after, .module-nav button:focus-visible::after { display: block; }
-.app-module-shell .workspace { grid-column: 2; height: 100%; min-height: 0; }
+.app-module-shell .workspace { grid-column: 2; height: 100%; min-height: 0; gap: 12px; background: transparent; }
+.app-module-shell .workspace > .panel { min-width: 0; border: 1px solid var(--color-border); border-radius: 14px; }
 .module-placeholder { grid-column: 2; display: grid; place-items: center; height: 100%; min-height: 0; overflow: auto; background: var(--color-canvas); scrollbar-gutter: stable; }
 .module-placeholder > div { width: min(420px, calc(100% - 48px)); display: grid; gap: 10px; padding: 24px; border: 1px solid var(--color-border); background: var(--color-panel); }
 .toolbox-home {
@@ -457,9 +463,21 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 .language-logo-scale-field input[type='number'] { width: 68px; min-height: 32px; padding: 4px 6px; }
 
 @media (max-width: 960px) {
-  .workspace { gap: 1px; }
-  .panel { min-height: auto; }
+  .app-module-shell .workspace {
+    grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  .app-module-shell .workspace > .panel { min-height: 320px; overflow: visible; }
+  .app-shell-header .workbench-summary { display: none; }
   .custom-workspace { grid-template-columns: 220px minmax(0, 1fr); }
+}
+
+@media (max-width: 1100px) {
+  .app-shell-header .tool-page-description { display: none; }
 }
 
 @media (max-width: 900px) {

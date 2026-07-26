@@ -13,10 +13,10 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
       <p className="tool-page-description">批量套用 Logo、CPR 与常用画板尺寸。</p>
     </div>
     <div className="topbar-status" aria-label="当前工作台状态">
-      <span>{assetCount} 张素材</span>
-      <span>{boardCount} 个画板</span>
-      <span>{previewCount} 个预览状态</span>
-      {hasPendingSpecChanges ? <span>尺寸待应用</span> : null}
+      <span className="workbench-summary" aria-label={`${assetCount} 张素材，${boardCount} 个画板，${previewCount} 个预览状态`}>
+        {assetCount} 素材 · {boardCount} 画板 · {previewCount} 预览
+      </span>
+      {hasPendingSpecChanges ? <span className="workbench-pending">尺寸待应用</span> : null}
       {onCheckUpdate ? <button type="button" className="settings-button" onClick={onCheckUpdate} title="检查更新">检查更新</button> : null}{onOpenSettings ? <button type="button" className="settings-button" onClick={onOpenSettings} title="打开 Logo 设置与关于信息">设置</button> : null}
     </div>
   </header>;
