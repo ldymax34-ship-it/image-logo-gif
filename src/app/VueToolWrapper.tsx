@@ -14,6 +14,8 @@ export function VueToolWrapper({ mountKey, onReturn }: VueToolWrapperProps) {
 
   useEffect(() => {
     let cancelled = false;
+    const handleReturn = () => onReturn();
+    window.addEventListener('gif-tool-confirmed-return', handleReturn);
 
     async function mount() {
       if (!containerRef.current) return;
@@ -40,6 +42,7 @@ export function VueToolWrapper({ mountKey, onReturn }: VueToolWrapperProps) {
 
     return () => {
       cancelled = true;
+      window.removeEventListener('gif-tool-confirmed-return', handleReturn);
       appRef.current?.unmount();
     };
   }, [mountKey]);
@@ -47,7 +50,7 @@ export function VueToolWrapper({ mountKey, onReturn }: VueToolWrapperProps) {
   return (
     <div className="embedded-tool-wrapper">
       <header className="embedded-tool-topbar">
-        <button type="button" className="embedded-tool-back" onClick={onReturn}>
+        <button type="button" className="embedded-tool-back" onClick={() => window.dispatchEvent(new CustomEvent('gif-tool-request-return'))}>
           ← 返回工具箱
         </button>
         <span className="embedded-tool-title">

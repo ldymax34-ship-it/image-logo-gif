@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import {
   CHROMA_COLORS,
   createEmptyJob,
@@ -180,6 +181,20 @@ export function BatchTemplateGif({ onReturn }: Props) {
 
   // ---- batch run ----
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const hasUnsavedWork = Boolean(hasWork || job.outputDir || job.startSeconds > 0 || job.endSeconds !== job.videoDuration);
+  function requestReturn() {
+    if (taskStatus === 'running' || hasUnsavedWork) setShowReturnConfirm(true);
+    else onReturn();
+  }
+  function confirmReturn() {
+    setShowReturnConfirm(false);
+    if (taskStatus === 'running') {
+      setMessage('批量任务正在处理；当前批量接口未提供安全取消，任务完成或失败后再返回。');
+      return;
+    }
+    onReturn();
+  }
 
   async function startBatch() {
     if (!apiRef.current || !desktop) return;
@@ -269,7 +284,7 @@ export function BatchTemplateGif({ onReturn }: Props) {
   return (
     <div className="embedded-tool-wrapper">
       <header className="embedded-tool-topbar">
-        <button className="embedded-tool-back" onClick={onReturn}>← 返回工具箱</button>
+        <button className="embedded-tool-back" onClick={requestReturn}>← 返回工具箱</button>
         <span className="embedded-tool-title">批量模板 GIF 合成器</span>
         <span className="embedded-tool-badge">内部实验</span>
       </header>
@@ -498,6 +513,17 @@ export function BatchTemplateGif({ onReturn }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {showReturnConfirm && (
+        <ConfirmationDialog
+          title={taskStatus === 'running' ? '正在处理' : '放弃当前设置？'}
+          message={taskStatus === 'running' ? '批量任务仍在运行，返回会留下未完成任务。请等待任务终态后再离开。' : '当前已导入文件或修改设置，放弃后将不会保留本次批任务。'}
+          confirmLabel={taskStatus === 'running' ? '继续处理' : '放弃并返回'}
+          destructive={taskStatus !== 'running'}
+          onCancel={() => setShowReturnConfirm(false)}
+          onConfirm={confirmReturn}
+        />
       )}
 
       {/* Mode switch confirm */}

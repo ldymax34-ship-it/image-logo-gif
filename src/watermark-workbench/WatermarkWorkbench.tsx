@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Canvas as FabricCanvas, FabricImage, FabricObject } from 'fabric';
 import { FABRIC_CANVAS_OPTIONS } from '../components/canvas/fabricSelection';
+import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 
 /* ── types ── */
 type WatermarkKind = 'text' | 'image';
@@ -47,6 +48,8 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [showOriginal, setShowOriginal] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [verifyState, setVerifyState] = useState<'idle'|'ok'|'fail'>('idle');
+  const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const pendingReturnRef = useRef(false);
 
   /* ── lifecycle guards ── */
   const mountedRef = useRef(true);
@@ -332,6 +335,11 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     const finished = tasks.find(t => t.id === activeTaskIdRef.current && (t.status === 'success' || t.status === 'failed' || t.status === 'cancelled'));
     if (!finished) return;
     setActiveTaskId(undefined);
+    if (pendingReturnRef.current) {
+      pendingReturnRef.current = false;
+      onReturn();
+      return;
+    }
     if (!mountedRef.current) return;
     const next = tasks.find(t => t.status === 'waiting');
     if (next) {
@@ -340,6 +348,28 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       }, 200);
     }
   }, [tasks]);
+
+  function requestReturn() {
+    if (activeTaskId || tasks.length || state.outputDirectory || state.text !== DEFAULT_STATE.text) {
+      setShowReturnConfirm(true);
+    } else onReturn();
+  }
+
+  async function confirmReturn() {
+    if (!activeTaskId) {
+      setShowReturnConfirm(false);
+      onReturn();
+      return;
+    }
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('cancel_gif_media_task', { taskId: activeTaskId });
+      pendingReturnRef.current = true;
+      setShowReturnConfirm(false);
+    } catch (e: any) {
+      setMessage(e?.message ?? '取消失败，仍保留当前页面');
+    }
+  }
 
   useEffect(() => { initFabric(); }, [initFabric]);
   useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
@@ -377,7 +407,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   return (
     <div className="embedded-tool-wrapper">
       <header className="embedded-tool-topbar">
-        <button className="embedded-tool-back" onClick={onReturn}>← 返回工具箱</button>
+        <button className="embedded-tool-back" onClick={requestReturn}>← 返回工具箱</button>
         <span className="embedded-tool-title">水印与追溯</span>
       </header>
 
@@ -520,6 +550,16 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
           {!desktop && <p className="wm-hint">水印处理仅桌面可用</p>}
         </aside>
       </div>
+      {showReturnConfirm && (
+        <ConfirmationDialog
+          title={activeTaskId ? '正在处理' : '放弃当前设置？'}
+          message={activeTaskId ? '返回前会先取消当前任务，并等待任务终态；取消失败时不会离开当前页面。' : '当前已导入素材或修改设置，放弃后将不会保留本次设置。'}
+          confirmLabel={activeTaskId ? '取消任务并返回' : '放弃并返回'}
+          destructive
+          onCancel={() => setShowReturnConfirm(false)}
+          onConfirm={() => { void confirmReturn(); }}
+        />
+      )}
     </div>
   );
 }

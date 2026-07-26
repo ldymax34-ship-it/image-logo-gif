@@ -342,10 +342,7 @@ async function returnToToolbox() {
     showSwitchConfirm.value = true;
     return;
   }
-  try {
-    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    getCurrentWebviewWindow().close();
-  } catch {}
+  window.dispatchEvent(new CustomEvent('gif-tool-confirmed-return'));
 }
 
 // ---- lifecycle ----
@@ -365,10 +362,14 @@ async function initDesktop() {
   }
 }
 
-onMounted(() => initDesktop());
+onMounted(() => {
+  window.addEventListener('gif-tool-request-return', returnToToolbox);
+  void initDesktop();
+});
 onUnmounted(() => {
   unlistenTaskEvents?.();
   unlistenDroppedPaths?.();
+  window.removeEventListener('gif-tool-request-return', returnToToolbox);
   if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
 });
 </script>
