@@ -176,15 +176,15 @@ impl MediaTaskRegistry {
         let Some(child) = child else {
             return Err("未找到正在处理的媒体任务".into());
         };
+        self.cancelled
+            .lock()
+            .expect("media child registry poisoned")
+            .insert(task_id.to_string());
         child
             .lock()
             .map_err(|_| "无法终止媒体任务".to_string())?
             .kill()
             .map_err(|error| format!("无法终止媒体任务：{error}"))?;
-        self.cancelled
-            .lock()
-            .expect("media child registry poisoned")
-            .insert(task_id.to_string());
         Ok(())
     }
 
@@ -757,8 +757,16 @@ fn brick_coordinates(density: &str, count: usize) -> Vec<(&'static str, &'static
     };
     let mut coords = Vec::new();
     for row in 0..rows {
-        let offset = if row % 2 == 1 { format!("{x_step}/2") } else { "0".to_string() };
-        for col in 0..(if row % 2 == 1 && cols > 0 { cols - 1 } else { cols }) {
+        let offset = if row % 2 == 1 {
+            format!("{x_step}/2")
+        } else {
+            "0".to_string()
+        };
+        for col in 0..(if row % 2 == 1 && cols > 0 {
+            cols - 1
+        } else {
+            cols
+        }) {
             let x = if row % 2 == 1 {
                 format!("{x_step}*{col}+{x_step}/2-overlay_w/2")
             } else {
@@ -892,6 +900,16 @@ fn remove_incomplete_output(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
+fn gif_temp_output_path(final_output_path: &Path) -> PathBuf {
+    final_output_path.with_file_name(format!(
+        ".{}.gif.part",
+        final_output_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("media")
+    ))
+}
+
 fn ffmpeg_failure_message(stderr: &str) -> String {
     let detail = stderr
         .lines()
@@ -966,7 +984,17 @@ fn spawn_media_task(
                 }
             }
         }
-        let status = child.lock().ok().and_then(|mut child| child.wait().ok());
+        let status = loop {
+            let result = child
+                .lock()
+                .ok()
+                .and_then(|mut child| child.try_wait().ok());
+            match result {
+                Some(Some(status)) => break Some(status),
+                Some(None) => thread::sleep(std::time::Duration::from_millis(20)),
+                None => break None,
+            }
+        };
         let stderr = stderr_reader.join().unwrap_or_default();
         for path in cleanup_paths {
             let _ = fs::remove_file(path);
@@ -1036,24 +1064,53 @@ pub fn media_engine_status(app: AppHandle) -> MediaEngineStatus {
 }
 
 /// Adjust GIF encoding parameters to reduce file size based on compression preference.
-fn reduce_gif_params(current_fps: u32, current_width: Option<u32>, step: u32, preference: &str) -> (u32, Option<u32>) {
+fn reduce_gif_params(
+    current_fps: u32,
+    current_width: Option<u32>,
+    step: u32,
+    preference: &str,
+) -> (u32, Option<u32>) {
     match preference {
         "clarity" => {
             // Prefer keeping resolution; reduce colors first (fewer colors = smaller palette), then fps, then size
-            let fps = if current_fps > 12 && step <= 3 { current_fps - 4 } else { current_fps - 2 };
-            let width = if step > 3 { current_width.map(|w| (w as f64 * 0.75) as u32) } else { current_width };
+            let fps = if current_fps > 12 && step <= 3 {
+                current_fps - 4
+            } else {
+                current_fps - 2
+            };
+            let width = if step > 3 {
+                current_width.map(|w| (w as f64 * 0.75) as u32)
+            } else {
+                current_width
+            };
             (fps.max(6), width)
         }
         "smoothness" => {
             // Prefer keeping fps; reduce colors first, then size, then fps
-            let fps = if step > 4 { (current_fps - 4).max(4) } else { current_fps };
-            let width = if step > 1 { current_width.map(|w| (w as f64 * 0.8) as u32) } else { current_width };
+            let fps = if step > 4 {
+                (current_fps - 4).max(4)
+            } else {
+                current_fps
+            };
+            let width = if step > 1 {
+                current_width.map(|w| (w as f64 * 0.8) as u32)
+            } else {
+                current_width
+            };
             (fps.max(4), width)
         }
         _ => {
             // balanced: adjust everything
-            let fps = if step % 2 == 0 { (current_fps - 2).max(8) } else { current_fps };
-            let width = if step % 2 == 1 { current_width.map(|w| (w as f64 * 0.85) as u32) } else { current_width };
+            let fps = if step % 2 == 0 {
+                (current_fps - 2).max(8)
+            } else {
+                current_fps
+            };
+            let width = if step % 2 == 1 {
+                current_width.map(|w| (w as f64 * 0.85) as u32)
+            } else {
+                current_width
+            };
             (fps.max(8), width)
         }
     }
@@ -1069,14 +1126,16 @@ fn run_gif_encode_with_progress(
     app: &AppHandle,
     registry: &MediaTaskRegistry,
     task_id: &str,
-    progress_step_base: f64,  // 0.0 .. 1.0 base for this retry step
-    progress_step_span: f64,  // how much progress this step contributes
+    progress_step_base: f64, // 0.0 .. 1.0 base for this retry step
+    progress_step_span: f64, // how much progress this step contributes
 ) -> Result<u64, String> {
-    // Use temp file to avoid clobbering final output until success
-    let temp_output = final_output_path.with_extension("gif.tmp");
+    // Keep the temporary file in the same directory and retain a .gif suffix so
+    // FFmpeg can select the GIF muxer even though the file is not final yet.
+    let temp_output = gif_temp_output_path(final_output_path);
 
     // Build args with -y (retry safety) → temp output
-    let mut args_temp: Vec<OsString> = args.iter()
+    let mut args_temp: Vec<OsString> = args
+        .iter()
         .filter(|a| a.to_string_lossy() != final_output_path.to_string_lossy())
         .cloned()
         .collect();
@@ -1095,10 +1154,16 @@ fn run_gif_encode_with_progress(
     registry.insert(task_id.to_string(), child_arc.clone());
 
     // Take stdout/stderr BEFORE anyone else locks
-    let stdout = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?
-        .stdout.take();
-    let stderr = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?
-        .stderr.take();
+    let stdout = child_arc
+        .lock()
+        .map_err(|_| "FFmpeg 进程锁失败".to_string())?
+        .stdout
+        .take();
+    let stderr = child_arc
+        .lock()
+        .map_err(|_| "FFmpeg 进程锁失败".to_string())?
+        .stderr
+        .take();
 
     // Spawn stderr consumer to prevent pipe deadlock
     let stderr_thread = thread::spawn(move || {
@@ -1118,26 +1183,45 @@ fn run_gif_encode_with_progress(
                 // out_time_ms from -progress starts from 0 after -ss
                 if let Some(frac) = parse_progress_line(&line, 0.0, progress_step_span) {
                     let p = progress_step_base + frac;
-                    emit(&app_clone, MediaTaskEvent::Progress {
-                        task_id: tid.clone(),
-                        progress: p.clamp(0.0, 0.99),
-                    });
+                    emit(
+                        &app_clone,
+                        MediaTaskEvent::Progress {
+                            task_id: tid.clone(),
+                            progress: p.clamp(0.0, 0.99),
+                        },
+                    );
                 }
             }
         });
     }
 
-    // Wait WITHOUT holding the lock - take child out of Arc
-    let status = {
-        let mut child_guard = child_arc.lock().map_err(|_| "FFmpeg 进程锁失败".to_string())?;
-        child_guard.wait().map_err(|e| format!("FFmpeg 等待失败：{e}"))?
+    // Poll without holding the mutex across the wait. Cancellation can acquire
+    // the same mutex between polls and kill the child promptly.
+    let status = loop {
+        let result = {
+            let mut child_guard = child_arc
+                .lock()
+                .map_err(|_| "FFmpeg 进程锁失败".to_string())?;
+            child_guard
+                .try_wait()
+                .map_err(|e| format!("FFmpeg 等待失败：{e}"))?
+        };
+        if let Some(status) = result {
+            break status;
+        }
+        thread::sleep(std::time::Duration::from_millis(20));
     };
     let _stderr_output = stderr_thread.join().unwrap_or_default();
 
     // Check cancellation (registry can now lock independently)
     if registry.take_cancelled(task_id) {
         let _ = fs::remove_file(&temp_output);
-        emit(app, MediaTaskEvent::Cancelled { task_id: task_id.to_string() });
+        emit(
+            app,
+            MediaTaskEvent::Cancelled {
+                task_id: task_id.to_string(),
+            },
+        );
         registry.remove(task_id);
         return Err("已取消".into());
     }
@@ -1147,8 +1231,6 @@ fn run_gif_encode_with_progress(
         match fs::metadata(&temp_output) {
             Ok(meta) => {
                 let size = meta.len();
-                // Atomic rename to final path
-                let _ = fs::remove_file(final_output_path);
                 if let Err(e) = fs::rename(&temp_output, final_output_path) {
                     let _ = fs::remove_file(&temp_output);
                     return Err(format!("无法移动到最终路径：{e}"));
@@ -1166,7 +1248,12 @@ fn run_gif_encode_with_progress(
     }
 }
 
-fn build_gif_encode_args(request: &GifMediaTaskRequest, output: &Path, fps: u32, width: Option<u32>) -> Vec<OsString> {
+fn build_gif_encode_args(
+    request: &GifMediaTaskRequest,
+    output: &Path,
+    fps: u32,
+    width: Option<u32>,
+) -> Vec<OsString> {
     let options = &request.options;
     let mut args = vec![
         OsString::from("-hide_banner"),
@@ -1189,7 +1276,11 @@ fn build_gif_encode_args(request: &GifMediaTaskRequest, output: &Path, fps: u32,
     filters.push(format!("fps={fps}"));
 
     let filter = filters.join(",");
-    let dither = if options.preset == "fast" { "bayer:bayer_scale=5" } else { "sierra2_4a" };
+    let dither = if options.preset == "fast" {
+        "bayer:bayer_scale=5"
+    } else {
+        "sierra2_4a"
+    };
     let palette = format!("{filter},split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither={dither}");
 
     args.extend([
@@ -1221,13 +1312,22 @@ pub fn start_gif_media_task(
     if !engine_status(app.clone()).ready {
         return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
     }
-    if registry.children.lock().expect("media child registry poisoned").contains_key(&request.task_id) {
+    if registry
+        .children
+        .lock()
+        .expect("media child registry poisoned")
+        .contains_key(&request.task_id)
+    {
         return Err("该媒体任务已在运行".into());
     }
 
     let ffmpeg = sidecar_path(&app, "ffmpeg")?;
     let target_bytes = request.options.target_bytes.unwrap_or(0);
-    let compression_pref = request.options.compression_preference.as_deref().unwrap_or("balanced");
+    let compression_pref = request
+        .options
+        .compression_preference
+        .as_deref()
+        .unwrap_or("balanced");
     let min_width = request.options.min_width;
     let min_fps = request.options.min_fps;
     let allow_strong = request.options.allow_strong_compression.unwrap_or(false);
@@ -1242,10 +1342,6 @@ pub fn start_gif_media_task(
     let min_width_val = min_width.unwrap_or(160);
     let request_for_thread = request.clone();
 
-    // Progress reporting (simple for now: approximate progress by step)
-    let total_steps = if target_bytes > 0 { 8u32 } else { 1u32 };
-    let progress_step = 1.0 / total_steps as f64;
-
     thread::spawn(move || {
         let task_id = task_id_for_thread.clone();
         let output_path_str = output_for_task.to_string_lossy().into_owned();
@@ -1253,79 +1349,119 @@ pub fn start_gif_media_task(
         let mut current_fps = initial_fps;
         let mut current_width = initial_width;
         let max_retries: u32 = 8;
+        let total_steps = if target_bytes > 0 && allow_strong {
+            max_retries + 1
+        } else {
+            max_retries
+        };
 
-        for step in 0..max_retries {
+        for step in 0..total_steps {
             // Check cancellation via registry
             {
                 let registry = app_for_task.state::<MediaTaskRegistry>();
                 if registry.take_cancelled(&task_id) {
                     let _ = std::fs::remove_file(&output_for_task);
-                    emit(&app_for_task, MediaTaskEvent::Cancelled { task_id: task_id.clone() });
+                    emit(
+                        &app_for_task,
+                        MediaTaskEvent::Cancelled {
+                            task_id: task_id.clone(),
+                        },
+                    );
                     registry.remove(&task_id);
                     return;
                 }
             }
 
             // Report progress
-            emit(&app_for_task, MediaTaskEvent::Progress {
-                task_id: task_id.clone(),
-                progress: (step as f64 * progress_step).min(0.99),
-            });
+            emit(
+                &app_for_task,
+                MediaTaskEvent::Progress {
+                    task_id: task_id.clone(),
+                    progress: (step as f64 / total_steps as f64).min(0.99),
+                },
+            );
 
-            let args = build_gif_encode_args(&request_for_thread, &output_for_task, current_fps, current_width);
-            
-            match run_gif_encode_with_progress(&ffmpeg, &args, &output_for_task, &app_for_task, &*app_for_task.state::<MediaTaskRegistry>(), &task_id, step as f64 / 8.0, 1.0/8.0) {
+            let args = build_gif_encode_args(
+                &request_for_thread,
+                &output_for_task,
+                current_fps,
+                current_width,
+            );
+
+            match run_gif_encode_with_progress(
+                &ffmpeg,
+                &args,
+                &output_for_task,
+                &app_for_task,
+                &*app_for_task.state::<MediaTaskRegistry>(),
+                &task_id,
+                step as f64 / total_steps as f64,
+                1.0 / total_steps as f64,
+            ) {
                 Ok(file_size) => {
                     if target_bytes == 0 || file_size <= target_bytes {
                         // Success: within target or no target
-                        emit(&app_for_task, MediaTaskEvent::Completed {
-                            task_id: task_id.clone(),
-                            output_path: output_path_str,
-                            output_bytes: file_size,
-                        });
+                        emit(
+                            &app_for_task,
+                            MediaTaskEvent::Completed {
+                                task_id: task_id.clone(),
+                                output_path: output_path_str,
+                                output_bytes: file_size,
+                            },
+                        );
                         let registry = app_for_task.state::<MediaTaskRegistry>();
                         registry.remove(&task_id);
                         return;
                     }
 
                     // Too large, need retry
-                    if step + 1 >= max_retries {
+                    if step + 1 >= total_steps {
                         // Last retry exhausted
-                        if allow_strong {
-                            // One final try with very aggressive params
-                            current_fps = min_fps_val;
-                            current_width = Some(min_width_val);
-                            continue;
-                        }
-                        emit(&app_for_task, MediaTaskEvent::Failed {
-                            task_id: task_id.clone(),
-                            message: format!(
-                                "当前时长和画面复杂度无法在现有质量下压缩至 8MB。
+                        emit(
+                            &app_for_task,
+                            MediaTaskEvent::Failed {
+                                task_id: task_id.clone(),
+                                message: format!(
+                                    "当前时长和画面复杂度无法在现有质量下压缩至 8MB。
 请缩短截取区间，或允许更强压缩。
 最后一次文件大小：{}",
-                                format_file_size(file_size)
-                            ),
-                        });
+                                    format_file_size(file_size)
+                                ),
+                            },
+                        );
                         let registry = app_for_task.state::<MediaTaskRegistry>();
                         registry.remove(&task_id);
                         return;
                     }
 
-                    let (next_fps, next_width) = reduce_gif_params(current_fps, current_width, step + 1, &compression_pref_owned);
-                    current_fps = next_fps.max(min_fps_val);
-                    current_width = match (next_width, min_width) {
-                        (Some(w), Some(min_w)) => Some(w.max(min_w)),
-                        (Some(w), None) => Some(w),
-                        (None, _) => None,
-                    };
+                    if allow_strong && step + 1 == max_retries {
+                        current_fps = min_fps_val;
+                        current_width = Some(min_width_val);
+                    } else {
+                        let (next_fps, next_width) = reduce_gif_params(
+                            current_fps,
+                            current_width,
+                            step + 1,
+                            &compression_pref_owned,
+                        );
+                        current_fps = next_fps.max(min_fps_val);
+                        current_width = match (next_width, min_width) {
+                            (Some(w), Some(min_w)) => Some(w.max(min_w)),
+                            (Some(w), None) => Some(w),
+                            (None, _) => None,
+                        };
+                    }
                     // Continue to next iteration
                 }
                 Err(message) => {
                     remove_incomplete_output(&output_for_task);
-                    emit(&app_for_task, MediaTaskEvent::Failed {
-                        task_id: task_id.clone(),
-                        message,
-                    });
+                    emit(
+                        &app_for_task,
+                        MediaTaskEvent::Failed {
+                            task_id: task_id.clone(),
+                            message,
+                        },
+                    );
                     let registry = app_for_task.state::<MediaTaskRegistry>();
                     registry.remove(&task_id);
                     return;
@@ -1335,14 +1471,16 @@ pub fn start_gif_media_task(
 
         // Should not reach here normally
         remove_incomplete_output(&output_for_task);
-        emit(&app_for_task, MediaTaskEvent::Failed {
-            task_id: task_id.clone(),
-            message: "压缩重试次数已用尽".into(),
-        });
+        emit(
+            &app_for_task,
+            MediaTaskEvent::Failed {
+                task_id: task_id.clone(),
+                message: "压缩重试次数已用尽".into(),
+            },
+        );
         let registry = app_for_task.state::<MediaTaskRegistry>();
         registry.remove(&task_id);
     });
-
 
     Ok(MediaTaskStarted {
         task_id: request.task_id,
@@ -1451,7 +1589,14 @@ pub struct TemplateOutput {
 /// Build FFmpeg filter for chroma key compositing.
 /// Inputs: [0:v] template PNG, [1:v] video
 /// Output: composited frame with video in chroma key areas
-fn chroma_key_filter(template_w: u32, template_h: u32, color_hex: &str, fit_mode: &str, similarity: f64, blend: f64) -> String {
+fn chroma_key_filter(
+    template_w: u32,
+    template_h: u32,
+    color_hex: &str,
+    fit_mode: &str,
+    similarity: f64,
+    blend: f64,
+) -> String {
     let color = color_hex.trim_start_matches('#');
     let fit = if fit_mode == "contain" {
         format!("scale={template_w}:{template_h}:force_original_aspect_ratio=decrease")
@@ -1466,7 +1611,12 @@ fn chroma_key_filter(template_w: u32, template_h: u32, color_hex: &str, fit_mode
 
 /// Build multi-video chroma key filter chain.
 /// Each color slot maps to a different video input.
-fn multi_chroma_filter(template_w: u32, template_h: u32, slots: &[(String, usize)], fit_mode: &str) -> String {
+fn multi_chroma_filter(
+    template_w: u32,
+    template_h: u32,
+    slots: &[(String, usize)],
+    fit_mode: &str,
+) -> String {
     let mut parts = Vec::new();
     parts.push(format!("[0:v]null[base]"));
 
@@ -1478,7 +1628,11 @@ fn multi_chroma_filter(template_w: u32, template_h: u32, slots: &[(String, usize
 
     for (i, (color, input_idx)) in slots.iter().enumerate() {
         let hex = color.trim_start_matches('#');
-        let next = if i + 1 == slots.len() { "composited".to_string() } else { format!("step{i}") };
+        let next = if i + 1 == slots.len() {
+            "composited".to_string()
+        } else {
+            format!("step{i}")
+        };
         parts.push(format!(
             "[base]colorkey=0x{hex}:0.1:0.02[tk{i}];             [tk{i}]split[tm{i}][ta{i}];             [ta{i}]alphaextract[mask{i}];             [{input_idx}:v]{fit}[vs{i}];             [vs{i}][mask{i}]alphamerge[vid{i}];             [tm{i}][vid{i}]overlay[{next}]"
         ));
@@ -1509,11 +1663,20 @@ fn compose_single_template_gif(
     // Probe template dimensions
     {
         let output = Command::new(ffmpeg)
-            .args(["-hide_banner", "-v", "error", "-show_entries", "stream=width,height", "-of", "json"])
+            .args([
+                "-hide_banner",
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "json",
+            ])
             .arg(template_path)
             .output()
             .map_err(|e| format!("无法读取模板信息：{e}"))?;
-        let json: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|_| "无法解析模板信息".to_string())?;
+        let json: serde_json::Value =
+            serde_json::from_slice(&output.stdout).map_err(|_| "无法解析模板信息".to_string())?;
         template_w = json["streams"][0]["width"].as_u64().unwrap_or(1920) as u32;
         template_h = json["streams"][0]["height"].as_u64().unwrap_or(1080) as u32;
     }
@@ -1538,13 +1701,21 @@ fn compose_single_template_gif(
         );
 
         let mut args = vec![
-            OsString::from("-hide_banner"), OsString::from("-nostdin"), OsString::from("-y"),
-            OsString::from("-i"), OsString::from(template_path.to_str().unwrap()),
-            OsString::from("-ss"), OsString::from(start_seconds.to_string()),
-            OsString::from("-t"), OsString::from(duration.to_string()),
-            OsString::from("-i"), OsString::from(video_path.to_str().unwrap()),
-            OsString::from("-filter_complex"), OsString::from(palette),
-            OsString::from("-loop"), OsString::from("0"),
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-y"),
+            OsString::from("-i"),
+            OsString::from(template_path.to_str().unwrap()),
+            OsString::from("-ss"),
+            OsString::from(start_seconds.to_string()),
+            OsString::from("-t"),
+            OsString::from(duration.to_string()),
+            OsString::from("-i"),
+            OsString::from(video_path.to_str().unwrap()),
+            OsString::from("-filter_complex"),
+            OsString::from(palette),
+            OsString::from("-loop"),
+            OsString::from("0"),
             output_path.as_os_str().to_owned(),
         ];
 
@@ -1563,12 +1734,17 @@ fn compose_single_template_gif(
                 }
                 // Reduce params and retry
                 current_fps = (current_fps - 2).max(6);
-                if step > 2 { current_width = current_width.map(|w| (w as f64 * 0.8) as u32); }
+                if step > 2 {
+                    current_width = current_width.map(|w| (w as f64 * 0.8) as u32);
+                }
             } else {
                 return Err("FFmpeg 完成后未找到输出文件".into());
             }
         } else {
-            return Err(format!("FFmpeg 合成失败：{}", String::from_utf8_lossy(&output.stderr)));
+            return Err(format!(
+                "FFmpeg 合成失败：{}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
     }
 
@@ -1602,15 +1778,24 @@ pub fn compose_template_gifs(
 
     for template_path in &request.template_paths {
         let template = Path::new(template_path);
-        let stem = template.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let stem = template
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
         let output = output_dir.join(format!("{stem}.gif"));
 
         match compose_single_template_gif(
-            &ffmpeg, template, Path::new(&request.video_path), &output,
-            request.start_seconds, duration,
+            &ffmpeg,
+            template,
+            Path::new(&request.video_path),
+            &output,
+            request.start_seconds,
+            duration,
             &request.chroma_key.color.as_deref().unwrap_or("#00FF00"),
             &request.fit_mode,
-            fps, width, target_bytes,
+            fps,
+            width,
+            target_bytes,
         ) {
             Ok((path, bytes)) => {
                 outputs.push(TemplateOutput {
@@ -1631,7 +1816,6 @@ pub fn compose_template_gifs(
         outputs,
     })
 }
-
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1733,20 +1917,32 @@ pub fn compose_batch_template_gifs(
         let first_tpl = &request.template_paths[0];
         let first_output = output_dir.join(format!(
             "{}.gif",
-            Path::new(first_tpl).file_stem().and_then(|s| s.to_str()).unwrap_or("out")
+            Path::new(first_tpl)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("out")
         ));
 
         if let Ok((_, size)) = compose_single_template_gif(
-            &ffmpeg, Path::new(first_tpl), Path::new(video_path), &first_output,
-            request.start_seconds, duration,
-            "#00FF00", &request.fit_mode,
-            request.fps, request.width, request.target_bytes,
+            &ffmpeg,
+            Path::new(first_tpl),
+            Path::new(video_path),
+            &first_output,
+            request.start_seconds,
+            duration,
+            "#00FF00",
+            &request.fit_mode,
+            request.fps,
+            request.width,
+            request.target_bytes,
         ) {
             // If the first template needed retries, use those params for the batch
             if size > request.target_bytes && request.target_bytes > 0 {
                 // Lower params for the batch
                 best_fps = (request.fps - 2).max(request.min_fps.unwrap_or(6));
-                if best_width.is_some() { best_width = best_width.map(|w| (w as f64 * 0.85) as u32); }
+                if best_width.is_some() {
+                    best_width = best_width.map(|w| (w as f64 * 0.85) as u32);
+                }
             }
         }
     }
@@ -1755,15 +1951,29 @@ pub fn compose_batch_template_gifs(
     let mut results = Vec::new();
     for template_path in &request.template_paths {
         let template = Path::new(template_path);
-        let stem = template.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let stem = template
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
         let output = output_dir.join(format!("{stem}.gif"));
-        let name = template.file_name().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
+        let name = template
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
 
         match compose_single_template_gif(
-            &ffmpeg, template, Path::new(video_path), &output,
-            request.start_seconds, duration,
-            "#00FF00", &request.fit_mode,
-            best_fps, best_width, request.target_bytes,
+            &ffmpeg,
+            template,
+            Path::new(video_path),
+            &output,
+            request.start_seconds,
+            duration,
+            "#00FF00",
+            &request.fit_mode,
+            best_fps,
+            best_width,
+            request.target_bytes,
         ) {
             Ok((path, bytes)) => {
                 results.push(BatchTemplateOutput {
@@ -1792,7 +2002,6 @@ pub fn compose_batch_template_gifs(
     Ok(BatchComposeResult { results })
 }
 
-
 /// Generate a single composite preview frame from template + video
 #[tauri::command]
 pub fn preview_template_frame(
@@ -1812,17 +2021,29 @@ pub fn preview_template_frame(
     let video = Path::new(&video_path);
     let output = Path::new(&output_path);
 
-    if !template.is_file() { return Err("模板文件不存在".into()); }
-    if !video.is_file() { return Err("视频文件不存在".into()); }
+    if !template.is_file() {
+        return Err("模板文件不存在".into());
+    }
+    if !video.is_file() {
+        return Err("视频文件不存在".into());
+    }
 
     // Probe template size
     let probe_out = Command::new(&ffmpeg)
-        .args(["-hide_banner", "-v", "error", "-show_entries", "stream=width,height", "-of", "json"])
+        .args([
+            "-hide_banner",
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "json",
+        ])
         .arg(template)
         .output()
         .map_err(|e| format!("无法读取模板：{e}"))?;
-    let json: serde_json::Value = serde_json::from_slice(&probe_out.stdout)
-        .map_err(|_| "无法解析模板信息".to_string())?;
+    let json: serde_json::Value =
+        serde_json::from_slice(&probe_out.stdout).map_err(|_| "无法解析模板信息".to_string())?;
     let tw = json["streams"][0]["width"].as_u64().unwrap_or(1920) as u32;
     let th = json["streams"][0]["height"].as_u64().unwrap_or(1080) as u32;
 
@@ -1838,12 +2059,19 @@ pub fn preview_template_frame(
     );
 
     let args = [
-        OsString::from("-hide_banner"), OsString::from("-nostdin"), OsString::from("-y"),
-        OsString::from("-i"), OsString::from(template_path.clone()),
-        OsString::from("-ss"), OsString::from(timestamp_seconds.to_string()),
-        OsString::from("-i"), OsString::from(video_path.clone()),
-        OsString::from("-vframes"), OsString::from("1"),
-        OsString::from("-filter_complex"), OsString::from(filter),
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-i"),
+        OsString::from(template_path.clone()),
+        OsString::from("-ss"),
+        OsString::from(timestamp_seconds.to_string()),
+        OsString::from("-i"),
+        OsString::from(video_path.clone()),
+        OsString::from("-vframes"),
+        OsString::from("1"),
+        OsString::from("-filter_complex"),
+        OsString::from(filter),
         OsString::from(output_path.clone()),
     ];
 
@@ -1855,7 +2083,10 @@ pub fn preview_template_frame(
         .map_err(|e| format!("FFmpeg 预览生成失败：{e}"))?;
 
     if !result.status.success() {
-        return Err(format!("预览合成失败：{}", String::from_utf8_lossy(&result.stderr)));
+        return Err(format!(
+            "预览合成失败：{}",
+            String::from_utf8_lossy(&result.stderr)
+        ));
     }
 
     Ok(output_path)
@@ -1882,7 +2113,9 @@ pub fn preview_watermark_frame(
     let ffmpeg = sidecar_path(&app, "ffmpeg")?;
     let input = Path::new(&input_path);
     let output = Path::new(&output_path);
-    if !input.is_file() { return Err("输入文件不存在".into()); }
+    if !input.is_file() {
+        return Err("输入文件不存在".into());
+    }
 
     let alpha = opacity.to_string();
     let font_size = format!("h*{size_percent}/100");
@@ -1925,7 +2158,11 @@ pub fn preview_watermark_frame(
         let mut parts = Vec::new();
         let mut prev = "0:v".to_string();
         for (i, (x, y)) in positions.iter().enumerate() {
-            let next = if i + 1 == positions.len() { "out".to_string() } else { format!("t{i}") };
+            let next = if i + 1 == positions.len() {
+                "out".to_string()
+            } else {
+                format!("t{i}")
+            };
             parts.push(format!("[{prev}]drawtext=fontfile='{font}':textfile='{textfile}':fontcolor=white@{alpha}:fontsize={font_size}:x={x}:y={y}[{next}]"));
             prev = next;
         }
@@ -1941,8 +2178,11 @@ pub fn preview_watermark_frame(
     }
 
     let mut args = vec![
-        OsString::from("-hide_banner"), OsString::from("-nostdin"), OsString::from("-y"),
-        OsString::from("-i"), OsString::from(input_path),
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-i"),
+        OsString::from(input_path),
     ];
     if has_second_input {
         args.push(OsString::from("-i"));
@@ -1953,9 +2193,12 @@ pub fn preview_watermark_frame(
         args.push(OsString::from(ts.to_string()));
     }
     args.extend([
-        OsString::from("-vframes"), OsString::from("1"),
-        OsString::from("-filter_complex"), OsString::from(filter),
-        OsString::from("-map"), OsString::from("[out]"),
+        OsString::from("-vframes"),
+        OsString::from("1"),
+        OsString::from("-filter_complex"),
+        OsString::from(filter),
+        OsString::from("-map"),
+        OsString::from("[out]"),
         OsString::from(output_path.clone()),
     ]);
 
@@ -1966,10 +2209,15 @@ pub fn preview_watermark_frame(
         .output()
         .map_err(|e| format!("FFmpeg 水印预览失败：{e}"))?;
 
-    for p in cleanup_paths { let _ = fs::remove_file(p); }
+    for p in cleanup_paths {
+        let _ = fs::remove_file(p);
+    }
 
     if !result.status.success() {
-        return Err(format!("水印预览合成失败：{}", String::from_utf8_lossy(&result.stderr)));
+        return Err(format!(
+            "水印预览合成失败：{}",
+            String::from_utf8_lossy(&result.stderr)
+        ));
     }
 
     Ok(output_path)
@@ -1978,10 +2226,10 @@ pub fn preview_watermark_frame(
 #[cfg(test)]
 mod tests {
     use super::{
-        escape_filter_value, ffmpeg_args, is_static_image, next_available_path, output_path,
-        overlay_coordinates, parse_progress_line, reduce_gif_params, target_sidecar_name,
-        tiled_coordinates, watermark_output_path, GifMediaOptions, GifMediaTaskRequest,
-        WatermarkMediaTaskRequest, WatermarkOptions,
+        escape_filter_value, ffmpeg_args, gif_temp_output_path, is_static_image,
+        next_available_path, output_path, overlay_coordinates, parse_progress_line,
+        reduce_gif_params, target_sidecar_name, tiled_coordinates, watermark_output_path,
+        GifMediaOptions, GifMediaTaskRequest, WatermarkMediaTaskRequest, WatermarkOptions,
     };
     use std::{
         ffi::OsString,
@@ -2150,6 +2398,62 @@ mod tests {
             directory.join("clip_gif_2.gif")
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn gif_retry_temp_keeps_gif_muxer_suffix_and_never_is_final_name() {
+        let final_path = Path::new("/tmp/中文 输出/片段.gif");
+        let temp = gif_temp_output_path(final_path);
+        assert_eq!(
+            temp.file_name().unwrap().to_string_lossy(),
+            ".片段.gif.part"
+        );
+        assert_ne!(temp, final_path);
+        assert!(temp.to_string_lossy().ends_with(".gif.part"));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn registry_cancel_kills_registered_child_without_wait_lock_deadlock() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mut child = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-re",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=160x90:rate=15",
+                "-t",
+                "20",
+                "-f",
+                "null",
+                "-",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let registry = super::MediaTaskRegistry::default();
+        let child = std::sync::Arc::new(std::sync::Mutex::new(child));
+        registry.insert("cancel-registry".into(), child.clone());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        registry.cancel("cancel-registry").unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let status = loop {
+            if let Some(status) = child.lock().unwrap().try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "registered child did not terminate"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert!(!status.success());
+        assert!(registry.take_cancelled("cancel-registry"));
+        registry.remove("cancel-registry");
     }
 
     #[cfg(target_os = "macos")]
@@ -2516,14 +2820,16 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
-
-
-
-
     #[test]
     fn parse_progress_with_zero_base_handles_ss_reset() {
-        assert_eq!(parse_progress_line("out_time_ms=2000000", 0.0, 4.0), Some(0.5));
-        assert_eq!(parse_progress_line("out_time_ms=4000000", 0.0, 4.0), Some(0.99)); // clamped
+        assert_eq!(
+            parse_progress_line("out_time_ms=2000000", 0.0, 4.0),
+            Some(0.5)
+        );
+        assert_eq!(
+            parse_progress_line("out_time_ms=4000000", 0.0, 4.0),
+            Some(0.99)
+        ); // clamped
         assert_eq!(parse_progress_line("progress=continue", 0.0, 4.0), None);
     }
 
@@ -2536,7 +2842,7 @@ mod tests {
         assert!(fps_c < 24);
         let (fps_s, _) = reduce_gif_params(24, Some(960), 1, "smoothness");
         assert_eq!(fps_s, 24); // fps unchanged on step 1
-        // width unchanged on step 1 (only reduces after step > 1)
+                               // width unchanged on step 1 (only reduces after step > 1)
     }
 
     #[test]

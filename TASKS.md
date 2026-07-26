@@ -657,3 +657,11 @@ e5281fd feat: 水印预览功能
 - [x] setTimeout 写入 `queueTimerRef`，cleanup 可清理
 - [x] 新增 Rust 测试：`parse_progress_with_zero_base`、`reduce_gif_params_follows_preference`
 - [x] 271 TS + 26 Rust + verify:core 通过
+# 2026-07-26｜发布前 P0 返工记录
+
+- [x] GIF FFmpeg worker 改为不持有 child mutex 跨 `wait`：轮询 `try_wait`，取消可在轮询间隙实时 kill。
+- [x] stdout/stderr 并行消费，避免 FFmpeg 管道填满后与等待一起死锁。
+- [x] 每轮 GIF 使用同目录 `.gif.part` 临时文件，成功后 rename；不删除或覆盖既有正式输出。
+- [x] `allowStrongCompression` 增加真实额外编码轮，跨重试进度按实际轮次单调推进。
+- [x] 增加临时文件命名和 registry cancel 终止回归测试；macOS arm64 sidecar 取消 fixture 通过。
+- [ ] 仍需 Tauri 实机确认 start command → cancel command → `Cancelled` 事件的桌面链路；本轮不发布版本。
