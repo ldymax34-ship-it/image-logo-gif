@@ -2,12 +2,12 @@
 @import '../styles/tokens.css';
 @import '../styles/theme.css';
 
-.btg-layout { display:flex; flex-direction:column; flex:1; overflow:hidden; }
-.btg-mode-tabs { display:flex; border-bottom:1px solid var(--color-border); padding:0 var(--space-4); flex-shrink:0; }
+.btg-layout { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; gap:12px; }
+.btg-mode-tabs { display:flex; border:1px solid var(--color-border); border-radius:10px; padding:0 var(--space-2); flex-shrink:0; background:var(--color-panel); }
 .btg-mode-tabs button { padding:var(--space-2) var(--space-4); font-size:var(--font-size-body); background:none; border:none; border-bottom:2px solid transparent; color:var(--color-text-muted); cursor:pointer; font-family:var(--font-sans); }
 .btg-mode-tabs button:hover { color:var(--color-text); }
 .btg-mode-tabs button.selected { color:var(--color-primary); border-bottom-color:var(--color-primary); }
-.btg-body { display:grid; grid-template-columns:1fr 300px; flex:1; overflow:hidden; }
+.btg-body { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:12px; flex:1; min-height:0; overflow:hidden; }
 
 .btg-section { display:flex; flex-direction:column; gap:6px; }
 .btg-section-header { display:flex; justify-content:space-between; align-items:center; }
@@ -21,14 +21,14 @@
 .btg-hint { font-size:11px; color:var(--color-primary); line-height:1.5; margin-top:var(--space-1); }
 
 /* Preview */
-.btg-preview-area { display:flex; flex-direction:column; padding:var(--panel-padding); overflow:hidden; gap:0; }
+.btg-preview-area { display:flex; flex-direction:column; padding:var(--panel-padding); overflow:hidden; gap:0; border:1px solid var(--color-border); border-radius:12px; background:var(--color-panel); }
 .btg-preview-header { display:flex; align-items:center; gap:var(--space-3); padding:0 var(--space-1) var(--space-2); flex-shrink:0; font-size:var(--font-size-caption); color:var(--color-text-muted); }
 .btg-preview-nav { display:flex; align-items:center; gap:6px; }
 .btg-preview-nav button { font-size:14px; color:var(--color-primary); background:none; border:none; cursor:pointer; padding:2px 6px; }
 .btg-preview-nav button:disabled { color:var(--color-text-faint); cursor:default; }
 .btg-preview-nav span { font-size:var(--font-size-caption); color:var(--color-text-muted); min-width:48px; text-align:center; }
 .btg-template-name { font-size:var(--font-size-caption); color:var(--color-text); font-weight:500; margin-left:auto; }
-.btg-canvas { flex:1; display:flex; align-items:center; justify-content:center; background:var(--color-canvas-deep); border-radius:var(--radius-lg); overflow:hidden; position:relative; min-height:300px; }
+.btg-canvas { flex:1; display:flex; align-items:center; justify-content:center; background:var(--color-canvas-deep); border:1px solid var(--color-border); border-radius:10px; overflow:hidden; position:relative; min-height:300px; padding:12px; }
 .btg-canvas-img { max-width:100%; max-height:100%; object-fit:contain; }
 .btg-canvas-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--color-text-faint); font-size:var(--font-size-body); gap:var(--space-3); position:relative; width:100%; height:100%; }
 .btg-canvas-template-only { max-width:70%; max-height:70%; object-fit:contain; opacity:0.6; }
@@ -44,7 +44,7 @@
 .btg-thumb span { font-size:10px; color:var(--color-text-muted); max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* Sidebar */
-.btg-sidebar { padding:var(--space-3); overflow-y:auto; display:flex; flex-direction:column; gap:var(--space-3); border-left:1px solid var(--color-border); }
+.btg-sidebar { padding:var(--space-3); overflow-y:auto; display:flex; flex-direction:column; gap:var(--space-3); border:1px solid var(--color-border); border-radius:12px; background:var(--color-panel); }
 .btg-fit-btns { display:flex; gap:var(--space-1); }
 .btg-fit-btns button { flex:1; height:var(--control-height-compact); background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); color:var(--color-text-muted); font-size:11px; cursor:pointer; font-family:var(--font-sans); }
 .btg-fit-btns button:hover { border-color:var(--color-primary); }

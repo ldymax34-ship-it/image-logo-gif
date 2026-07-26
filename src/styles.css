@@ -1859,15 +1859,19 @@ textarea {
   background: var(--color-app);
   color: var(--color-text);
   font-family: var(--font-sans);
+  padding: 16px;
+  gap: 12px;
 }
 
 .embedded-tool-topbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-app);
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-panel);
   flex-shrink: 0;
 }
 
@@ -1894,6 +1898,10 @@ textarea {
 .embedded-tool-container {
   flex: 1;
   overflow: hidden;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-panel);
 }
 
 .embedded-tool-placeholder {

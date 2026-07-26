@@ -665,3 +665,11 @@ e5281fd feat: 水印预览功能
 - [x] `allowStrongCompression` 增加真实额外编码轮，跨重试进度按实际轮次单调推进。
 - [x] 增加临时文件命名和 registry cancel 终止回归测试；macOS arm64 sidecar 取消 fixture 通过。
 - [ ] 仍需 Tauri 实机确认 start command → cancel command → `Cancelled` 事件的桌面链路；本轮不发布版本。
+
+## 2026-07-26｜工具页统一壳与边距
+
+- [x] Logo 工作区、GIF、批量模板和水印统一使用 16px 外部安全边距、12px gap、圆角 panel 和中性边框。
+- [x] 批量模板与水印中央画布增加可见边界和内边距；侧栏不再贴窗口边缘。
+- [x] GIF 内部标题/模式/内容区域统一为嵌入式 panel，批量压缩按钮显示完整“均衡 / 优先清晰 / 优先流畅”。
+- [x] 1280×720 / 1440×900 的前端构建门禁通过；窄窗口增加 1100px 布局收缩规则。
+- [ ] 仍需 Tauri 实机目视确认高 DPI 与系统 WebView 下的最终间距；本批未改媒体业务。

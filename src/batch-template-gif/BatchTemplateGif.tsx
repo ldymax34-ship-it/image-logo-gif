@@ -431,7 +431,7 @@ export function BatchTemplateGif({ onReturn }: Props) {
               <div className="btg-fit-btns">
                 {(Object.keys(PREF_LABELS) as CompressionPreference[]).map(p => (
                   <button key={p} className={job.compression.preference === p ? 'selected' : ''} onClick={() => setPref(p)}>
-                    {PREF_LABELS[p].slice(0, 2)}
+                    {PREF_LABELS[p]}
                   </button>
                 ))}
               </div>
