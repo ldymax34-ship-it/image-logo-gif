@@ -33,6 +33,7 @@
 
 /* ── Center canvas ── */
 .wm-canvas-wrap { position:relative; display:flex; align-items:center; justify-content:center; background:var(--color-canvas-deep); border:1px solid var(--color-border); border-radius:12px; overflow:hidden; cursor:crosshair; padding:12px; }
+.wm-fabric-host { position:absolute; inset:12px; display:flex; align-items:center; justify-content:center; }
 .wm-empty-canvas { position:absolute; color:var(--color-text-faint); font-size:var(--font-size-body); z-index:1; pointer-events:none; }
 .wm-canvas-hint { position:absolute; bottom:var(--space-2); left:50%; transform:translateX(-50%); font-size:11px; color:var(--color-text-faint); pointer-events:none; }
 .wm-preview-error { position:absolute; top:var(--space-2); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:var(--space-2); background:var(--color-danger-soft); border:1px solid var(--color-danger-border); border-radius:var(--radius-md); padding:6px 14px; font-size:var(--font-size-caption); color:var(--color-danger); z-index:2; }

@@ -681,3 +681,22 @@ e5281fd feat: 水印预览功能
 - [x] 水印运行中返回先调用真实取消命令，等待 `cancelled` 终态后才离开；取消失败保留工作区。
 - [x] 批量模板当前 Rust 批处理命令没有 taskId/cancel 边界，运行中返回明确阻止离开并提示等待终态，未伪造取消成功。
 - [ ] 仍需 Tauri 实机验证 Vue 事件桥、取消失败、StrictMode/快速返回；批量后端取消需后续独立批次补齐命令边界。
+# 2026-07-27｜Fabric DOM 所有权与 0.1.34 修复
+
+## 交互审查结论
+
+- 用户真实任务链：进入 Logo / 自定义 / 水印工具 → Fabric 接管交互 canvas → 快速返回工具箱或切换尺寸 → 不出现 `NotFoundError` → 原有预览与导出保持不变。
+- 当前主要问题：Fabric 7 会把 React 直接渲染的 canvas 移入 wrapper，React 卸载时会对旧父节点 `removeChild`；异步 dispose 与下一轮 setup 也可能竞争同一 host。
+- 建议删除：无；本轮不新增用户可见控制或重复操作。
+- 建议保留：现有画布拖动、缩放、Render Plan、导出、Fabric 固定对象职责。
+- 交给成熟库的部分：Fabric 保持 canvas wrapper / 命中 / 拖缩；React 只拥有稳定空 host。
+- 最小修改方案：三处入口统一使用 imperative canvas host、host epoch 与可拒绝 dispose 清理；水印拆分 init/image/watermark 代次。
+- 明确不做：不改 Render Plan、导出、业务状态、工具布局、图层系统或新增依赖。
+- 包体影响：无新增依赖；前端构建仅测试代码和生命周期辅助函数变更，发布包需待本机构建后记录。
+- 验收场景：Fabric reparent 后卸载、StrictMode 双 effect、动态 import/图片加载中退出、resize 与快速工具切换。
+
+- [x] React 只渲染稳定空 host，三处 Fabric canvas 由 effect 创建。
+- [x] cleanup 先使旧代次失效，再断开事件/observer、dispose，并仅在同 host epoch 下清理。
+- [x] 水印使用独立 init/image/watermark generation，避免首挂载 render 误使 init 过期。
+- [x] jsdom 真实模拟 Fabric `replaceChild + wrapper.append`，覆盖 Focus、Custom、水印及 StrictMode 工具返回。
+- [ ] 待 macOS WKWebView / Tauri .app 快速切换实机验证；jsdom 不能替代 WebKit。

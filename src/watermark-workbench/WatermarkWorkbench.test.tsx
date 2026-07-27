@@ -47,5 +47,7 @@ describe('WatermarkWorkbench lifecycle', () => {
     expect(markup).toContain('aria-label="素材与任务"');
     expect(markup).toContain('aria-label="水印预览画布"');
     expect(markup).toContain('aria-label="水印属性"');
+    expect(markup).toContain('class="wm-fabric-host"');
+    expect(markup).not.toContain('<canvas');
   });
 });

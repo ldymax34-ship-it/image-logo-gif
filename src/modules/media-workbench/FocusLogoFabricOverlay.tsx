@@ -6,6 +6,7 @@ import {
   FABRIC_CORNER_CONTROLS,
   FABRIC_SELECTION_STYLE
 } from '../../components/canvas/fabricSelection';
+import { createFabricCanvasElement, disposeFabricCanvasHost } from '../../components/canvas/fabricHost';
 import {
   createFocusLogoTransformBaseline,
   fromFocusLogoFabricFrame,
@@ -122,12 +123,13 @@ export function FocusLogoFabricOverlay({
   onTransformingChange: (transforming: boolean) => void;
   onError?: (message: string) => void;
 }) {
-  const elementRef = useRef<HTMLCanvasElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const objectRef = useRef<FabricRect>();
   const fabricModuleRef = useRef<FabricConstructor>();
   const baselineRef = useRef<FocusLogoTransformBaseline>();
   const transformingRef = useRef(false);
+  const hostEpochRef = useRef(0);
   const latestViewRef = useRef<LatestView>({ canvas, rect, previewScale, currentScale, constraintMode, selected });
   const callbacksRef = useRef({ onSelectedChange, onTransformChange, onTransformingChange, onError });
 
@@ -137,11 +139,15 @@ export function FocusLogoFabricOverlay({
   useEffect(() => {
     let disposed = false;
     let instance: Canvas | undefined;
+    const host = hostRef.current;
+    if (!host) return;
+    const hostEpoch = ++hostEpochRef.current;
+    const element = createFabricCanvasElement(host);
 
     void import('fabric').then((fabric) => {
-      if (disposed || !elementRef.current) return;
+      if (disposed) return;
       fabricModuleRef.current = fabric;
-      instance = new fabric.Canvas(elementRef.current, FOCUS_LOGO_FABRIC_CANVAS_OPTIONS);
+      instance = new fabric.Canvas(element, FOCUS_LOGO_FABRIC_CANVAS_OPTIONS);
       fabricCanvasRef.current = instance;
 
       const writeTransform = (target?: unknown) => {
@@ -200,7 +206,7 @@ export function FocusLogoFabricOverlay({
       baselineRef.current = undefined;
       transformingRef.current = false;
       fabricCanvasRef.current = null;
-      void instance?.dispose();
+      disposeFabricCanvasHost(host, () => instance?.dispose(), () => hostEpochRef.current === hostEpoch && fabricCanvasRef.current !== instance);
     };
   }, [canvas.height, canvas.width]);
 
@@ -217,7 +223,7 @@ export function FocusLogoFabricOverlay({
     });
   }, [canvas, constraintMode, currentScale, previewScale, rect, selected]);
 
-  return <div className="focus-logo-fabric-overlay" aria-label="Logo 交互层"><canvas ref={elementRef} /></div>;
+  return <div ref={hostRef} className="focus-logo-fabric-overlay" aria-label="Logo 交互层" />;
 }
 
 export { createFocusLogoObject, reconcileFocusLogo };

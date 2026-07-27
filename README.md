@@ -6,11 +6,11 @@
 
 ## 当前状态
 
-当前项目已推进到 0.1.33，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2，并已发布 Windows x64 与 macOS Apple Silicon 的 `0.1.33` 签名更新产物。
+当前开发版本为 0.1.34，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2；已发布的签名更新产物仍为 Windows x64 与 macOS Apple Silicon 的 `0.1.33`，0.1.34 仅完成本地候选包验证，尚未发布 updater。
 
 首次启动默认进入“品宣工具箱”：Logo 与版式可用，GIF / 媒体工具提供内部实验性 MP4/MOV → GIF 队列，水印与追溯（首版可见水印）均可用；设置可选择下次启动打开工具箱首页、Logo 与版式、GIF / 媒体工具、水印与追溯或上次使用的工具。进入 Logo 与版式后，原有设媒与自定义构图工作流、模块导航与导出行为保持不变，并可随时返回工具箱。
 
-当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 媒体窗口仍为独立模块。Preview 提示式自动更新已接入；2026-07-22 已完成隔离 macOS Apple Silicon `0.1.29 → 0.1.33` 更新 E2E。GIF 工具支持 MP4/MOV → GIF；水印工具支持文字/图片水印；隐形指纹未实现。
+当前处于正式产品收束路线：应用根层统一管理模块切换、全局品牌资源、全局设置与活动状态；设媒、自定义和 GIF 媒体窗口仍为独立模块。Preview 提示式自动更新已接入；2026-07-22 已完成隔离 macOS Apple Silicon `0.1.29 → 0.1.33` 更新 E2E。0.1.34 修复 Fabric 7 canvas DOM 接管与 React 卸载的生命周期冲突；GIF 工具支持 MP4/MOV → GIF；水印工具支持文字/图片水印；隐形指纹未实现。
 
 当前正式工作流已收束为：固定桌面应用框架、按画板独立保存品牌状态、统一解析预览 / 聚焦 / 导出的语言资源、工作区内聚焦草稿、连续 Logo / CPR 缩放、画板级 Logo 极限构图边界、聚焦视图滚轮缩放与平移，以及“每画板自身语种 + 追加语种 / 全语种”的批量导出。PNG 超限会明确失败，JPG 可按现有策略自动压缩；导出窗口会保留逐项结果与平台实际落盘文件名。
 
@@ -164,6 +164,8 @@ Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macO
 发布到公开二进制仓库的 Actions 需要 `RELEASE_REPOSITORY_TOKEN`：该 token 必须是仅对分发仓库授予 Contents 读写权限的 fine-grained PAT。完整发布和 Windows 实机步骤见 [自动更新说明](docs/AUTO_UPDATE_PLAN.md) 与 [Windows 测试说明](docs/WINDOWS_UPDATER_TEST.md)。
 
 `0.1.33` 已完成 macOS 候选先行门禁和正式双平台 Preview 分发。仍需在交互式 macOS/Windows 桌面会话中人工回归底图裁切手势、三个固定对象的选中/拖动/缩放、四种配色的目视效果以及 PNG/JPG 导出位置；CI、Render Plan 与 updater E2E 不能替代这些视觉与手势验收。
+
+`0.1.34` 已完成本地 macOS Apple Silicon `.app` / `.dmg` 候选构建与 Fabric DOM reparent 回归；仍需在真实 WKWebView 会话快速进入/返回 Logo、自定义和水印工具后再决定是否发布 updater。
 
 ## UI 方向
 

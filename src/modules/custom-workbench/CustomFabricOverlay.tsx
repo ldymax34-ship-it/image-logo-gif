@@ -5,6 +5,7 @@ import {
   FABRIC_CORNER_CONTROLS,
   FABRIC_SELECTION_STYLE
 } from '../../components/canvas/fabricSelection';
+import { createFabricCanvasElement, disposeFabricCanvasHost } from '../../components/canvas/fabricHost';
 import {
   createTransformBaseline,
   fromFabricFrameWithBaseline,
@@ -147,7 +148,7 @@ export function CustomFabricOverlay({
   /** Crop mode leaves pointer events to BoardCanvas; object state remains reconciled. */
   disabled?: boolean;
 }) {
-  const elementRef = useRef<HTMLCanvasElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const fabricCanvasRef = useRef<Canvas | null>(null);
   const objectRefs = useRef(new Map<CustomFabricObjectId, FabricRect>());
   const latestItemsRef = useRef(items);
@@ -156,6 +157,7 @@ export function CustomFabricOverlay({
   const isTransformingRef = useRef(false);
   const transformBaselineRef = useRef<TransformBaseline>();
   const fabricModuleRef = useRef<FabricConstructor>();
+  const hostEpochRef = useRef(0);
 
   latestItemsRef.current = items;
   latestViewRef.current = { canvas, previewScale, selectedId };
@@ -164,11 +166,15 @@ export function CustomFabricOverlay({
   useEffect(() => {
     let disposed = false;
     let instance: Canvas | undefined;
+    const host = hostRef.current;
+    if (!host) return;
+    const hostEpoch = ++hostEpochRef.current;
+    const element = createFabricCanvasElement(host);
 
     void import('fabric').then((fabric) => {
-      if (disposed || !elementRef.current) return;
+      if (disposed) return;
       fabricModuleRef.current = fabric;
-      instance = new fabric.Canvas(elementRef.current, CUSTOM_FABRIC_CANVAS_OPTIONS);
+      instance = new fabric.Canvas(element, CUSTOM_FABRIC_CANVAS_OPTIONS);
       fabricCanvasRef.current = instance;
 
       const getId = (target?: unknown) => (target as FabricRect | undefined)?.__customObjectId;
@@ -238,7 +244,7 @@ export function CustomFabricOverlay({
       objectRefs.current.clear();
       transformBaselineRef.current = undefined;
       fabricCanvasRef.current = null;
-      void instance?.dispose();
+      disposeFabricCanvasHost(host, () => instance?.dispose(), () => hostEpochRef.current === hostEpoch && fabricCanvasRef.current !== instance);
     };
   }, [canvas.height, canvas.width]);
 
@@ -269,7 +275,7 @@ export function CustomFabricOverlay({
     instance.requestRenderAll();
   }, [disabled]);
 
-  return <div className={`custom-fabric-overlay ${disabled ? 'is-disabled' : ''}`} aria-label="固定对象交互层"><canvas ref={elementRef} /></div>;
+  return <div ref={hostRef} className={`custom-fabric-overlay ${disabled ? 'is-disabled' : ''}`} aria-label="固定对象交互层" />;
 }
 
 export { createInteractionObject, reconcileObjects };

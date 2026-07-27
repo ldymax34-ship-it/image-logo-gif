@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Canvas as FabricCanvas, FabricImage, FabricObject } from 'fabric';
 import { ToolPageHeader } from '../components';
 import { FABRIC_CANVAS_OPTIONS } from '../components/canvas/fabricSelection';
+import { createFabricCanvasElement, disposeFabricCanvasHost, ignoreFabricDisposal } from '../components/canvas/fabricHost';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 
 /* ── types ── */
@@ -50,16 +51,19 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [previewError, setPreviewError] = useState('');
   const [verifyState, setVerifyState] = useState<'idle'|'ok'|'fail'>('idle');
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const [fabricReady, setFabricReady] = useState(false);
   const pendingReturnRef = useRef(false);
 
   /* ── lifecycle guards ── */
   const mountedRef = useRef(true);
-  const genRef = useRef(0);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const initGenRef = useRef(0);
+  const imageGenRef = useRef(0);
+  const watermarkGenRef = useRef(0);
+  const hostEpochRef = useRef(0);
+  const canvasHostRef = useRef<HTMLDivElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
   const wmObjRef = useRef<FabricObject | null>(null);
   const apiRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const roRef = useRef<ResizeObserver | null>(null);
   const queueTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const activeTaskIdRef = useRef<string>();
@@ -70,14 +74,17 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   const currentFile = tasks[0]?.path;
 
-  function nextGen() { genRef.current += 1; return genRef.current; }
-  function isStale(gen: number) { return !mountedRef.current || genRef.current !== gen; }
+  function nextGen(ref: { current: number }) { ref.current += 1; return ref.current; }
+  function isStale(ref: { current: number }, gen: number) { return !mountedRef.current || ref.current !== gen; }
 
   /* ── cleanup (run first in unmount) ── */
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      initGenRef.current += 1;
+      imageGenRef.current += 1;
+      watermarkGenRef.current += 1;
       if (queueTimerRef.current) clearTimeout(queueTimerRef.current);
       unlistenRef.current?.();
       // disconnect observer
@@ -85,13 +92,15 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       roRef.current = null;
       // dispose fabric
       const fc = fabricRef.current;
+      const hostEpoch = hostEpochRef.current;
       if (fc) {
         try { fc.off('object:modified'); } catch {}
         try { fc.off('object:moving'); } catch {}
         try { fc.off('object:scaling'); } catch {}
         try { fc.off('object:rotating'); } catch {}
-        try { fc.dispose(); } catch {}
         fabricRef.current = null;
+        const host = canvasHostRef.current;
+        if (host) disposeFabricCanvasHost(host, () => fc.dispose(), () => hostEpochRef.current === hostEpoch && fabricRef.current !== fc);
       }
       wmObjRef.current = null;
     };
@@ -99,31 +108,39 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   /* ── init fabric ── */
   const initFabric = useCallback(async () => {
-    const gen = nextGen();
+    const gen = nextGen(initGenRef);
     const { Canvas } = await import('fabric');
-    if (isStale(gen) || !canvasRef.current) return;
+    if (isStale(initGenRef, gen) || !canvasHostRef.current || fabricRef.current) return;
 
-    const fc = new Canvas(canvasRef.current, {
+    const canvasHost = canvasHostRef.current;
+    const hostEpoch = ++hostEpochRef.current;
+    const canvas = createFabricCanvasElement(canvasHost);
+
+    const fc = new Canvas(canvas, {
       ...FABRIC_CANVAS_OPTIONS, selection: true, preserveObjectStacking: true,
-      width: containerRef.current?.clientWidth ?? 800,
-      height: containerRef.current?.clientHeight ?? 600,
+      width: canvasHost.clientWidth || 800,
+      height: canvasHost.clientHeight || 600,
     });
-    if (isStale(gen)) { try { fc.dispose(); } catch {} return; }
+    if (isStale(initGenRef, gen)) {
+      disposeFabricCanvasHost(canvasHost, () => fc.dispose(), () => hostEpochRef.current === hostEpoch && (isStale(initGenRef, gen) || fabricRef.current !== fc));
+      return;
+    }
     fabricRef.current = fc;
+    setFabricReady(true);
 
     // ResizeObserver
-    if (containerRef.current) {
+    if (canvasHost) {
       const ro = new ResizeObserver(() => {
         if (!mountedRef.current || fabricRef.current !== fc) return;
         try {
           fabricRef.current.setDimensions({
-            width: containerRef.current!.clientWidth,
-            height: containerRef.current!.clientHeight,
+            width: canvasHost.clientWidth,
+            height: canvasHost.clientHeight,
           });
           fabricRef.current.renderAll();
         } catch {}
       });
-      ro.observe(containerRef.current);
+      ro.observe(canvasHost);
       roRef.current = ro;
     }
 
@@ -149,7 +166,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   /* ── load image ── */
   const loadImage = useCallback(async (path: string) => {
-    const gen = nextGen();
+    const gen = nextGen(imageGenRef);
     const fc = fabricRef.current;
     if (!fc) return;
 
@@ -158,20 +175,20 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     wmObjRef.current = null;
 
     const { FabricImage } = await import('fabric');
-    if (isStale(gen) || fabricRef.current !== fc) return;
+    if (isStale(imageGenRef, gen) || fabricRef.current !== fc) return;
 
     const { convertFileSrc } = await import('@tauri-apps/api/core');
     const url = convertFileSrc(path);
 
     try {
       const img = await FabricImage.fromURL(url);
-      if (isStale(gen) || fabricRef.current !== fc || !img) return;
+      if (isStale(imageGenRef, gen) || fabricRef.current !== fc || !img) return;
       fc.backgroundImage = img;
       fc.renderAll();
       setPreviewError('');
       setVerifyState('ok');
     } catch (e: any) {
-      if (isStale(gen)) return;
+      if (isStale(imageGenRef, gen)) return;
       setPreviewError(`无法加载图片: ${e?.message || '未知错误'}`);
       setVerifyState('fail');
     }
@@ -179,7 +196,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   /* ── render watermark ── */
   const renderWatermark = useCallback(async () => {
-    const gen = nextGen();
+    const gen = nextGen(watermarkGenRef);
     const fc = fabricRef.current;
     if (!fc || !currentFile) return;
 
@@ -187,7 +204,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     try { if (wmObjRef.current) { fc.remove(wmObjRef.current); wmObjRef.current = null; } } catch {}
 
     const { FabricText, FabricImage, Shadow: FabShadow } = await import('fabric');
-    if (isStale(gen) || fabricRef.current !== fc) return;
+    if (isStale(watermarkGenRef, gen) || fabricRef.current !== fc) return;
 
     const cw = fc.width ?? 800; const ch = fc.height ?? 600;
     const alpha = state.darkMode ? 0.06 : state.opacity;
@@ -213,7 +230,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       try {
         const { convertFileSrc: cfs } = await import('@tauri-apps/api/core');
         const img = await FabricImage.fromURL(cfs(state.imagePath));
-        if (isStale(gen) || fabricRef.current !== fc) return;
+        if (isStale(watermarkGenRef, gen) || fabricRef.current !== fc) return;
         if (img) {
           img.set({ opacity: alpha, selectable: true, hasControls: true, lockUniScaling: true,
             cornerStyle: 'circle', cornerColor: '#5b8def', cornerSize: 10, transparentCorners: false });
@@ -224,7 +241,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       } catch {} // non-critical
     }
 
-    if (isStale(gen) || fabricRef.current !== fc) return;
+    if (isStale(watermarkGenRef, gen) || fabricRef.current !== fc) return;
     if (obj) { fc.add(obj); wmObjRef.current = obj; }
     fc.renderAll();
   }, [currentFile, state]);
@@ -373,8 +390,8 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   }
 
   useEffect(() => { initFabric(); }, [initFabric]);
-  useEffect(() => { if (currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, loadImage]);
-  useEffect(() => { renderWatermark(); }, [renderWatermark]);
+  useEffect(() => { if (fabricReady && currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, fabricReady, loadImage]);
+  useEffect(() => { if (fabricReady) renderWatermark(); }, [fabricReady, renderWatermark]);
 
   /* ── self-verify ── */
   useEffect(() => {
@@ -444,10 +461,10 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
           {message && <p className="wm-error">{message}</p>}
         </aside>
 
-        <main className="wm-canvas-wrap" ref={containerRef} aria-label="水印预览画布" role="img"
+        <main className="wm-canvas-wrap" aria-label="水印预览画布" role="img"
           onPointerDown={()=>setShowOriginal(true)} onPointerUp={()=>setShowOriginal(false)} onPointerLeave={()=>setShowOriginal(false)}>
           {!currentFile && <div className="wm-empty-canvas">{desktop ? '导入素材后在此预览水印效果' : '桌面环境初始化中…'}</div>}
-          <canvas ref={canvasRef} />
+          <div ref={canvasHostRef} className="wm-fabric-host" />
           {verifyState === 'fail' && <div className="wm-preview-error"><span>⚠ 图片加载验证失败。请确认文件路径不含特殊字符，或尝试重新导入。</span><button onClick={() => currentFile && setVerifyState('idle')}>重试</button></div>}
           {verifyState === 'ok' && currentFile && <div className="wm-verify-ok">✓ 图片加载正常</div>}
           {previewError && <div className="wm-preview-error"><span>{previewError}</span>

@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2026-07-27｜0.1.34 Fabric 生命周期与 DOM 所有权修复
+
+- 修复 Fabric 7 将 React canvas 重挂到自身 wrapper 后，工具卸载可能触发 `NotFoundError` 的 DOM 所有权冲突。
+- Focus Logo、自定义构图与水印统一改为 React 稳定空 host + effect 内创建 canvas。
+- 增加 host epoch 与异步 dispose 清理保护，避免旧 Fabric 实例清理下一轮实例的 DOM。
+- 水印初始化、图片加载和水印对象渲染拆分为独立 generation，避免首次挂载竞态。
+- 新增真实 DOM reparent、StrictMode 与工具返回回归测试；未改 Render Plan、正式导出或业务能力。
+
 ## 2026-07-26｜P0 GIF 取消与重试返工
 
 - 修复 FFmpeg worker 持有 child 锁等待导致取消阻塞的问题；改为可中断轮询。
