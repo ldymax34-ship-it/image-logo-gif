@@ -1,5 +1,12 @@
 # 更新日志
 
+## 2026-07-27｜0.1.35-rc.4 水印导出任务事件修复（待验收）
+
+- 修复 Rust 媒体任务事件字段仍以 `task_id` / `output_path` 序列化、前端却读取 `taskId` / `outputPath`，导致完成、失败和取消事件全部无法匹配的问题；使用 Serde 官方 `rename_all_fields = "camelCase"` 并增加完整 JSON 契约测试。
+- 水印工作台改为在转换引擎可用且任务事件监听注册成功后才开放导出，避免快速静态图片在监听就绪前完成而丢失终态。
+- 增加任务监听、启动接受、子进程退出与终态事件投递的脱敏日志；未修改 FFmpeg 水印算法、Blob 图片预览或自动更新清单。
+- **仍待桌面实机验收**：PNG 导出成功、图片 Logo 导出成功、输出文件可正常打开。
+
 ## 2026-07-27｜0.1.35-rc.1 macOS 文件 URL 诊断候选（未验收）
 
 - 仅在 Diagnostic RC 构建中增加水印本地文件 URL 的会话内诊断报告：dialog path、plugin-fs、`convertFileSrc`、HTMLImage、只读 fetch 与 Fabric 解码探针均带时间顺序和超时记录。

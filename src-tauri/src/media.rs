@@ -77,7 +77,7 @@ pub struct WatermarkMediaTaskRequest {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
 pub enum MediaTaskEvent {
     Progress {
         task_id: String,
@@ -920,8 +920,32 @@ fn ffmpeg_failure_message(stderr: &str) -> String {
     format!("FFmpeg 处理失败：{detail}")
 }
 
+fn event_kind(event: &MediaTaskEvent) -> &'static str {
+    match event {
+        MediaTaskEvent::Progress { .. } => "progress",
+        MediaTaskEvent::Completed { .. } => "completed",
+        MediaTaskEvent::Failed { .. } => "failed",
+        MediaTaskEvent::Cancelled { .. } => "cancelled",
+    }
+}
+
+fn event_task_id(event: &MediaTaskEvent) -> &str {
+    match event {
+        MediaTaskEvent::Progress { task_id, .. }
+        | MediaTaskEvent::Completed { task_id, .. }
+        | MediaTaskEvent::Failed { task_id, .. }
+        | MediaTaskEvent::Cancelled { task_id } => task_id,
+    }
+}
+
 fn emit(app: &AppHandle, event: MediaTaskEvent) {
-    let _ = app.emit(MEDIA_EVENT, event);
+    let kind = event_kind(&event);
+    let task_id = event_task_id(&event).to_owned();
+    if let Err(error) = app.emit(MEDIA_EVENT, event) {
+        log::error!("MEDIA_TASK_EVENT_EMIT_FAILED task_id={task_id} kind={kind}: {error}");
+    } else if matches!(kind, "completed" | "failed" | "cancelled") {
+        log::info!("MEDIA_TASK_TERMINAL_EVENT_EMITTED task_id={task_id} kind={kind}");
+    }
 }
 
 fn spawn_media_task(
@@ -955,6 +979,11 @@ fn spawn_media_task(
         .map_err(|error| format!("无法启动应用内置 FFmpeg：{error}"))?;
     let child = Arc::new(Mutex::new(child));
     registry.insert(task_id.clone(), child.clone());
+    let output_name = output
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("unknown");
+    log::info!("MEDIA_TASK_SPAWNED task_id={} output={output_name}", task_id);
 
     let app_for_task = app.clone();
     let output_for_task = output.clone();
@@ -996,6 +1025,10 @@ fn spawn_media_task(
             }
         };
         let stderr = stderr_reader.join().unwrap_or_default();
+        match &status {
+            Some(status) => log::info!("MEDIA_TASK_CHILD_EXIT task_id={} status={status}", task_id_for_thread),
+            None => log::error!("MEDIA_TASK_CHILD_EXIT_UNKNOWN task_id={}", task_id_for_thread),
+        }
         for path in cleanup_paths {
             let _ = fs::remove_file(path);
         }
@@ -2229,7 +2262,8 @@ mod tests {
         escape_filter_value, ffmpeg_args, gif_temp_output_path, is_static_image,
         next_available_path, output_path, overlay_coordinates, parse_progress_line,
         reduce_gif_params, target_sidecar_name, tiled_coordinates, watermark_output_path,
-        GifMediaOptions, GifMediaTaskRequest, WatermarkMediaTaskRequest, WatermarkOptions,
+        event_kind, event_task_id, GifMediaOptions, GifMediaTaskRequest, MediaTaskEvent,
+        WatermarkMediaTaskRequest, WatermarkOptions,
     };
     use std::{
         ffi::OsString,
@@ -2855,6 +2889,26 @@ mod tests {
         } else {
             assert_eq!(target_sidecar_name("ffmpeg").to_string_lossy(), "ffmpeg");
         }
+    }
+
+    #[test]
+    fn serializes_terminal_events_with_the_frontend_camel_case_contract() {
+        let event = MediaTaskEvent::Completed {
+            task_id: "task-1".into(),
+            output_path: "/tmp/output.png".into(),
+            output_bytes: 123,
+        };
+        assert_eq!(event_kind(&event), "completed");
+        assert_eq!(event_task_id(&event), "task-1");
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            serde_json::json!({
+                "kind": "completed",
+                "taskId": "task-1",
+                "outputPath": "/tmp/output.png",
+                "outputBytes": 123,
+            })
+        );
     }
 
     #[test]

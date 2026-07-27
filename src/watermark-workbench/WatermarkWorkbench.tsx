@@ -51,6 +51,8 @@ function fmtSize(b?: number): string {
 export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [desktop, setDesktop] = useState(false);
   const [desktopState, setDesktopState] = useState<'initializing' | 'ready' | 'unavailable' | 'failed'>('initializing');
+  const [engineReady, setEngineReady] = useState(false);
+  const [taskEventsReady, setTaskEventsReady] = useState(false);
   const [tasks, setTasks] = useState<WatermarkTask[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<string>();
   const [state, setState] = useState<WatermarkState>(DEFAULT_STATE);
@@ -86,7 +88,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   activeTaskIdRef.current = activeTaskId;
-  const unlistenRef = useRef<(() => void)|null>(null);
 
   const currentFile = tasks[0]?.path;
 
@@ -137,7 +138,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       imageGenRef.current += 1;
       watermarkGenRef.current += 1;
       if (queueTimerRef.current) clearTimeout(queueTimerRef.current);
-      unlistenRef.current?.();
       // disconnect observer
       roRef.current?.disconnect();
       roRef.current = null;
@@ -220,6 +220,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   /* ── desktop bridge ── */
   useEffect(() => {
     let cancelled = false;
+    let unlistenTaskEvents: (() => void) | undefined;
     (async () => {
       try {
         const { isMediaDesktopAvailable, loadMediaDesktopApi } = await import('../gif-media/mediaDesktop');
@@ -231,18 +232,45 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
           return;
         }
         const api = await loadMediaDesktopApi();
-        if (cancelled || !mountedRef.current) return;
+        const engine = await api.getEngineStatus();
+        if (!engine.ready) throw new Error(engine.message || '内置转换引擎不可用。');
+        void logDiagnostic('info', 'WATERMARK_TASK_LISTENER_INIT', 'starting');
+        const unlisten = await api.listenTaskEvents((event) => {
+          if (cancelled || !mountedRef.current) return;
+          if (event.kind === 'completed' || event.kind === 'failed' || event.kind === 'cancelled') {
+            void logDiagnostic('info', 'WATERMARK_TASK_TERMINAL_EVENT', `${event.kind} task=${event.taskId}`);
+          }
+          setTasks((previous) => previous.map((task) => {
+            if (task.id !== event.taskId) return task;
+            if (event.kind === 'progress') return { ...task, status: 'running', progress: Math.min(1, Math.max(0, event.progress)) };
+            if (event.kind === 'completed') return { ...task, status: 'success', progress: 1, outputPath: event.outputPath, outputBytes: event.outputBytes, error: undefined };
+            if (event.kind === 'cancelled') return { ...task, status: 'cancelled', error: undefined };
+            return { ...task, status: 'failed', error: event.message || '失败' };
+          }));
+        });
+        if (cancelled || !mountedRef.current) {
+          unlisten();
+          return;
+        }
+        unlistenTaskEvents = unlisten;
         apiRef.current = api;
         setDesktop(true);
+        setEngineReady(true);
+        setTaskEventsReady(true);
         setDesktopState('ready');
+        void logDiagnostic('info', 'WATERMARK_TASK_LISTENER_READY', 'ready');
       } catch (error) {
         if (!cancelled && mountedRef.current) {
+          const detail = error instanceof Error ? error.message : '未知错误';
           setDesktopState('failed');
-          setMessage(error instanceof Error ? `桌面环境初始化失败：${error.message}` : '桌面环境初始化失败。');
+          setEngineReady(false);
+          setTaskEventsReady(false);
+          setMessage(`桌面环境初始化失败：${detail}`);
+          void logDiagnostic('error', 'WATERMARK_TASK_LISTENER_INIT_FAILED', error, 'task event listener');
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; unlistenTaskEvents?.(); };
   }, []);
 
   /* ── load image ── */
@@ -395,23 +423,25 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   /* ── task ── */
   async function startSingle(task: WatermarkTask) {
-    if (!apiRef.current || task.status !== 'waiting' || activeTaskIdRef.current) return;
+    if (!apiRef.current || !engineReady || !taskEventsReady || task.status !== 'waiting' || activeTaskIdRef.current) return;
     const s = stateRef.current; // snapshot current params
+    void logDiagnostic('info', 'WATERMARK_TASK_START_REQUESTED', `task=${task.id}`);
     setActiveTaskId(task.id);
     setTasks(prev => prev.map(t => t.id===task.id ? {...t,status:'running',progress:0} : t));
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('start_watermark_media_task', { request: {
+      const started = await apiRef.current.startWatermarkTask({
         taskId:task.id, inputPath:task.path,
         options: { kind:s.kind, text:s.text, imagePath:s.imagePath??null,
           position:'bottom-right', sizePercent:Math.round(s.scale*10),
           opacity:s.darkMode?0.06:s.opacity, pattern:s.pattern, density:s.density,
           angle:Math.round(s.rotation), darkMode:s.darkMode, outputDirectory:s.outputDirectory }
-      }});
+      });
+      void logDiagnostic('info', 'WATERMARK_TASK_START_ACCEPTED', `task=${started.taskId} output=${started.outputPath.split(/[\\/]/).pop() ?? 'unknown'}`);
     } catch(e:any) {
       if (!mountedRef.current) return;
       setTasks(prev => prev.map(t => t.id===task.id ? {...t,status:'failed',error:e?.message??String(e)} : t));
       setActiveTaskId(undefined);
+      void logDiagnostic('error', 'WATERMARK_TASK_START_FAILED', e, `task=${task.id}`);
     }
   }
 
@@ -425,8 +455,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   async function cancelActive() {
     if (!apiRef.current || !activeTaskId) return;
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('cancel_gif_media_task', { taskId: activeTaskId });
+      await apiRef.current.cancelTask(activeTaskId);
     } catch(e:any) { setMessage(e?.message??'取消失败'); }
   }
 
@@ -438,30 +467,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   function updateProp<K extends keyof WatermarkState>(key: K, value: WatermarkState[K]) {
     setState(prev => ({ ...prev, [key]: value }));
   }
-
-  /* ── init ── */
-  /* ── real task events (pure state update) ── */
-  useEffect(() => {
-    if (!desktop) return;
-    let cancelled = false;
-    (async () => {
-      const { listen } = await import('@tauri-apps/api/event');
-      const unlisten = await listen('gif-media://task', (event: any) => {
-        if (cancelled || !mountedRef.current) return;
-        const p = event.payload;
-        setTasks(prev => prev.map(t => {
-          if (t.id !== p.taskId) return t;
-          if (p.kind === 'progress') return { ...t, status: 'running' as WatermarkTask['status'], progress: Math.min(1, Math.max(0, p.progress)) };
-          if (p.kind === 'completed') return { ...t, status: 'success' as WatermarkTask['status'], progress: 1, outputPath: p.outputPath, outputBytes: p.outputBytes, error: undefined };
-          if (p.kind === 'cancelled') return { ...t, status: 'cancelled' as WatermarkTask['status'], error: undefined };
-          if (p.kind === 'failed') return { ...t, status: 'failed' as WatermarkTask['status'], error: p.message || '失败' };
-          return t;
-        }));
-      });
-      if (!cancelled) unlistenRef.current = unlisten;
-    })().catch(() => {});
-    return () => { cancelled = true; unlistenRef.current?.(); };
-  }, [desktop]);
 
   /* ── queue controller: advance when task finishes ── */
   useEffect(() => {
@@ -515,7 +520,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   }, [recordFileUrlDiagnostic, state.imagePath]);
 
   /* ── render ── */
-  const canProcess = desktop && tasks.some(t=>t.status==='waiting') && state.outputDirectory && !activeTaskId;
+  const canProcess = desktop && engineReady && taskEventsReady && tasks.some(t=>t.status==='waiting') && state.outputDirectory && !activeTaskId;
 
   return (
     <div className="embedded-tool-wrapper">
