@@ -105,11 +105,13 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
           return convertFileSrc(input);
         },
         fsProbe: async (input) => {
-          const { exists, stat } = await import('@tauri-apps/plugin-fs');
-          const fileExists = await exists(input);
-          if (!fileExists) return { exists: false };
+          const { stat } = await import('@tauri-apps/plugin-fs');
           const metadata = await stat(input);
           return { exists: true, metadata: { isFile: metadata.isFile, isDirectory: metadata.isDirectory, size: metadata.size } };
+        },
+        readFile: async (input) => {
+          const { readFile } = await import('@tauri-apps/plugin-fs');
+          return readFile(input);
         },
         fabricProbe: async (url) => {
           const { FabricImage } = await import('fabric');

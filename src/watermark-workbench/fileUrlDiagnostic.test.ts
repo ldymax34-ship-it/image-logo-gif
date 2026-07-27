@@ -1,81 +1,173 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { formatFileUrlDiagnostic, runFileUrlDiagnostic } from './fileUrlDiagnostic';
+import { formatFileUrlDiagnostic, mimeForPath, runFileUrlDiagnostic } from './fileUrlDiagnostic';
 
-const never = <T,>() => new Promise<T>(() => {});
-const successfulProbes = {
-  fsProbe: async () => ({ exists: true, metadata: { isFile: true, size: 12 } }),
-  htmlImageProbe: async () => ({ onload: true, currentSrc: 'asset://localhost/example', complete: true, naturalWidth: 100, naturalHeight: 50 }),
-  fetchProbe: async () => ({ status: 200, ok: true, contentType: 'image/png', contentLength: '12' }),
-  fabricProbe: async () => ({ hasObject: true, width: 100, height: 50 }),
-};
+const assetConvert = async (path: string) => `asset://localhost/${encodeURIComponent(path)}`;
+const fsProbe = async () => ({ exists: true, metadata: { isFile: true, size: 12 } });
+const htmlImageOk = async (url: string) => ({ onload: true, currentSrc: url, complete: true, naturalWidth: 100, naturalHeight: 50 });
+const fetchOk = async () => ({ status: 200, ok: true, contentType: 'image/png', contentLength: '12' });
+const fabricOk = async (url: string) => ({ hasObject: true, width: 100, height: 50 });
+const createObjectURL = (blob: Blob) => `blob:diagnostic-${blob.type}`;
+const revokeObjectURL = vi.fn();
 
-const successfulConvert = async () => 'asset://localhost/example.png';
+const ONE_PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
-describe('RC file URL diagnostic', () => {
-  it('awaits async asset URL conversion and keeps the session-only report metadata', async () => {
+const capabilities = JSON.parse(readFileSync(new URL('../../src-tauri/capabilities/default.json', import.meta.url), 'utf8'));
+
+function successfulOptions(rawPath: string) {
+  return {
+    target: 'background' as const, rawPath,
+    convertFileSrc: assetConvert, readFile: async () => ONE_PNG_BYTES, fsProbe,
+    htmlImageProbe: htmlImageOk, fetchProbe: fetchOk, fabricProbe: fabricOk, createObjectURL, revokeObjectURL,
+  };
+}
+
+describe('RC file URL diagnostic ACL contract', () => {
+  it('adds exactly the three fs command permissions without expanding scope', () => {
+    const fsCommandPermissions = capabilities.permissions.filter((permission: unknown) => typeof permission === 'string' && permission.startsWith('fs:allow-'));
+    expect(fsCommandPermissions).toEqual(['fs:allow-stat', 'fs:allow-read', 'fs:allow-read-file']);
+    const scope = capabilities.permissions.find((permission: unknown): permission is { identifier: string; allow: unknown } => (
+      typeof permission === 'object' && permission !== null && 'identifier' in permission && permission.identifier === 'fs:scope'
+    ));
+    expect(scope).toEqual({
+      identifier: 'fs:scope',
+      allow: [
+        { path: '$HOME/**' },
+        { path: '$DOWNLOAD/**' },
+        { path: '$DESKTOP/**' },
+        { path: '$DOCUMENT/**' },
+        { path: '$PICTURE/**' },
+      ],
+    });
+  });
+});
+
+describe('RC file URL diagnostic mime', () => {
+  it('maps png/jpg/jpeg/webp/gif and falls back to octet-stream', () => {
+    expect(mimeForPath('/tmp/a.png')).toBe('image/png');
+    expect(mimeForPath('/tmp/a.JPG')).toBe('image/jpeg');
+    expect(mimeForPath('/tmp/a.webp')).toBe('image/webp');
+    expect(mimeForPath('/tmp/a.gif')).toBe('image/gif');
+    expect(mimeForPath('/tmp/a.txt')).toBe('application/octet-stream');
+  });
+});
+
+describe('RC file URL diagnostic A/B report', () => {
+  it('runs both blob and asset strategies and keeps session-only metadata', async () => {
+    const readFile = vi.fn(async () => ONE_PNG_BYTES);
+    const convertFileSrc = vi.fn(assetConvert);
+    const revoke = vi.fn();
     const report = await runFileUrlDiagnostic({
-      target: 'background', rawPath: '/tmp/中文 空格/样例.png',
-      ...successfulProbes,
-      convertFileSrc: async (path) => `asset://localhost/${encodeURIComponent(path)}`, appVersion: '0.1.35-rc.1-diagnostic', attemptId: 'attempt-test',
+      ...successfulOptions('/tmp/中文 空格/样例.png'), readFile, convertFileSrc, revokeObjectURL: revoke,
+      appVersion: '0.1.35-rc.2-diagnostic', attemptId: 'attempt-test',
     });
     expect(report.rawPath).toContain('中文 空格');
-    expect(report.convertedUrl).toContain('asset://');
-    expect(report).toMatchObject({ target: 'background', appVersion: '0.1.35-rc.1-diagnostic', attemptId: 'attempt-test' });
+    expect(report).toMatchObject({ target: 'background', appVersion: '0.1.35-rc.2-diagnostic', attemptId: 'attempt-test' });
     expect(report.platform).toBeTruthy();
-    expect(report.userAgent).toBeTruthy();
     expect(report.architecture).toBe('not exposed by WebView');
-    expect(report.steps.map((item) => item.stage)).toEqual(expect.arrayContaining([
-      'dialog-returned-path', 'plugin-fs', 'convertFileSrc', 'html-image', 'fetch', 'fabric-from-url-start', 'fabric-from-url',
-    ]));
+    expect(report.strategies.map((s) => s.strategy)).toEqual(['blob', 'asset-protocol']);
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.map((s) => s.stage)).toEqual(expect.arrayContaining(['read-file', 'mime', 'create-blob-url', 'blob-image', 'blob-fabric', 'revoke']));
+    expect(blob.steps.find((s) => s.stage === 'revoke')).toMatchObject({ outcome: 'info', details: { revoked: true } });
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith('blob:diagnostic-image/png');
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(report.convertedUrl).toContain('asset://');
+    expect(asset.steps.map((s) => s.stage)).toEqual(expect.arrayContaining(['convert-file-src', 'asset-image', 'asset-fetch', 'asset-fabric']));
     expect(formatFileUrlDiagnostic(report)).toContain('样例.png');
   });
 
-  it('records conversion errors without inventing an image error string', async () => {
-    const fabricProbe = vi.fn();
-    const report = await runFileUrlDiagnostic({
-      ...successfulProbes, target: 'watermark-logo', rawPath: '/tmp/logo.png',
-      convertFileSrc: () => { throw new TypeError('bridge missing'); }, fabricProbe,
+  it('passes the original absolute path to readFile and convertFileSrc without manual modification', async () => {
+    const readFile = vi.fn(async () => ONE_PNG_BYTES);
+    const convertFileSrc = vi.fn(async (path: string) => `asset://localhost/${encodeURIComponent(path)}`);
+    await runFileUrlDiagnostic({
+      ...successfulOptions('/Users/tang/桌面/P7/简中.png'), readFile, convertFileSrc,
     });
-    expect(report.steps.find((item) => item.stage === 'convertFileSrc')).toMatchObject({ outcome: 'error', details: { name: 'TypeError', message: 'bridge missing' } });
-    expect(report.steps.some((item) => item.stage === 'html-image')).toBe(false);
-    expect(fabricProbe).not.toHaveBeenCalled();
+    expect(readFile).toHaveBeenCalledWith('/Users/tang/桌面/P7/简中.png');
+    expect(convertFileSrc).toHaveBeenCalledWith('/Users/tang/桌面/P7/简中.png');
   });
 
-  it('records a timeout when HTMLImageElement never dispatches either callback', async () => {
+  it('continues the asset strategy when the blob readFile ACL/read fails', async () => {
+    const readFile = vi.fn(() => Promise.reject(new Error('Command plugin:fs|read_file not allowed by ACL')));
+    const convertFileSrc = vi.fn(assetConvert);
     const report = await runFileUrlDiagnostic({
-      ...successfulProbes, target: 'background', rawPath: '/tmp/image.png', convertFileSrc: async () => 'asset://localhost/image.png', htmlImageProbe: () => never(), timeoutMs: 5,
+      ...successfulOptions('/tmp/logo.png'), readFile, convertFileSrc,
     });
-    expect(report.steps.find((item) => item.stage === 'html-image')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('html-image timed out') } });
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.find((s) => s.stage === 'read-file')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('not allowed by ACL') } });
+    expect(blob.steps.some((s) => s.stage === 'create-blob-url')).toBe(false);
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(asset.steps.find((s) => s.stage === 'convert-file-src')).toMatchObject({ outcome: 'ok' });
+    expect(asset.steps.find((s) => s.stage === 'asset-fabric')).toMatchObject({ outcome: 'ok' });
   });
 
-  it('records a timeout when fetch hangs', async () => {
+  it('continues asset diagnostics after readFile times out', async () => {
     const report = await runFileUrlDiagnostic({
-      ...successfulProbes, target: 'background', rawPath: '/tmp/image.png', convertFileSrc: async () => 'asset://localhost/image.png', fetchProbe: () => never(), timeoutMs: 5,
+      ...successfulOptions('/tmp/image.png'), timeoutMs: 5,
+      readFile: () => new Promise(() => {}),
     });
-    expect(report.steps.find((item) => item.stage === 'fetch')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('fetch timed out') } });
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.find((s) => s.stage === 'read-file')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('read-file timed out') } });
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(asset.steps.find((s) => s.stage === 'asset-fabric')).toMatchObject({ outcome: 'ok' });
   });
 
-  it('records a timeout when FabricImage.fromURL hangs', async () => {
+  it('keeps blob and asset probes independent when the blob image probe times out', async () => {
+    const revoke = vi.fn();
     const report = await runFileUrlDiagnostic({
-      ...successfulProbes, target: 'watermark-logo', rawPath: '/tmp/logo.png', convertFileSrc: async () => 'asset://localhost/logo.png', fabricProbe: () => never(), timeoutMs: 5,
+      ...successfulOptions('/tmp/image.png'), timeoutMs: 5,
+      htmlImageProbe: (url) => url.startsWith('blob:') ? new Promise(() => {}) : htmlImageOk(url),
+      revokeObjectURL: revoke,
     });
-    expect(report.steps.find((item) => item.stage === 'fabric-from-url')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('fabric-from-url timed out') } });
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.find((s) => s.stage === 'blob-image')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('blob-image timed out') } });
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith('blob:diagnostic-image/png');
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(asset.steps.find((s) => s.stage === 'asset-image')).toMatchObject({ outcome: 'ok' });
   });
 
-  it('records a timeout when the Tauri conversion bridge never resolves', async () => {
+  it('continues asset diagnostics when blob Fabric loading fails', async () => {
     const report = await runFileUrlDiagnostic({
-      ...successfulProbes, target: 'background', rawPath: '/tmp/image.png', convertFileSrc: () => never(), timeoutMs: 5,
+      ...successfulOptions('/tmp/image.png'),
+      fabricProbe: async (url) => {
+        if (url.startsWith('blob:')) throw new Error('blob fabric failed');
+        return fabricOk(url);
+      },
     });
-    expect(report.steps.find((item) => item.stage === 'convertFileSrc')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('convertFileSrc timed out') } });
-    expect(report.steps.some((item) => item.stage === 'html-image')).toBe(false);
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.find((s) => s.stage === 'blob-fabric')).toMatchObject({ outcome: 'error', details: { message: 'blob fabric failed' } });
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(asset.steps.find((s) => s.stage === 'asset-fabric')).toMatchObject({ outcome: 'ok' });
   });
 
-  it('records a timeout when the filesystem bridge never resolves', async () => {
+  it('records createObjectURL failures at their own stage and continues asset diagnostics', async () => {
     const report = await runFileUrlDiagnostic({
-      ...successfulProbes, target: 'background', rawPath: '/tmp/image.png', convertFileSrc: successfulConvert,
-      fsProbe: () => never(), timeoutMs: 50,
+      ...successfulOptions('/tmp/image.png'),
+      createObjectURL: () => { throw new Error('blob URL unavailable'); },
     });
-    expect(report.steps.find((item) => item.stage === 'plugin-fs')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('plugin-fs timed out') } });
-    expect(report.steps.find((item) => item.stage === 'convertFileSrc')).toMatchObject({ outcome: 'ok' });
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.find((s) => s.stage === 'read-file')).toMatchObject({ outcome: 'ok' });
+    expect(blob.steps.find((s) => s.stage === 'create-blob-url')).toMatchObject({ outcome: 'error', details: { message: 'blob URL unavailable' } });
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(asset.steps.find((s) => s.stage === 'asset-fabric')).toMatchObject({ outcome: 'ok' });
+  });
+
+  it('records revoke failures after using the exact created URL once', async () => {
+    const revoke = vi.fn(() => { throw new Error('revoke failed'); });
+    const report = await runFileUrlDiagnostic({ ...successfulOptions('/tmp/image.png'), revokeObjectURL: revoke });
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith('blob:diagnostic-image/png');
+    const blob = report.strategies.find((s) => s.strategy === 'blob')!;
+    expect(blob.steps.find((s) => s.stage === 'revoke')).toMatchObject({ outcome: 'error', details: { message: 'revoke failed' } });
+  });
+
+  it('records timeouts when the asset conversion bridge never resolves', async () => {
+    const report = await runFileUrlDiagnostic({
+      ...successfulOptions('/tmp/image.png'), timeoutMs: 5, convertFileSrc: () => new Promise(() => {}),
+    });
+    const asset = report.strategies.find((s) => s.strategy === 'asset-protocol')!;
+    expect(asset.steps.find((s) => s.stage === 'convert-file-src')).toMatchObject({ outcome: 'error', details: { message: expect.stringContaining('convert-file-src timed out') } });
+    expect(asset.steps.some((s) => s.stage === 'asset-image')).toBe(false);
   });
 });
