@@ -77,7 +77,11 @@ pub struct WatermarkMediaTaskRequest {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum MediaTaskEvent {
     Progress {
         task_id: String,
@@ -723,6 +727,33 @@ fn tiled_coordinates() -> [(&'static str, &'static str); 9] {
     ]
 }
 
+/// Drawtext uses only w/h/text_w/text_h. It must not contain main_w / overlay_w / overlay_h.
+fn drawtext_single_position(position: &str) -> (&'static str, &'static str) {
+    match position {
+        "top-left" => ("10", "10"),
+        "top-center" => ("(w-text_w)/2", "10"),
+        "top-right" => ("w-text_w-10", "10"),
+        "bottom-left" => ("10", "h-text_h-10"),
+        "bottom-center" => ("(w-text_w)/2", "h-text_h-10"),
+        _ => ("w-text_w-10", "h-text_h-10"),
+    }
+}
+
+/// Drawtext tiled uses only w/h/text_w/text_h. It must not contain main_w / overlay_w / overlay_h.
+fn drawtext_tiled_coordinates() -> [(&'static str, &'static str); 9] {
+    [
+        ("w*0.17-text_w/2", "h*0.17-text_h/2"),
+        ("w*0.50-text_w/2", "h*0.17-text_h/2"),
+        ("w*0.83-text_w/2", "h*0.17-text_h/2"),
+        ("w*0.17-text_w/2", "h*0.50-text_h/2"),
+        ("w*0.50-text_w/2", "h*0.50-text_h/2"),
+        ("w*0.83-text_w/2", "h*0.50-text_h/2"),
+        ("w*0.17-text_w/2", "h*0.83-text_h/2"),
+        ("w*0.50-text_w/2", "h*0.83-text_h/2"),
+        ("w*0.83-text_w/2", "h*0.83-text_h/2"),
+    ]
+}
+
 fn escape_filter_value(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -793,11 +824,11 @@ fn watermark_filter(
         options.opacity.to_string()
     };
     let pattern = options.pattern.as_deref().unwrap_or("diagonal");
-    let positions = match pattern {
-        "single" => vec![overlay_coordinates(&options.position)],
-        _ => tiled_coordinates().to_vec(),
-    };
     if options.kind == "text" {
+        let positions: Vec<(&str, &str)> = match pattern {
+            "single" => vec![drawtext_single_position(&options.position)],
+            _ => drawtext_tiled_coordinates().to_vec(),
+        };
         let font = escape_filter_value(&watermark_font_path(app)?.to_string_lossy());
         let text_file = watermark_text_file(&request.task_id, &options.text)?;
         let text_file_value = escape_filter_value(&text_file.to_string_lossy());
@@ -816,6 +847,11 @@ fn watermark_filter(
         return Ok((graph.join(";"), vec![text_file]));
     }
 
+    // image Logo overlay branch — uses overlay coordinates
+    let positions: Vec<(&str, &str)> = match pattern {
+        "single" => vec![overlay_coordinates(&options.position)],
+        _ => tiled_coordinates().to_vec(),
+    };
     let mut graph = vec![
         format!("[1:v]format=rgba,colorchannelmixer=aa={alpha}[watermark-alpha]"),
         format!(
@@ -911,10 +947,16 @@ fn gif_temp_output_path(final_output_path: &Path) -> PathBuf {
 }
 
 fn ffmpeg_failure_message(stderr: &str) -> String {
+    let noise_patterns = &[
+        "Conversion failed!",
+        "Error while processing the decoded data for stream",
+        "Cannot determine format of input",
+    ];
     let detail = stderr
         .lines()
         .rev()
-        .find(|line| !line.trim().is_empty())
+        .filter(|line| !line.trim().is_empty() && !noise_patterns.iter().any(|p| line.contains(p)))
+        .next()
         .map(str::trim)
         .unwrap_or("未知 FFmpeg 错误");
     format!("FFmpeg 处理失败：{detail}")
@@ -983,7 +1025,10 @@ fn spawn_media_task(
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("unknown");
-    log::info!("MEDIA_TASK_SPAWNED task_id={} output={output_name}", task_id);
+    log::info!(
+        "MEDIA_TASK_SPAWNED task_id={} output={output_name}",
+        task_id
+    );
 
     let app_for_task = app.clone();
     let output_for_task = output.clone();
@@ -1026,8 +1071,14 @@ fn spawn_media_task(
         };
         let stderr = stderr_reader.join().unwrap_or_default();
         match &status {
-            Some(status) => log::info!("MEDIA_TASK_CHILD_EXIT task_id={} status={status}", task_id_for_thread),
-            None => log::error!("MEDIA_TASK_CHILD_EXIT_UNKNOWN task_id={}", task_id_for_thread),
+            Some(status) => log::info!(
+                "MEDIA_TASK_CHILD_EXIT task_id={} status={status}",
+                task_id_for_thread
+            ),
+            None => log::error!(
+                "MEDIA_TASK_CHILD_EXIT_UNKNOWN task_id={}",
+                task_id_for_thread
+            ),
         }
         for path in cleanup_paths {
             let _ = fs::remove_file(path);
@@ -2154,27 +2205,9 @@ pub fn preview_watermark_frame(
     let font_size = format!("h*{size_percent}/100");
 
     let positions: Vec<(&str, &str)> = if tiled {
-        vec![
-            ("main_w*0.17-overlay_w/2", "main_h*0.17-overlay_h/2"),
-            ("main_w*0.50-overlay_w/2", "main_h*0.17-overlay_h/2"),
-            ("main_w*0.83-overlay_w/2", "main_h*0.17-overlay_h/2"),
-            ("main_w*0.17-overlay_w/2", "main_h*0.50-overlay_h/2"),
-            ("main_w*0.50-overlay_w/2", "main_h*0.50-overlay_h/2"),
-            ("main_w*0.83-overlay_w/2", "main_h*0.50-overlay_h/2"),
-            ("main_w*0.17-overlay_w/2", "main_h*0.83-overlay_h/2"),
-            ("main_w*0.50-overlay_w/2", "main_h*0.83-overlay_h/2"),
-            ("main_w*0.83-overlay_w/2", "main_h*0.83-overlay_h/2"),
-        ]
+        drawtext_tiled_coordinates().to_vec()
     } else {
-        let (x, y) = match position.as_str() {
-            "top-left" => ("20", "20"),
-            "top-center" => ("(main_w-overlay_w)/2", "20"),
-            "top-right" => ("main_w-overlay_w-20", "20"),
-            "bottom-left" => ("20", "main_h-overlay_h-20"),
-            "bottom-center" => ("(main_w-overlay_w)/2", "main_h-overlay_h-20"),
-            _ => ("main_w-overlay_w-20", "main_h-overlay_h-20"),
-        };
-        vec![(x, y)]
+        vec![drawtext_single_position(&position)]
     };
 
     let filter: String;
@@ -2259,11 +2292,11 @@ pub fn preview_watermark_frame(
 #[cfg(test)]
 mod tests {
     use super::{
-        escape_filter_value, ffmpeg_args, gif_temp_output_path, is_static_image,
-        next_available_path, output_path, overlay_coordinates, parse_progress_line,
-        reduce_gif_params, target_sidecar_name, tiled_coordinates, watermark_output_path,
-        event_kind, event_task_id, GifMediaOptions, GifMediaTaskRequest, MediaTaskEvent,
-        WatermarkMediaTaskRequest, WatermarkOptions,
+        drawtext_single_position, drawtext_tiled_coordinates, escape_filter_value, event_kind,
+        event_task_id, ffmpeg_args, gif_temp_output_path, is_static_image, next_available_path,
+        output_path, overlay_coordinates, parse_progress_line, reduce_gif_params,
+        target_sidecar_name, tiled_coordinates, watermark_output_path, GifMediaOptions,
+        GifMediaTaskRequest, MediaTaskEvent, WatermarkMediaTaskRequest, WatermarkOptions,
     };
     use std::{
         ffi::OsString,
@@ -2291,18 +2324,31 @@ mod tests {
         }
     }
 
+    fn extract_filter(args: &[OsString]) -> String {
+        let mut prev_was_filter = false;
+        for item in args {
+            if prev_was_filter {
+                return item.to_string_lossy().into_owned();
+            }
+            if item == "-filter_complex" {
+                prev_was_filter = true;
+            }
+        }
+        panic!("-filter_complex argument not found in args")
+    }
+
     fn test_watermark_args(
         request: &WatermarkMediaTaskRequest,
         output: &Path,
     ) -> (Vec<OsString>, Vec<PathBuf>) {
         let options = &request.options;
         let alpha = options.opacity.to_string();
-        let positions = if options.pattern.as_deref() != Some("single") {
-            tiled_coordinates().to_vec()
-        } else {
-            vec![overlay_coordinates(&options.position)]
-        };
         let (filter, cleanup) = if options.kind == "text" {
+            let positions: Vec<(&str, &str)> = if options.pattern.as_deref() != Some("single") {
+                drawtext_tiled_coordinates().to_vec()
+            } else {
+                vec![drawtext_single_position(&options.position)]
+            };
             let font = escape_filter_value("/tmp/test-font.otf");
             let text_file_path = std::env::temp_dir()
                 .join(format!("brand-material-watermark-{}.txt", request.task_id));
@@ -2322,6 +2368,11 @@ mod tests {
             }
             (graph.join(";"), vec![text_file_path])
         } else {
+            let positions: Vec<(&str, &str)> = if options.pattern.as_deref() != Some("single") {
+                tiled_coordinates().to_vec()
+            } else {
+                vec![overlay_coordinates(&options.position)]
+            };
             let mut graph = vec![
                 format!("[1:v]format=rgba,colorchannelmixer=aa={alpha}[watermark-alpha]"),
                 format!(
@@ -2416,8 +2467,27 @@ mod tests {
     #[test]
     fn keeps_the_last_ffmpeg_error_line_for_the_queue() {
         assert_eq!(
-            super::ffmpeg_failure_message("frame=1\nError opening output file denied.gif\n"),
+            super::ffmpeg_failure_message(
+                "frame=1\nError opening output file denied.gif\nConversion failed!\n"
+            ),
             "FFmpeg 处理失败：Error opening output file denied.gif"
+        );
+    }
+
+    #[test]
+    fn skips_generic_ffmpeg_tail_messages_and_returns_the_last_informative_error() {
+        // The real RC4 stderr ended with "Undefined constant or missing '(' in 'overlay_w/2'"
+        // followed by "Failed to parse expression: main_w*0.17-overlay_w/2" and then
+        // "Conversion failed!". After the fix, the function should skip "Conversion failed!"
+        // and return the expression parse error.
+        assert_eq!(
+            super::ffmpeg_failure_message(
+                "Warning: data is not aligned! This can lead to a speed loss\n\
+                 [Parsed_drawtext_0 @ 0x12345] Undefined constant or missing '(' in 'overlay_w/2'\n\
+                 Failed to parse expression: main_w*0.17-overlay_w/2\n\
+                 Conversion failed!\n"
+            ),
+            "FFmpeg 处理失败：Failed to parse expression: main_w*0.17-overlay_w/2"
         );
     }
 
@@ -2637,6 +2707,79 @@ mod tests {
     }
 
     #[test]
+    fn drawtext_coordinates_never_use_main_or_overlay_variables() {
+        for pos in [
+            "top-left",
+            "top-center",
+            "top-right",
+            "bottom-left",
+            "bottom-center",
+            "bottom-right",
+        ] {
+            let (x, y) = drawtext_single_position(pos);
+            for expr in [x, y] {
+                assert!(
+                    !expr.contains("main_w"),
+                    "drawtext single {pos} contains main_w in {expr}"
+                );
+                assert!(
+                    !expr.contains("main_h"),
+                    "drawtext single {pos} contains main_h in {expr}"
+                );
+                assert!(
+                    !expr.contains("overlay_w"),
+                    "drawtext single {pos} contains overlay_w in {expr}"
+                );
+                assert!(
+                    !expr.contains("overlay_h"),
+                    "drawtext single {pos} contains overlay_h in {expr}"
+                );
+            }
+        }
+        for (x, y) in drawtext_tiled_coordinates() {
+            for expr in [x, y] {
+                assert!(
+                    !expr.contains("main_w"),
+                    "drawtext tiled contains main_w in {expr}"
+                );
+                assert!(
+                    !expr.contains("main_h"),
+                    "drawtext tiled contains main_h in {expr}"
+                );
+                assert!(
+                    !expr.contains("overlay_w"),
+                    "drawtext tiled contains overlay_w in {expr}"
+                );
+                assert!(
+                    !expr.contains("overlay_h"),
+                    "drawtext tiled contains overlay_h in {expr}"
+                );
+            }
+            assert!(
+                x.contains("text_w") || x.contains("w"),
+                "drawtext tiled x must use w/text_w"
+            );
+            assert!(
+                y.contains("text_h") || y.contains("h"),
+                "drawtext tiled y must use h/text_h"
+            );
+        }
+    }
+
+    #[test]
+    fn image_overlay_coordinates_still_use_main_overlay_variables() {
+        let (x, y) = overlay_coordinates("bottom-right");
+        assert!(
+            x.contains("main_w") && x.contains("overlay_w"),
+            "image overlay x must use main_w/overlay_w"
+        );
+        assert!(
+            y.contains("main_h") && y.contains("overlay_h"),
+            "image overlay y must use main_h/overlay_h"
+        );
+    }
+
+    #[test]
     fn escape_filter_value_escapes_colons_and_commas() {
         let s = escape_filter_value("path:with,chars");
         assert_eq!(s, "path\\:with\\,chars");
@@ -2672,6 +2815,86 @@ mod tests {
         assert!(!values.contains(&"/bin/sh".into()));
         assert!(!values.contains(&"-c".into()));
         assert_eq!(args.1.len(), 1);
+        // Lock filter-text: drawtext must use w/h/text_w/text_h, not overlay variables.
+        let filter = extract_filter(&args.0);
+        assert!(
+            filter.contains("drawtext"),
+            "text single filter must contain drawtext"
+        );
+        assert!(filter.contains("w"), "text single filter must use w");
+        assert!(
+            !filter.contains("main_w"),
+            "text filter must not contain main_w"
+        );
+        assert!(
+            !filter.contains("overlay_w"),
+            "text filter must not contain overlay_w"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn text_watermark_default_tiled_filter_uses_drawtext_variables() {
+        let tmp =
+            std::env::temp_dir().join(format!("brand-media-wm-txt-tiled-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let args = test_watermark_args(
+            &watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, true),
+            Path::new("/tmp/out.jpg"),
+        );
+        let filter = extract_filter(&args.0);
+        assert!(
+            filter.contains("drawtext"),
+            "text tiled filter must contain drawtext"
+        );
+        assert!(filter.contains("text_w"), "text tiled must contain text_w");
+        assert!(
+            !filter.contains("main_w"),
+            "text tiled must not contain main_w"
+        );
+        assert!(
+            !filter.contains("overlay_w"),
+            "text tiled must not contain overlay_w"
+        );
+        assert!(filter.contains("w*0.17-text_w/2") || filter.contains("w*0.50-text_w/2"));
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn image_watermark_filter_uses_overlay_variables() {
+        let tmp =
+            std::env::temp_dir().join(format!("brand-media-wm-img-overlay-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let args = test_watermark_args(
+            &watermark_request(
+                &tmp,
+                "image",
+                "",
+                Some("/tmp/logo.png"),
+                "bottom-right",
+                15,
+                0.4,
+                false,
+            ),
+            Path::new("/tmp/out.png"),
+        );
+        let filter = extract_filter(&args.0);
+        assert!(
+            filter.contains("overlay"),
+            "image filter must contain overlay"
+        );
+        assert!(
+            filter.contains("main_w"),
+            "image filter must contain main_w"
+        );
+        assert!(
+            filter.contains("overlay_w"),
+            "image filter must contain overlay_w"
+        );
+        assert!(
+            !filter.contains("text_w"),
+            "image filter must not contain text_w"
+        );
         fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -2919,5 +3142,180 @@ mod tests {
         if expected.exists() {
             assert!(expected.is_file());
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_still_png_fixture(ffmpeg: &Path, path: &Path) {
+        let status = std::process::Command::new(ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x336699:s=320x240:r=1",
+                "-frames:v",
+                "1",
+                "-pix_fmt",
+                "rgba",
+                "-y",
+            ])
+            .arg(path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(status.success(), "fixture PNG creation failed");
+    }
+
+    #[cfg(target_os = "macos")]
+    fn real_text_watermark_args(
+        input: &Path,
+        output: &Path,
+        font: &Path,
+        text: &str,
+        size_percent: u32,
+        opacity: f64,
+    ) -> (Vec<OsString>, Vec<PathBuf>) {
+        let alpha = opacity.to_string();
+        let font_val = escape_filter_value(&font.to_string_lossy());
+        let text_file = std::env::temp_dir().join(format!(
+            "brand-media-ffmpeg-text-wm-{}.txt",
+            std::process::id()
+        ));
+        fs::write(&text_file, text).unwrap();
+        let text_file_val = escape_filter_value(&text_file.to_string_lossy());
+        let font_size = format!("h*{}/100", size_percent);
+        let positions = drawtext_tiled_coordinates();
+        let mut previous = "0:v".to_string();
+        let mut graph = Vec::new();
+        for (index, (x, y)) in positions.iter().enumerate() {
+            let next = if index + 1 == positions.len() {
+                "watermarked".to_string()
+            } else {
+                format!("text{index}")
+            };
+            graph.push(format!(
+                "[{previous}]drawtext=fontfile='{font_val}':textfile='{text_file_val}':fontcolor=white@{alpha}:fontsize={font_size}:x={x}:y={y}[{next}]"
+            ));
+            previous = next;
+        }
+        let filter = graph.join(";");
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-y"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-filter_complex"),
+            OsString::from(filter),
+            OsString::from("-map"),
+            OsString::from("[watermarked]"),
+            OsString::from("-frames:v"),
+            OsString::from("1"),
+            output.as_os_str().to_owned(),
+        ];
+        (args, vec![text_file])
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundled_ffmpeg_text_watermark_export_succeeds() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("品牌水印 测试-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.png");
+        let output = dir.join("result.png");
+        create_still_png_fixture(&ffmpeg, &input);
+        assert!(input.is_file() && input.metadata().unwrap().len() > 0);
+
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        assert!(font.is_file(), "bundled font must exist");
+
+        let (args, _cleanup) =
+            real_text_watermark_args(&input, &output, &font, "品宣工作台", 10, 0.5);
+        let result = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            result.status.success(),
+            "text watermark ffmpeg failed. stderr tail: {}",
+            &stderr[stderr.len().saturating_sub(500)..]
+        );
+        assert!(output.metadata().unwrap().len() > 0, "output is empty");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundled_ffmpeg_image_overlay_smoke_succeeds() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("品牌水印 图片logo-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.png");
+        let logo = dir.join("logo.png");
+        let output = dir.join("result.png");
+        create_still_png_fixture(&ffmpeg, &input);
+        // Tiny solid-colour logo
+        let logo_status = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0xFF6600:s=32x32:r=1",
+                "-frames:v",
+                "1",
+                "-pix_fmt",
+                "rgba",
+                "-y",
+            ])
+            .arg(&logo)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(logo_status.success(), "logo fixture creation failed");
+
+        let filter = format!(
+            "[1:v]format=rgba,colorchannelmixer=aa=0.5[wo];             [wo][0:v]scale2ref=w=main_w*25/100:h=-1[wm][base];             [base][wm]overlay=x={}:y={}:format=auto[watermarked]",
+            overlay_coordinates("bottom-right").0,
+            overlay_coordinates("bottom-right").1,
+        );
+        let args = [
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-y"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-i"),
+            logo.as_os_str().to_owned(),
+            OsString::from("-filter_complex"),
+            OsString::from(filter),
+            OsString::from("-map"),
+            OsString::from("[watermarked]"),
+            OsString::from("-frames:v"),
+            OsString::from("1"),
+            output.as_os_str().to_owned(),
+        ];
+        let result = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "image overlay ffmpeg failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(output.metadata().unwrap().len() > 0);
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

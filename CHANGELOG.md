@@ -1,5 +1,15 @@
 # 更新日志
 
+## 2026-07-27｜0.1.35-rc.5 水印文字坐标修复（待验收）
+
+- 修复实时文本水印在导出时 `Failed to parse expression: main_w*0.17-overlay_w/2` 错误。
+- 根因：`drawtext` filter 不能使用 `main_w/overlay_w/overlay_h`（这些是 overlay filter 变量）；需使用 `w/h/text_w/text_h`。
+- 新增 `drawtext_single_position` 与 `drawtext_tiled_coordinates` 函数，所有 drawtext 参数使用 w/h/text_w/text_h。
+- 图片 Logo overlay 坐标保持不变，继续使用 main_w/main_h/overlay_w/overlay_h。
+- `ffmpeg_failure_message` 跳过 "Conversion failed!" 等无信息尾部提示，优先返回最后一条有意义的错误行。
+- 补 drawtext 坐标不含 overlay 变量、image 坐标仍含 overlay 变量的 Rust 回归测试。
+  **仍待桌面实机验收**：PNG 文字水印导出成功、图片 Logo 导出成功、输出文件正常打开。
+
 ## 2026-07-27｜0.1.35-rc.4 水印导出任务事件修复（待验收）
 
 - 修复 Rust 媒体任务事件字段仍以 `task_id` / `output_path` 序列化、前端却读取 `taskId` / `outputPath`，导致完成、失败和取消事件全部无法匹配的问题；使用 Serde 官方 `rename_all_fields = "camelCase"` 并增加完整 JSON 契约测试。
