@@ -7,6 +7,8 @@
 - 增加 host epoch 与异步 dispose 清理保护，避免旧 Fabric 实例清理下一轮实例的 DOM。
 - 水印初始化、图片加载和水印对象渲染拆分为独立 generation，避免首次挂载竞态。
 - 新增真实 DOM reparent、StrictMode 与工具返回回归测试；未改 Render Plan、正式导出或业务能力。
+- 修复水印卸载时 React ref 已清空而跳过 Fabric dispose 的资源泄漏风险。
+- 修复水印桌面 bridge 初始化缺失：桌面可用时可导入；不可用或加载失败不再无限显示“初始化中”。
 
 ## 2026-07-26｜P0 GIF 取消与重试返工
 

@@ -43,6 +43,7 @@ function fmtSize(b?: number): string {
 /* ── component ── */
 export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [desktop, setDesktop] = useState(false);
+  const [desktopState, setDesktopState] = useState<'initializing' | 'ready' | 'unavailable' | 'failed'>('initializing');
   const [tasks, setTasks] = useState<WatermarkTask[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<string>();
   const [state, setState] = useState<WatermarkState>(DEFAULT_STATE);
@@ -61,6 +62,10 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const watermarkGenRef = useRef(0);
   const hostEpochRef = useRef(0);
   const canvasHostRef = useRef<HTMLDivElement>(null);
+  // React clears callback/object refs before passive effect cleanup. Keep the
+  // host captured by the active Fabric instance so cleanup can still dispose
+  // it after the React ref is null.
+  const activeFabricHostRef = useRef<HTMLDivElement | null>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
   const wmObjRef = useRef<FabricObject | null>(null);
   const apiRef = useRef<any>(null);
@@ -99,7 +104,8 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
         try { fc.off('object:scaling'); } catch {}
         try { fc.off('object:rotating'); } catch {}
         fabricRef.current = null;
-        const host = canvasHostRef.current;
+        const host = activeFabricHostRef.current;
+        activeFabricHostRef.current = null;
         if (host) disposeFabricCanvasHost(host, () => fc.dispose(), () => hostEpochRef.current === hostEpoch && fabricRef.current !== fc);
       }
       wmObjRef.current = null;
@@ -126,6 +132,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       return;
     }
     fabricRef.current = fc;
+    activeFabricHostRef.current = canvasHost;
     setFabricReady(true);
 
     // ResizeObserver
@@ -162,6 +169,34 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     fc.on('object:moving', sync);
     fc.on('object:scaling', sync);
     fc.on('object:rotating', sync);
+  }, []);
+
+  /* ── desktop bridge ── */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { isMediaDesktopAvailable, loadMediaDesktopApi } = await import('../gif-media/mediaDesktop');
+        if (!isMediaDesktopAvailable()) {
+          if (!cancelled && mountedRef.current) {
+            setDesktopState('unavailable');
+            setMessage('真实水印处理仅在桌面应用中可用。');
+          }
+          return;
+        }
+        const api = await loadMediaDesktopApi();
+        if (cancelled || !mountedRef.current) return;
+        apiRef.current = api;
+        setDesktop(true);
+        setDesktopState('ready');
+      } catch (error) {
+        if (!cancelled && mountedRef.current) {
+          setDesktopState('failed');
+          setMessage(error instanceof Error ? `桌面环境初始化失败：${error.message}` : '桌面环境初始化失败。');
+        }
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   /* ── load image ── */
@@ -463,7 +498,12 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
         <main className="wm-canvas-wrap" aria-label="水印预览画布" role="img"
           onPointerDown={()=>setShowOriginal(true)} onPointerUp={()=>setShowOriginal(false)} onPointerLeave={()=>setShowOriginal(false)}>
-          {!currentFile && <div className="wm-empty-canvas">{desktop ? '导入素材后在此预览水印效果' : '桌面环境初始化中…'}</div>}
+          {!currentFile && <div className="wm-empty-canvas">{
+            desktop ? '导入素材后在此预览水印效果'
+              : desktopState === 'initializing' ? '桌面环境初始化中…'
+                : desktopState === 'unavailable' ? '当前环境不支持本地水印处理'
+                  : '桌面环境初始化失败，请返回工具箱后重试'
+          }</div>}
           <div ref={canvasHostRef} className="wm-fabric-host" />
           {verifyState === 'fail' && <div className="wm-preview-error"><span>⚠ 图片加载验证失败。请确认文件路径不含特殊字符，或尝试重新导入。</span><button onClick={() => currentFile && setVerifyState('idle')}>重试</button></div>}
           {verifyState === 'ok' && currentFile && <div className="wm-verify-ok">✓ 图片加载正常</div>}

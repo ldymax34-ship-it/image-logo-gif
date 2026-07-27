@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('fabric', () => ({
@@ -15,11 +17,24 @@ vi.mock('fabric', () => ({
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (p: string) => `asset://localhost/${p}`, invoke: vi.fn() }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }));
 vi.mock('../components/canvas/fabricSelection', () => ({ FABRIC_CANVAS_OPTIONS: {}, FABRIC_CORNER_CONTROLS: {} }));
-vi.mock('../gif-media/mediaDesktop', () => ({ isMediaDesktopAvailable: () => false, loadMediaDesktopApi: vi.fn() }));
+const desktopHarness = vi.hoisted(() => ({ available: false, load: vi.fn() }));
+vi.mock('../gif-media/mediaDesktop', () => ({
+  isMediaDesktopAvailable: () => desktopHarness.available,
+  loadMediaDesktopApi: () => desktopHarness.load(),
+}));
 
-import { renderToStaticMarkup } from 'react-dom/server';
+import { act } from 'react';
 import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { WatermarkWorkbench } from './WatermarkWorkbench';
+
+class ResizeObserverMock {
+  observe = vi.fn();
+  disconnect = vi.fn();
+}
+vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('WatermarkWorkbench lifecycle', () => {
   it('renders without crashing', () => {
@@ -49,5 +64,44 @@ describe('WatermarkWorkbench lifecycle', () => {
     expect(markup).toContain('aria-label="水印属性"');
     expect(markup).toContain('class="wm-fabric-host"');
     expect(markup).not.toContain('<canvas');
+  });
+
+  it('enables importing after the desktop bridge initializes', async () => {
+    desktopHarness.available = true;
+    desktopHarness.load.mockResolvedValue({});
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () => { root.render(<WatermarkWorkbench onReturn={() => {}} />); await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="导入图片素材"]')?.disabled).toBe(false);
+    expect(container.textContent).not.toContain('桌面环境初始化中');
+    await act(async () => { root.unmount(); });
+    desktopHarness.available = false;
+    desktopHarness.load.mockReset();
+  });
+
+  it('reports unavailable desktop bridge instead of waiting forever', async () => {
+    desktopHarness.available = false;
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () => { root.render(<WatermarkWorkbench onReturn={() => {}} />); await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(container.textContent).toContain('真实水印处理仅在桌面应用中可用');
+    expect(container.textContent).not.toContain('桌面环境初始化中');
+    await act(async () => { root.unmount(); });
+  });
+
+  it('reports a bridge loading failure instead of waiting forever', async () => {
+    desktopHarness.available = true;
+    desktopHarness.load.mockRejectedValueOnce(new Error('bridge unavailable'));
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    await act(async () => { root.render(<WatermarkWorkbench onReturn={() => {}} />); await Promise.resolve(); });
+    await act(async () => { await Promise.resolve(); });
+    expect(container.textContent).toContain('桌面环境初始化失败：bridge unavailable');
+    expect(container.textContent).toContain('桌面环境初始化失败，请返回工具箱后重试');
+    await act(async () => { root.unmount(); });
+    desktopHarness.available = false;
+    desktopHarness.load.mockReset();
   });
 });

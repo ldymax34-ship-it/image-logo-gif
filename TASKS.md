@@ -699,4 +699,7 @@ e5281fd feat: 水印预览功能
 - [x] cleanup 先使旧代次失效，再断开事件/observer、dispose，并仅在同 host epoch 下清理。
 - [x] 水印使用独立 init/image/watermark generation，避免首挂载 render 误使 init 过期。
 - [x] jsdom 真实模拟 Fabric `replaceChild + wrapper.append`，覆盖 Focus、Custom、水印及 StrictMode 工具返回。
+- [x] 修复水印 cleanup 中 React 清空 ref 后跳过 `dispose()`：初始化保存稳定 host，卸载仍释放 Fabric。
+- [x] 水印补齐 desktop bridge 初始化；不可用/加载失败显示明确状态，避免无限“初始化中”。
+- [x] 生命周期回归改为断言真实 `Canvas.prototype.dispose` 调用；水印 bridge 可用、不可用、加载失败均覆盖。
 - [ ] 待 macOS WKWebView / Tauri .app 快速切换实机验证；jsdom 不能替代 WebKit。
