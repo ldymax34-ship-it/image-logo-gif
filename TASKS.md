@@ -702,4 +702,13 @@ e5281fd feat: 水印预览功能
 - [x] 修复水印 cleanup 中 React 清空 ref 后跳过 `dispose()`：初始化保存稳定 host，卸载仍释放 Fabric。
 - [x] 水印补齐 desktop bridge 初始化；不可用/加载失败显示明确状态，避免无限“初始化中”。
 - [x] 生命周期回归改为断言真实 `Canvas.prototype.dispose` 调用；水印 bridge 可用、不可用、加载失败均覆盖。
+
+## 2026-07-27｜水印图片 asset protocol 修复
+
+- [x] Tauri 2 启用 `protocol-asset` 与 asset protocol；静态 scope 保持空数组，避免放开全盘读取。
+- [x] 确认 dialog 插件 `open()` 会为用户实际选择的文件动态调用 `allow_file` / `allow_directory`，同时加入 filesystem 与 asset scope；授权仅存于本次运行。
+- [x] 水印原图与图片 Logo 统一通过一条 asset URL → Fabric 解码链；旧请求结果按 generation 丢弃，失败统一显示脱敏可恢复提示并记诊断码。
+- [x] MP4 / MOV 不再作为图片解码并误报损坏，改为明确“无静态预览但可批处理”。
+- [x] 补 asset protocol 配置契约与加载行为回归：URL 构造失败、解码失败、旧失败不覆盖新成功、重试成功、视频类型分流。
+- [ ] 待最终 macOS WKWebView 人工确认：通过系统文件选择器导入 PNG/JPG（中文与空格路径）和图片 Logo，确认预览可见。
 - [ ] 待 macOS WKWebView / Tauri .app 快速切换实机验证；jsdom 不能替代 WebKit。

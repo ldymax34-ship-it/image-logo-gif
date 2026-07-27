@@ -4,6 +4,8 @@ import { ToolPageHeader } from '../components';
 import { FABRIC_CANVAS_OPTIONS } from '../components/canvas/fabricSelection';
 import { createFabricCanvasElement, disposeFabricCanvasHost, ignoreFabricDisposal } from '../components/canvas/fabricHost';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
+import { logDiagnostic } from '../diagnostics/client';
+import { classifyWatermarkPreview, loadWatermarkPreview } from './watermarkPreview';
 
 /* ── types ── */
 type WatermarkKind = 'text' | 'image';
@@ -49,8 +51,10 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [state, setState] = useState<WatermarkState>(DEFAULT_STATE);
   const [message, setMessage] = useState('');
   const [showOriginal, setShowOriginal] = useState(false);
-  const [previewError, setPreviewError] = useState('');
-  const [verifyState, setVerifyState] = useState<'idle'|'ok'|'fail'>('idle');
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [previewNotice, setPreviewNotice] = useState('');
+  const [backgroundPreviewError, setBackgroundPreviewError] = useState('');
+  const [overlayError, setOverlayError] = useState('');
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [fabricReady, setFabricReady] = useState(false);
   const pendingReturnRef = useRef(false);
@@ -204,28 +208,50 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     const gen = nextGen(imageGenRef);
     const fc = fabricRef.current;
     if (!fc) return;
-
-    // clear previous
+    // A new selected input owns the canvas. Clear first so an old image can
+    // never remain visible while a video/unsupported input shows its notice.
     try { fc.clear(); } catch {}
     wmObjRef.current = null;
+    setBackgroundPreviewError('');
+    setPreviewNotice('');
+    const previewKind = classifyWatermarkPreview(path);
+    if (previewKind === 'video') {
+      setPreviewState('idle');
+      setPreviewNotice('视频素材不会在水印画布中生成静态预览；可继续加入批处理队列。');
+      return;
+    }
+    if (previewKind === 'unsupported') {
+      setPreviewState('error');
+      setBackgroundPreviewError('当前文件不支持在水印画布中预览。');
+      return;
+    }
+    setPreviewState('loading');
 
-    const { FabricImage } = await import('fabric');
-    if (isStale(imageGenRef, gen) || fabricRef.current !== fc) return;
-
-    const { convertFileSrc } = await import('@tauri-apps/api/core');
-    const url = convertFileSrc(path);
-
-    try {
-      const img = await FabricImage.fromURL(url);
-      if (isStale(imageGenRef, gen) || fabricRef.current !== fc || !img) return;
+    const result = await loadWatermarkPreview({
+      path,
+      toAssetUrl: async (input) => {
+        const { convertFileSrc } = await import('@tauri-apps/api/core');
+        return convertFileSrc(input);
+      },
+      fromUrl: async (url) => {
+        const { FabricImage } = await import('fabric');
+        return FabricImage.fromURL(url);
+      },
+      isCurrent: () => !isStale(imageGenRef, gen) && fabricRef.current === fc,
+    });
+    if (result.status === 'stale') return;
+    if (result.status === 'ready') {
+      const img = result.image;
       fc.backgroundImage = img;
       fc.renderAll();
-      setPreviewError('');
-      setVerifyState('ok');
-    } catch (e: any) {
-      if (isStale(imageGenRef, gen)) return;
-      setPreviewError(`无法加载图片: ${e?.message || '未知错误'}`);
-      setVerifyState('fail');
+      if (!isStale(imageGenRef, gen) && fabricRef.current === fc) {
+        setPreviewState('ready');
+        setBackgroundPreviewError('');
+      }
+    } else {
+      setPreviewState('error');
+      setBackgroundPreviewError('无法加载图片。请确认该文件仍存在且可访问，然后重试。');
+      void logDiagnostic('error', 'WATERMARK_PREVIEW_LOAD_FAILED', result.error, 'asset-protocol image preview');
     }
   }, []);
 
@@ -262,18 +288,30 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       text.scaleX = text.scaleY = state.scale;
       obj = text;
     } else if (state.imagePath) {
-      try {
-        const { convertFileSrc: cfs } = await import('@tauri-apps/api/core');
-        const img = await FabricImage.fromURL(cfs(state.imagePath));
-        if (isStale(watermarkGenRef, gen) || fabricRef.current !== fc) return;
-        if (img) {
+      const result = await loadWatermarkPreview({
+        path: state.imagePath,
+        toAssetUrl: async (input) => {
+          const { convertFileSrc } = await import('@tauri-apps/api/core');
+          return convertFileSrc(input);
+        },
+        fromUrl: (url) => FabricImage.fromURL(url),
+        isCurrent: () => !isStale(watermarkGenRef, gen) && fabricRef.current === fc,
+      });
+      if (result.status === 'stale') return;
+      if (result.status === 'ready') {
+        const img = result.image;
           img.set({ opacity: alpha, selectable: true, hasControls: true, lockUniScaling: true,
             cornerStyle: 'circle', cornerColor: '#5b8def', cornerSize: 10, transparentCorners: false });
           img.set({ left: state.x || cw/2, top: state.y || ch/2, angle: state.rotation });
           img.scaleToWidth(cw * state.scale * 0.25);
           obj = img;
+          setOverlayError('');
+      } else {
+        if (!isStale(watermarkGenRef, gen)) {
+          setOverlayError('无法加载水印图片。请重新选择图片后重试。');
+          void logDiagnostic('error', 'WATERMARK_OVERLAY_LOAD_FAILED', result.error, 'asset-protocol watermark overlay');
         }
-      } catch {} // non-critical
+      }
     }
 
     if (isStale(watermarkGenRef, gen) || fabricRef.current !== fc) return;
@@ -428,32 +466,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   useEffect(() => { if (fabricReady && currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, fabricReady, loadImage]);
   useEffect(() => { if (fabricReady) renderWatermark(); }, [fabricReady, renderWatermark]);
 
-  /* ── self-verify ── */
-  useEffect(() => {
-    if (!desktop || !currentFile) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { convertFileSrc } = await import('@tauri-apps/api/core');
-        const url = convertFileSrc(currentFile);
-        const testImg = new Image();
-        await new Promise<void>((resolve, reject) => {
-          testImg.onload = () => resolve();
-          testImg.onerror = () => reject(new Error('Image load failed'));
-          testImg.src = url;
-        });
-        if (cancelled) return;
-        setPreviewError('');
-        setVerifyState('ok');
-      } catch (e: any) {
-        if (cancelled) return;
-        setPreviewError(`图片加载失败: ${e?.message || '未知错误'}。路径: ${currentFile}`);
-        setVerifyState('fail');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [desktop, currentFile]);
-
   /* ── render ── */
   const canProcess = desktop && tasks.some(t=>t.status==='waiting') && state.outputDirectory && !activeTaskId;
 
@@ -505,10 +517,13 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
                   : '桌面环境初始化失败，请返回工具箱后重试'
           }</div>}
           <div ref={canvasHostRef} className="wm-fabric-host" />
-          {verifyState === 'fail' && <div className="wm-preview-error"><span>⚠ 图片加载验证失败。请确认文件路径不含特殊字符，或尝试重新导入。</span><button onClick={() => currentFile && setVerifyState('idle')}>重试</button></div>}
-          {verifyState === 'ok' && currentFile && <div className="wm-verify-ok">✓ 图片加载正常</div>}
-          {previewError && <div className="wm-preview-error"><span>{previewError}</span>
+          {previewState === 'loading' && currentFile && <div className="wm-verify-ok">正在加载图片…</div>}
+          {previewState === 'ready' && currentFile && <div className="wm-verify-ok">✓ 图片加载正常</div>}
+          {previewNotice && <div className="wm-preview-error"><span>{previewNotice}</span></div>}
+          {backgroundPreviewError && <div className="wm-preview-error"><span>{backgroundPreviewError}</span>
             <button onClick={()=>currentFile&&loadImage(currentFile)}>重试</button></div>}
+          {overlayError && <div className="wm-preview-error"><span>{overlayError}</span>
+            <button onClick={()=>renderWatermark()}>重试</button></div>}
           <div className="wm-canvas-hint">按住查看原图</div>
         </main>
 

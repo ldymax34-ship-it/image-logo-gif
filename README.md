@@ -167,6 +167,8 @@ Preview 包未使用正式商业签名：Windows 可能显示 SmartScreen，macO
 
 `0.1.34` 已完成本地 macOS Apple Silicon `.app` / `.dmg` 候选构建与 Fabric DOM reparent 回归；仍需在真实 WKWebView 会话快速进入/返回 Logo、自定义和水印工具后再决定是否发布 updater。
 
+水印本地预览使用 Tauri asset protocol：配置不授予全盘静态读取权限，系统文件选择器仅在当前运行期为用户实际选择的文件加入 asset / filesystem scope。PNG、JPG、WebP、GIF 可在画布预览；MP4、MOV 可加入批处理，但当前不生成静态画布预览。
+
 ## UI 方向
 
 前端 UI 全部重写。

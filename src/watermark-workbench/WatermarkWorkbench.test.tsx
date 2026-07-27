@@ -104,4 +104,5 @@ describe('WatermarkWorkbench lifecycle', () => {
     desktopHarness.available = false;
     desktopHarness.load.mockReset();
   });
+
 });
