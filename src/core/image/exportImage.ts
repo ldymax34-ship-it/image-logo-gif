@@ -3,6 +3,7 @@ import { buildBrandRenderPlan, createBrandGrid, deriveBrandColorMode, getBrandAs
 import { renderBrandLayer, type LayoutRect } from '../layout';
 import { computeCropTransform, type BoardPreviewState } from './crop';
 import type { MaterialAsset } from './imageMeta';
+import { buildWatermarkRenderLayers, type WatermarkConfig, type WatermarkLayerInstance } from './watermarkRenderPlan';
 import type { MaterialFormat, MaterialSpec } from '../spec/specParser';
 
 export type BoardRenderLayer = {
@@ -38,6 +39,7 @@ export type BoardRenderPlan = {
   };
   layers: BoardRenderLayer[];
   safeArea: LayoutRect;
+  watermarkLayers: WatermarkLayerInstance[];
 };
 
 export type BoardRenderInput = {
@@ -49,6 +51,7 @@ export type BoardRenderInput = {
   cprAsset?: BrandAsset;
   companyLogoAsset?: BrandAsset;
   gameLogoAsset?: BrandAsset;
+  watermarkConfig?: WatermarkConfig;
 };
 
 export type ExportBoardImageOptions = BoardRenderInput & {
@@ -118,11 +121,13 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
       image: {
         src: input.asset.objectUrl,
         alt: input.asset.fileName,
-      rect: { x: transform.offsetX, y: transform.offsetY, width: transform.width, height: transform.height }
+        rect: { x: transform.offsetX, y: transform.offsetY, width: transform.width, height: transform.height }
       },
-      layers
-      ,
+      layers,
       safeArea: grouped.safeArea,
+      watermarkLayers: input.watermarkConfig
+        ? buildWatermarkRenderLayers({ width: input.spec.width, height: input.spec.height }, input.watermarkConfig)
+        : []
     };
   }
   const brandPreview = renderBrandLayer({
@@ -168,9 +173,11 @@ export function buildBoardRenderPlan(input: BoardRenderInput): BoardRenderPlan {
           )
         } satisfies BoardRenderLayer;
       })
-     .filter((layer): layer is BoardRenderLayer => Boolean(layer))
-,
-    safeArea: getGridSafeArea(createBrandGrid({ width: input.spec.width, height: input.spec.height }))
+     .filter((layer): layer is BoardRenderLayer => Boolean(layer)),
+    safeArea: getGridSafeArea(createBrandGrid({ width: input.spec.width, height: input.spec.height })),
+    watermarkLayers: input.watermarkConfig
+      ? buildWatermarkRenderLayers({ width: input.spec.width, height: input.spec.height }, input.watermarkConfig)
+      : []
   };
 }
 
@@ -276,6 +283,35 @@ async function drawBrandLayer(context: CanvasRenderingContext2D, layer: BoardRen
   }
 }
 
+export async function drawWatermarkLayers(context: CanvasRenderingContext2D, layers: WatermarkLayerInstance[]): Promise<void> {
+  const images = new Map<string, Promise<HTMLImageElement>>();
+  for (const layer of layers) {
+    context.save();
+    try {
+      context.translate(layer.cx, layer.cy);
+      context.rotate((layer.rotation * Math.PI) / 180);
+      context.globalAlpha = layer.opacity;
+      if (layer.kind === 'text') {
+        context.fillStyle = layer.color;
+        context.font = `${layer.fontSize}px ${layer.fontFamily}`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(layer.text, 0, 0);
+      } else {
+        let image = images.get(layer.src);
+        if (!image) {
+          image = loadImageElement(layer.src);
+          images.set(layer.src, image);
+        }
+        const source = await image;
+        context.drawImage(source, -layer.width / 2, -layer.height / 2, layer.width, layer.height);
+      }
+    } finally {
+      context.restore();
+    }
+  }
+}
+
 export async function renderBoardToCanvas(input: BoardRenderInput & { format?: MaterialFormat }): Promise<HTMLCanvasElement> {
   const plan = buildBoardRenderPlan(input);
   const canvas = createCanvas(plan.canvas.width, plan.canvas.height);
@@ -303,6 +339,7 @@ export async function renderBoardToCanvas(input: BoardRenderInput & { format?: M
   for (const layer of sortedLayers) {
     await drawBrandLayer(context, layer);
   }
+  await drawWatermarkLayers(context, plan.watermarkLayers);
 
   return canvas;
 }

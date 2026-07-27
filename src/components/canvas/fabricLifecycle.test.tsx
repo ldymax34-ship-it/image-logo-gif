@@ -58,8 +58,15 @@ describe('Fabric component lifecycle', () => {
     />);
   });
 
-  it('returns from watermark after Fabric reparents the canvas', async () => {
-    await mountThenReturn(<WatermarkWorkbench onReturn={() => {}} />);
+  it('returns from watermark without creating a Fabric host', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<StrictMode><WatermarkWorkbench onReturn={() => {}} /></StrictMode>); });
+    expect(container.querySelector('.wm-fabric-host')).toBeNull();
+    expect(container.querySelector('.wm-canvas-wrap')).not.toBeNull();
+    expect(() => act(() => root.unmount())).not.toThrow();
+    container.remove();
   });
 
   it('can switch from a Fabric-owned tool host back to the home node under StrictMode', async () => {

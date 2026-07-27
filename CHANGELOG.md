@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2026-07-27｜Phase 1.2a 图片水印 Render Plan（开发阶段，未发版）
+
+- 静态 PNG/JPEG/WebP 水印预览与导出统一使用 `WatermarkConfig → BoardRenderPlan.watermarkLayers`；预览由 BoardCanvas 绘制，导出由同一 plan 绘制到 Canvas。
+- 水印工作台移除 Fabric 画布；背景和图片 Logo 通过 MaterialAsset 管理 Blob URL 生命周期，替换、过期结果与卸载均显式释放。
+- 静态图片在本地 Canvas 渲染后保存到已选目录；GIF、MP4、MOV 保留既有 FFmpeg/Rust 任务与事件监听流程，未修改其参数或实现。
+- 保留原有描边、投影、暗水印控件及视频请求字段；Canvas 规则本轮仅覆盖受限 Render Plan 支持的基础文字/图片效果。
+- 新增 Render Plan、Canvas 异常恢复、水印工作台无 Fabric 与 GIF 分流回归测试；未升版本、未打包，仍待桌面实机验收。
+
 ## 2026-07-27｜Phase 1.1 统一图片资源入口（开发阶段，未发版）
 
 - Logo 与版式、水印工作台统一为 `ImageSource → MaterialAsset` 单一入口，不再保留水印专用 path→Blob loader。

@@ -8,7 +8,8 @@ import {
   type LogoGroupState,
   type BoardPreviewState,
   type MaterialAsset,
-  type MaterialSpec
+  type MaterialSpec,
+  type WatermarkConfig
 } from '../../core';
 import { SvgImageLayer, buildLayerFilter } from './SvgImageLayer';
 import { BrandOverlay } from './BrandOverlay';
@@ -31,7 +32,9 @@ export function BoardCanvas({
   onPointerDown,
   onPointerMove,
   onPointerUp,
-  onWheel
+  onWheel,
+  watermarkConfig,
+  hideWatermark = false
 }: {
   asset: MaterialAsset | undefined;
   spec: MaterialSpec;
@@ -51,6 +54,8 @@ export function BoardCanvas({
   onPointerMove?: (event: PointerEvent<HTMLDivElement>) => void;
   onPointerUp?: (event: PointerEvent<HTMLDivElement>) => void;
   onWheel?: (event: React.WheelEvent<HTMLDivElement>) => void;
+  watermarkConfig?: WatermarkConfig;
+  hideWatermark?: boolean;
 }) {
   const plan = asset && previewState
     ? buildBoardRenderPlan({
@@ -61,7 +66,8 @@ export function BoardCanvas({
         logoAsset,
         cprAsset,
         companyLogoAsset: overlayCompanyLogo,
-        gameLogoAsset: overlayGameLogo
+        gameLogoAsset: overlayGameLogo,
+        watermarkConfig
       })
     : undefined;
 
@@ -126,6 +132,23 @@ export function BoardCanvas({
               scale={scale}
             />
           ) : null}
+          {!hideWatermark ? plan.watermarkLayers.map((layer) => (
+            layer.kind === 'text' ? (
+              <div key={layer.id} className="watermark-layer" style={{
+                left: layer.cx * scale, top: layer.cy * scale,
+                fontFamily: layer.fontFamily, fontSize: layer.fontSize * scale,
+                color: layer.color, opacity: layer.opacity,
+                transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`
+              }}>{layer.text}</div>
+            ) : (
+              <img key={layer.id} className="watermark-layer watermark-image-layer" src={layer.src} alt="" draggable={false} style={{
+                left: layer.cx * scale, top: layer.cy * scale,
+                width: layer.width * scale, height: layer.height * scale,
+                opacity: layer.opacity,
+                transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`
+              }} />
+            )
+          )) : null}
         </>
       ) : (
         <div className="canvas-placeholder">上传图片</div>

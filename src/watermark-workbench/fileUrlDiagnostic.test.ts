@@ -77,6 +77,15 @@ describe('RC file URL diagnostic A/B report', () => {
     expect(formatFileUrlDiagnostic(report)).toContain('样例.png');
   });
 
+  it('marks Fabric probes skipped when an independent diagnostic entry point does not provide them', async () => {
+    const { fabricProbe: _fabricProbe, ...options } = successfulOptions('/tmp/no-fabric.png');
+    const report = await runFileUrlDiagnostic(options);
+    const blob = report.strategies.find((strategy) => strategy.strategy === 'blob')!;
+    const asset = report.strategies.find((strategy) => strategy.strategy === 'asset-protocol')!;
+    expect(blob.steps.find((step) => step.stage === 'blob-fabric')).toMatchObject({ outcome: 'info', details: { skipped: true, reason: 'probe-not-provided' } });
+    expect(asset.steps.find((step) => step.stage === 'asset-fabric')).toMatchObject({ outcome: 'info', details: { skipped: true, reason: 'probe-not-provided' } });
+  });
+
   it('passes the original absolute path to readFile and convertFileSrc without manual modification', async () => {
     const readFile = vi.fn(async () => ONE_PNG_BYTES);
     const convertFileSrc = vi.fn(async (path: string) => `asset://localhost/${encodeURIComponent(path)}`);

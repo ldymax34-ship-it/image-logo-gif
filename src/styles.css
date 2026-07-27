@@ -1105,6 +1105,9 @@ code {
   pointer-events: none;
 }
 
+.watermark-layer { position:absolute; pointer-events:none; user-select:none; white-space:pre-wrap; transform-origin:center; }
+.watermark-image-layer { object-fit:contain; }
+
 .brand-svg {
   width: 100%;
   height: 100%;

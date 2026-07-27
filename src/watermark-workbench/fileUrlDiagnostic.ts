@@ -43,7 +43,8 @@ export type FileUrlDiagnosticOptions = {
   convertFileSrc: (path: string) => string | Promise<string>;
   readFile: (path: string) => Promise<Uint8Array<ArrayBuffer>>;
   fsProbe: (path: string) => Promise<{ exists: boolean; metadata?: Record<string, unknown> }>;
-  fabricProbe: (url: string) => Promise<{ hasObject: boolean; width?: number; height?: number }>;
+  /** Optional so production preview code never needs to load Fabric. */
+  fabricProbe?: (url: string) => Promise<{ hasObject: boolean; width?: number; height?: number }>;
   /** Injectable only so the diagnostic's own timeouts can be regression tested. */
   htmlImageProbe?: (url: string) => Promise<HtmlImageDiagnostic>;
   /** Injectable only so the diagnostic's own timeouts can be regression tested. */
@@ -149,7 +150,7 @@ function defaultRevokeObjectURL(url: string): void {
 
 async function runBlobStrategy({
   rawPath, readFile, htmlImageProbe, fabricProbe, blobUrlApi, timeoutMs,
-}: Required<Pick<FileUrlDiagnosticOptions, 'rawPath' | 'readFile' | 'htmlImageProbe' | 'fabricProbe' | 'timeoutMs'>> & { blobUrlApi: BlobUrlApi }): Promise<FileUrlDiagnosticStrategy> {
+}: Required<Pick<FileUrlDiagnosticOptions, 'rawPath' | 'readFile' | 'htmlImageProbe' | 'timeoutMs'>> & { fabricProbe?: FileUrlDiagnosticOptions['fabricProbe']; blobUrlApi: BlobUrlApi }): Promise<FileUrlDiagnosticStrategy> {
   const strategy: FileUrlDiagnosticStrategy = { strategy: 'blob', steps: [] };
   let createdBlobUrl: string | undefined;
   try {
@@ -181,11 +182,15 @@ async function runBlobStrategy({
     } catch (error) {
       pushStep(strategy, 'blob-image', 'error', errorDetails(error));
     }
-    try {
-      const fabric = await withTimeout('blob-fabric', Promise.resolve().then(() => fabricProbe(blobUrl)), timeoutMs);
-      pushStep(strategy, 'blob-fabric', fabric.hasObject ? 'ok' : 'error', fabric);
-    } catch (error) {
-      pushStep(strategy, 'blob-fabric', 'error', errorDetails(error));
+    if (fabricProbe) {
+      try {
+        const fabric = await withTimeout('blob-fabric', Promise.resolve().then(() => fabricProbe(blobUrl)), timeoutMs);
+        pushStep(strategy, 'blob-fabric', fabric.hasObject ? 'ok' : 'error', fabric);
+      } catch (error) {
+        pushStep(strategy, 'blob-fabric', 'error', errorDetails(error));
+      }
+    } else {
+      pushStep(strategy, 'blob-fabric', 'info', { skipped: true, reason: 'probe-not-provided' });
     }
   } finally {
     if (createdBlobUrl) {
@@ -199,7 +204,7 @@ async function runBlobStrategy({
 async function runAssetStrategy({
   rawPath, convertFileSrc, htmlImageProbe, fetchProbe, fabricProbe, timeoutMs,
   report,
-}: Required<Pick<FileUrlDiagnosticOptions, 'rawPath' | 'convertFileSrc' | 'htmlImageProbe' | 'fetchProbe' | 'fabricProbe' | 'timeoutMs'>> & { report: FileUrlDiagnosticReport }): Promise<FileUrlDiagnosticStrategy> {
+}: Required<Pick<FileUrlDiagnosticOptions, 'rawPath' | 'convertFileSrc' | 'htmlImageProbe' | 'fetchProbe' | 'timeoutMs'>> & { fabricProbe?: FileUrlDiagnosticOptions['fabricProbe']; report: FileUrlDiagnosticReport }): Promise<FileUrlDiagnosticStrategy> {
   const strategy: FileUrlDiagnosticStrategy = { strategy: 'asset-protocol', steps: [] };
   let url: string;
   try {
@@ -222,11 +227,15 @@ async function runAssetStrategy({
   } catch (error) {
     pushStep(strategy, 'asset-fetch', 'error', errorDetails(error));
   }
-  try {
-    const fabric = await withTimeout('asset-fabric', Promise.resolve().then(() => fabricProbe(url)), timeoutMs);
-    pushStep(strategy, 'asset-fabric', fabric.hasObject ? 'ok' : 'error', fabric);
-  } catch (error) {
-    pushStep(strategy, 'asset-fabric', 'error', errorDetails(error));
+  if (fabricProbe) {
+    try {
+      const fabric = await withTimeout('asset-fabric', Promise.resolve().then(() => fabricProbe(url)), timeoutMs);
+      pushStep(strategy, 'asset-fabric', fabric.hasObject ? 'ok' : 'error', fabric);
+    } catch (error) {
+      pushStep(strategy, 'asset-fabric', 'error', errorDetails(error));
+    }
+  } else {
+    pushStep(strategy, 'asset-fabric', 'info', { skipped: true, reason: 'probe-not-provided' });
   }
   return strategy;
 }
