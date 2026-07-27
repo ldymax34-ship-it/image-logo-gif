@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('fabric', () => ({
@@ -64,6 +65,15 @@ describe('WatermarkWorkbench lifecycle', () => {
     expect(markup).toContain('aria-label="水印属性"');
     expect(markup).toContain('class="wm-fabric-host"');
     expect(markup).not.toContain('<canvas');
+  });
+
+  it('routes both formal image preview chains through the local Blob helper', () => {
+    const source = readFileSync(`${process.cwd()}/src/watermark-workbench/WatermarkWorkbench.tsx`, 'utf8');
+    const formalPreviewSection = source.slice(source.indexOf('/* ── load image ── */'), source.indexOf('async function copyFileUrlDiagnostics'));
+    expect((formalPreviewSection.match(/createSource: createLocalFilePreview/g) ?? [])).toHaveLength(2);
+    expect(formalPreviewSection).not.toContain('convertFileSrc');
+    expect(formalPreviewSection).toContain("'blob local-file preview'");
+    expect(formalPreviewSection).toContain("'blob local-file watermark overlay'");
   });
 
   it('enables importing after the desktop bridge initializes', async () => {

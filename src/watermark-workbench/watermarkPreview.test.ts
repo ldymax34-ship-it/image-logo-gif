@@ -8,10 +8,10 @@ describe('watermark preview adapter', () => {
     expect(classifyWatermarkPreview('封面 图片.png')).toBe('image');
   });
 
-  it('leaves loading when asset URL construction fails', async () => {
+  it('leaves loading when local preview source creation fails', async () => {
     const result = await loadWatermarkPreview({
       path: '/tmp/图片.png',
-      toAssetUrl: () => { throw new Error('asset protocol unavailable'); },
+      createSource: async () => { throw new Error('local preview unavailable'); },
       fromUrl: vi.fn(),
       isCurrent: () => true,
     });
@@ -21,7 +21,7 @@ describe('watermark preview adapter', () => {
   it('returns a visible decoder failure instead of a second verifier result', async () => {
     const result = await loadWatermarkPreview({
       path: '/tmp/图片.png',
-      toAssetUrl: () => 'asset://localhost/图片.png',
+      createSource: async () => ({ url: 'blob:preview', release: vi.fn() }),
       fromUrl: async () => { throw new Error('network error'); },
       isCurrent: () => true,
     });
@@ -32,13 +32,13 @@ describe('watermark preview adapter', () => {
     let current = false;
     const old = loadWatermarkPreview({
       path: '/tmp/old.png',
-      toAssetUrl: () => 'asset://localhost/old.png',
+      createSource: async () => ({ url: 'blob:old', release: vi.fn() }),
       fromUrl: async () => { current = false; throw new Error('late failure'); },
       isCurrent: () => current,
     });
     const next = loadWatermarkPreview({
       path: '/tmp/new.png',
-      toAssetUrl: () => 'asset://localhost/new.png',
+      createSource: async () => ({ url: 'blob:new', release: vi.fn() }),
       fromUrl: async () => ({ id: 'new-image' }),
       isCurrent: () => true,
     });
@@ -51,7 +51,7 @@ describe('watermark preview adapter', () => {
       .mockRejectedValueOnce(new Error('first decode failed'))
       .mockResolvedValueOnce({ id: 'retry-image' });
     const options = {
-      path: '/tmp/retry.png', toAssetUrl: () => 'asset://localhost/retry.png', fromUrl: decoder, isCurrent: () => true,
+      path: '/tmp/retry.png', createSource: async () => ({ url: 'blob:retry', release: vi.fn() }), fromUrl: decoder, isCurrent: () => true,
     };
     expect((await loadWatermarkPreview(options)).status).toBe('error');
     expect(await loadWatermarkPreview(options)).toMatchObject({ status: 'ready', image: { id: 'retry-image' } });
@@ -75,5 +75,57 @@ describe('watermark preview adapter', () => {
     state.overlayError = '';
     expect(state.backgroundError).toBe('原图加载失败');
     expect(state.overlayError).toBe('');
+  });
+
+  it('releases a ready source exactly once', async () => {
+    const release = vi.fn();
+    const result = await loadWatermarkPreview({
+      path: '/tmp/ready.png', createSource: async () => ({ url: 'blob:ready', release }),
+      fromUrl: async () => ({ id: 'image' }), isCurrent: () => true,
+    });
+    expect(result).toMatchObject({ status: 'ready' });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases a stale source exactly once', async () => {
+    const release = vi.fn();
+    const result = await loadWatermarkPreview({
+      path: '/tmp/stale.png', createSource: async () => ({ url: 'blob:stale', release }),
+      fromUrl: vi.fn(), isCurrent: () => false,
+    });
+    expect(result).toEqual({ status: 'stale' });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases after decoder throws or returns no image', async () => {
+    const thrownRelease = vi.fn();
+    const thrown = await loadWatermarkPreview({
+      path: '/tmp/throw.png', createSource: async () => ({ url: 'blob:throw', release: thrownRelease }),
+      fromUrl: async () => { throw new Error('decode failed'); }, isCurrent: () => true,
+    });
+    expect(thrown).toMatchObject({ status: 'error' });
+    expect(thrownRelease).toHaveBeenCalledTimes(1);
+
+    const emptyRelease = vi.fn();
+    const empty = await loadWatermarkPreview({
+      path: '/tmp/empty.png', createSource: async () => ({ url: 'blob:empty', release: emptyRelease }),
+      fromUrl: async () => null, isCurrent: () => true,
+    });
+    expect(empty).toMatchObject({ status: 'error' });
+    expect(emptyRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let release failures replace ready or decoder errors', async () => {
+    const ready = await loadWatermarkPreview({
+      path: '/tmp/ready.png', createSource: async () => ({ url: 'blob:ready', release: () => { throw new Error('release failed'); } }),
+      fromUrl: async () => ({ id: 'image' }), isCurrent: () => true,
+    });
+    expect(ready).toMatchObject({ status: 'ready', image: { id: 'image' } });
+
+    const error = await loadWatermarkPreview({
+      path: '/tmp/error.png', createSource: async () => ({ url: 'blob:error', release: () => { throw new Error('release failed'); } }),
+      fromUrl: async () => { throw new Error('decode failed'); }, isCurrent: () => true,
+    });
+    expect(error).toMatchObject({ status: 'error', error: expect.objectContaining({ message: 'decode failed' }) });
   });
 });
