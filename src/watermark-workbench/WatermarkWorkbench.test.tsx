@@ -85,13 +85,15 @@ describe('WatermarkWorkbench lifecycle', () => {
     expect(markup).not.toContain('<canvas');
   });
 
-  it('routes both formal image preview chains through the local Blob helper', () => {
+  it('routes both formal image preview chains through the unified MaterialAsset creator', () => {
     const source = readFileSync(`${process.cwd()}/src/watermark-workbench/WatermarkWorkbench.tsx`, 'utf8');
     const formalPreviewSection = source.slice(source.indexOf('/* ── load image ── */'), source.indexOf('async function copyFileUrlDiagnostics'));
-    expect((formalPreviewSection.match(/createSource: createLocalFilePreview/g) ?? [])).toHaveLength(2);
+    expect(formalPreviewSection).not.toContain('createLocalFilePreview');
+    expect(formalPreviewSection).not.toContain('createSource');
     expect(formalPreviewSection).not.toContain('convertFileSrc');
-    expect(formalPreviewSection).toContain("'blob local-file preview'");
-    expect(formalPreviewSection).toContain("'blob local-file watermark overlay'");
+    expect(formalPreviewSection).toContain('loadWatermarkPreview');
+    expect(formalPreviewSection).toContain("'material-asset preview'");
+    expect(formalPreviewSection).toContain("'material-asset watermark overlay'");
   });
 
   it('enables importing after the desktop bridge initializes', async () => {

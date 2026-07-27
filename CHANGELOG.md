@@ -1,5 +1,16 @@
 # 更新日志
 
+## 2026-07-27｜Phase 1.1 统一图片资源入口（开发阶段，未发版）
+
+- Logo 与版式、水印工作台统一为 `ImageSource → MaterialAsset` 单一入口，不再保留水印专用 path→Blob loader。
+- `createMaterialAsset({kind:'file'|'path'})` 统一走 Blob → Object URL → 解码 → MaterialAsset 管线；失败立即 revoke，不记录图片字节。
+- 新增 `releaseMaterialAsset` 幂等释放（模块内部 WeakMap + WeakSet），`MaterialAsset` 保持纯数据对象，不影响可序列化字段和 ExportJob。
+- 水印正式背景与 Logo 预览改由 `createMaterialAsset({kind:'path'})` 获得 MaterialAsset，`loadWatermarkPreview` 仅保留 generation/stale/error 编排与唯一释放。
+- 删除 `localFilePreview.ts` / `localFilePreview.test.ts`；`fileUrlDiagnostic` 作为诊断旁路保留，不属于正式加载链。
+- Logo 现有调用从 `createMaterialAsset(file)` 改为 `createMaterialAsset({kind:'file',file})`，所有 `URL.revokeObjectURL(asset.objectUrl)` 改为 `releaseMaterialAsset(asset)`，行为不变。
+- 新增 `imageMeta.test.ts`；重写 `watermarkPreview.test.ts` 为 mock 编排测试；更新水印源文件契约断言。
+- 本轮为开发阶段重构，未升版本、未打包；未触碰 Logo Render Plan、正式导出、GIF/批量模板/更新器。
+
 ## 2026-07-27｜0.1.35-rc.5 水印文字坐标修复（待验收）
 
 - 修复实时文本水印在导出时 `Failed to parse expression: main_w*0.17-overlay_w/2` 错误。

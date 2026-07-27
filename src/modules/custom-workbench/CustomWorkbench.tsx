@@ -1,6 +1,7 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
 import { buildBoardRenderPlan, canvasToBlob, computeCprPlacementRect, computeFitScale, createInitialCropState, createMaterialAsset, deriveBrandColorMode, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, panCropState, renderBoardToCanvas, snapLogoGroupPosition, zoomCropState, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
+import { releaseMaterialAsset } from '../../core/image/imageMeta';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { BoardCanvas } from '../../components/canvas';
 import { CustomFabricOverlay, type CustomFabricObjectId } from './CustomFabricOverlay';
@@ -192,8 +193,8 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     const file = fileList?.[0];
     if (!file) return;
     try {
-      const next = await createMaterialAsset(file);
-      if (asset) URL.revokeObjectURL(asset.objectUrl);
+      const next = await createMaterialAsset({ kind: 'file', file });
+      if (asset) releaseMaterialAsset(asset);
       setAsset(next);
       const nextSpec = resolveCustomCanvasSpec(next, canvasSelection, format) ?? CUSTOM_DEFAULT_CANVAS;
       setPreviewState({ assetId: next.id, specId: nextSpec.id, fitMode: 'contain', crop: createInitialCropState(next, nextSpec, 'contain') });
@@ -205,7 +206,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     }
   }
 
-  useEffect(() => () => { if (asset) URL.revokeObjectURL(asset.objectUrl); }, [asset]);
+  useEffect(() => () => { if (asset) releaseMaterialAsset(asset); }, [asset]);
 
   function updateCanvasSelection(next: CustomCanvasSelection) {
     setCanvasSelection(next);

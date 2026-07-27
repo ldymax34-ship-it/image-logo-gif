@@ -1,5 +1,5 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { createMaterialAsset, type BoardPreviewState, type MaterialAsset } from '../../core';
+import { createMaterialAsset, releaseMaterialAsset, type BoardPreviewState, type MaterialAsset } from '../../core';
 import type { BoardBrandAction } from './boardBrandReducer';
 import type { PendingConfirmation } from './useMediaWorkbenchState';
 
@@ -15,7 +15,7 @@ export function useMediaAssetActions(input: {
   async function handleImageFiles(fileList: FileList | null) {
     const files = Array.from(fileList ?? []); if (!files.length) return;
     input.setMessage('正在读取图片尺寸...');
-    const results = await Promise.allSettled(files.map((file) => createMaterialAsset(file)));
+    const results = await Promise.allSettled(files.map((file) => createMaterialAsset({ kind: 'file', file })));
     const nextAssets = results.filter((result): result is PromiseFulfilledResult<MaterialAsset> => result.status === 'fulfilled').map((result) => result.value);
     const failures = results.flatMap((result, index) => result.status === 'rejected' ? [`${files[index]?.name ?? '未知文件'}：${result.reason instanceof Error ? result.reason.message : '导入失败'}`] : []);
     if (nextAssets.length) { input.setAssets((previous) => [...previous, ...nextAssets]); input.setSelectedAssetId((current) => current ?? nextAssets[0]?.id); }
@@ -30,7 +30,7 @@ export function useMediaAssetActions(input: {
   function deleteAsset(assetId: string) {
     const index = input.assets.findIndex((asset) => asset.id === assetId); if (index < 0) return;
     const removed = input.assets[index]; const replacement = input.assets[index + 1] ?? input.assets[index - 1];
-    URL.revokeObjectURL(removed.objectUrl); input.setAssets((previous) => previous.filter((asset) => asset.id !== assetId));
+    releaseMaterialAsset(removed); input.setAssets((previous) => previous.filter((asset) => asset.id !== assetId));
     input.setPreviewStates((previous) => Object.fromEntries(Object.entries(previous).filter(([, state]) => state.assetId !== assetId)));
     input.dispatchBoardBrand({ type: 'remove-asset', assetId }); if (input.focusAssetId === assetId) closeFocusEditor();
     if (input.selectedAssetId === assetId) input.setSelectedAssetId(replacement?.id); input.setMessage(`已删除素材：${removed.fileName}`);

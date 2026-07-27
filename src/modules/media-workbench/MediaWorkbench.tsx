@@ -27,6 +27,7 @@ import {
   type MaterialFormat,
   type WorkbenchState
 } from '../../core';
+import { releaseMaterialAsset } from '../../core/image/imageMeta';
 import {
   AssetSidebar,
   BoardOverview,
@@ -255,7 +256,7 @@ export function MediaWorkbench({ active }: { active: boolean }) {
   useEffect(() => {
     return () => {
       for (const asset of assetsRef.current) {
-        URL.revokeObjectURL(asset.objectUrl);
+        releaseMaterialAsset(asset);
       }
     };
   }, []);

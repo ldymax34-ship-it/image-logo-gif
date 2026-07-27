@@ -5,7 +5,6 @@ import { FABRIC_CANVAS_OPTIONS } from '../components/canvas/fabricSelection';
 import { createFabricCanvasElement, disposeFabricCanvasHost, ignoreFabricDisposal } from '../components/canvas/fabricHost';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import { logDiagnostic } from '../diagnostics/client';
-import { createLocalFilePreview } from './localFilePreview';
 import { classifyWatermarkPreview, loadWatermarkPreview } from './watermarkPreview';
 import { formatFileUrlDiagnostic, runFileUrlDiagnostic, type FileUrlDiagnosticReport, type FileUrlDiagnosticTarget } from './fileUrlDiagnostic';
 
@@ -299,7 +298,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
     const result = await loadWatermarkPreview({
       path,
-      createSource: createLocalFilePreview,
       fromUrl: async (url) => {
         const { FabricImage } = await import('fabric');
         return FabricImage.fromURL(url);
@@ -318,7 +316,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     } else {
       setPreviewState('error');
       setBackgroundPreviewError('无法加载图片。请确认该文件仍存在且可访问，然后重试。');
-      void logDiagnostic('error', 'WATERMARK_PREVIEW_LOAD_FAILED', result.error, 'blob local-file preview');
+      void logDiagnostic('error', 'WATERMARK_PREVIEW_LOAD_FAILED', result.error, 'material-asset preview');
     }
   }, []);
 
@@ -357,7 +355,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     } else if (state.imagePath) {
       const result = await loadWatermarkPreview({
         path: state.imagePath,
-        createSource: createLocalFilePreview,
         fromUrl: (url) => FabricImage.fromURL(url),
         isCurrent: () => !isStale(watermarkGenRef, gen) && fabricRef.current === fc,
       });
@@ -373,7 +370,7 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
       } else {
         if (!isStale(watermarkGenRef, gen)) {
           setOverlayError('无法加载水印图片。请重新选择图片后重试。');
-          void logDiagnostic('error', 'WATERMARK_OVERLAY_LOAD_FAILED', result.error, 'blob local-file watermark overlay');
+          void logDiagnostic('error', 'WATERMARK_OVERLAY_LOAD_FAILED', result.error, 'material-asset watermark overlay');
         }
       }
     }
