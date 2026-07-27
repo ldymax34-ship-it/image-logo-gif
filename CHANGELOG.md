@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2026-07-28｜0.1.35-rc.6 本地 macOS 验收候选（未发布）
+
+- 删除当前受限 Watermark Render Plan 未实现的文字描边与投影状态、默认值和 UI 控件，避免用户设置不会出现在预览或导出中的无效选项。
+- 未新增依赖、运行时或资源，前端包体无增量；MaterialAsset → WatermarkConfig → BoardRenderPlan → Canvas 静态导出链路不变，GIF/视频/FFmpeg 流程未改。
+- 自动验证覆盖水印 UI 无描边/投影、文字/图片、45°、透明度、平铺间距及预览/导出 Render Plan 同源；本轮 `npm test`、`npm run build` 与 `npm run verify:core` 通过。
+- 本候选仅供本地 macOS 安装验收，未发布、未上传、未更新 updater 清单；仍待实机验证预览与导出视觉一致性。
+- 本地候选产物为 Apple Silicon DMG（约 41.6 MiB）；应用使用 ad-hoc 签名、未公证，且未生成可发布的 updater `.sig`。
+
 ## 2026-07-27｜Phase 1.2a 图片水印 Render Plan（开发阶段，未发版）
 
 - 静态 PNG/JPEG/WebP 水印预览与导出统一使用 `WatermarkConfig → BoardRenderPlan.watermarkLayers`；预览由 BoardCanvas 绘制，导出由同一 plan 绘制到 Canvas。

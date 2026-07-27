@@ -34,14 +34,6 @@ type WatermarkState = WatermarkStateAdapter & {
   kind: WatermarkKind;
   pattern: WatermarkPattern;
   density: WatermarkDensity;
-  strokeEnabled: boolean;
-  strokeColor: string;
-  strokeWidth: number;
-  shadowEnabled: boolean;
-  shadowColor: string;
-  shadowBlur: number;
-  shadowOffsetX: number;
-  shadowOffsetY: number;
   darkMode: boolean;
   outputDirectory: string;
 };
@@ -77,14 +69,6 @@ const DEFAULT_STATE: WatermarkState = {
   fontFamily: 'Source Han Sans SC',
   color: '#ffffff',
   opacity: 0.5,
-  strokeEnabled: false,
-  strokeColor: '#000000',
-  strokeWidth: 1,
-  shadowEnabled: false,
-  shadowColor: '#000000',
-  shadowBlur: 4,
-  shadowOffsetX: 2,
-  shadowOffsetY: 2,
   darkMode: false,
   outputDirectory: '',
 };
@@ -710,22 +694,6 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
             <div className="wm-section-head"><h3>外观</h3></div>
             <label className="wm-prop"><span>透明度 {Math.round(state.opacity * 100)}%</span><input type="range" min={0} max={100} value={Math.round(state.opacity * 100)} onChange={(event) => updateProp('opacity', Number(event.target.value) / 100)} /></label>
             <label className="wm-prop"><span>颜色</span><input type="color" value={state.color} onChange={(event) => updateProp('color', event.target.value)} /></label>
-            {state.kind === 'text' ? <>
-              <label className="wm-prop wm-prop-toggle"><input type="checkbox" checked={state.strokeEnabled} onChange={(event) => updateProp('strokeEnabled', event.target.checked)} /><span>描边</span></label>
-              {state.strokeEnabled ? <>
-                <label className="wm-prop"><span>描边颜色</span><input type="color" value={state.strokeColor} onChange={(event) => updateProp('strokeColor', event.target.value)} /></label>
-                <label className="wm-prop"><span>粗细 {state.strokeWidth}px</span><input type="range" min={1} max={8} value={state.strokeWidth} onChange={(event) => updateProp('strokeWidth', Number(event.target.value))} /></label>
-              </> : null}
-              <label className="wm-prop wm-prop-toggle"><input type="checkbox" checked={state.shadowEnabled} onChange={(event) => updateProp('shadowEnabled', event.target.checked)} /><span>投影</span></label>
-              {state.shadowEnabled ? <>
-                <label className="wm-prop"><span>投影颜色</span><input type="color" value={state.shadowColor} onChange={(event) => updateProp('shadowColor', event.target.value)} /></label>
-                <label className="wm-prop"><span>模糊 {state.shadowBlur}</span><input type="range" min={0} max={20} value={state.shadowBlur} onChange={(event) => updateProp('shadowBlur', Number(event.target.value))} /></label>
-                <div className="wm-prop-row">
-                  <label className="wm-prop"><span>X偏移</span><input type="number" value={state.shadowOffsetX} onChange={(event) => updateProp('shadowOffsetX', Number(event.target.value))} /></label>
-                  <label className="wm-prop"><span>Y偏移</span><input type="number" value={state.shadowOffsetY} onChange={(event) => updateProp('shadowOffsetY', Number(event.target.value))} /></label>
-                </div>
-              </> : null}
-            </> : null}
             <label className="wm-prop wm-prop-toggle"><input type="checkbox" checked={state.darkMode} onChange={(event) => updateProp('darkMode', event.target.checked)} /><span>暗水印（极淡·抗去除）</span></label>
           </div>
           <div className="wm-section">

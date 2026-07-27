@@ -302,4 +302,12 @@ describe('WatermarkWorkbench lifecycle', () => {
     desktopHarness.load.mockReset();
   });
 
+  it('does not expose stroke or shadow controls in the watermark UI', () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(WatermarkWorkbench, { onReturn: () => {} })
+    );
+    expect(markup).not.toContain('描边');
+    expect(markup).not.toContain('投影');
+  });
+
 });
