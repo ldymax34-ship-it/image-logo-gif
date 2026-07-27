@@ -6,6 +6,8 @@
 
 ## 本轮任务
 
+- [ ] 0.1.35-rc.1 macOS 文件 URL 诊断候选：只增加会话内 path / asset URL / plugin-fs / HTMLImage / fetch / Fabric 探针与可复制报告，不修改加载、权限、画布或更新器。**未修复、未通过验收**；等待用户安装 Diagnostic 包后验证 PNG、图片 Logo 与输出文件。说明见 `docs/MACOS_FILE_URL_DIAGNOSTIC_RC.md`。
+
 - [x] 2026-07-26 工具箱首页由主线程独立重写：设置从生产工具中分离到页头，四个工作流改为带用途说明、可用/实验状态和本地处理提示的 2×2 启动卡；统一复用现有深色 token、Lucide 图标与克制蓝色强调。1280×720 浏览器目视通过，无横向溢出；`git diff --check`、`npm run verify:core`、271 个前端测试与 `npm run build` 通过。截图保存在 Codex 可视化目录，不纳入仓库。
 - [ ] 2026-07-26 复核 `af44e14` 后仍未验收第一批 P0：`run_gif_encode_with_progress` 仍在 `child_arc.lock()` guard 内调用 `wait()`，取消仍会争用同一把锁；临时输出扩展名为 `.gif.tmp` 且未显式 `-f gif`；原子落盘前仍删除最终路径；`max_retries` 仍为 8，最后一次只改强压缩参数后退出。现有新增测试只覆盖两个纯函数，未覆盖真实 `start_gif_media_task → cancel_gif_media_task`、重试、强压缩与失败清理链路。
 - [ ] 第二批 P0 仍未开始：批量模板仍用 ffmpeg 执行 ffprobe 的 `-show_entries`；同步 invoke 无真实进度/取消；输出会覆盖；多视频入口已开放但后端只读取 `single_video_path`；预览 `.preview` 目录和中文/特殊路径仍未闭环。

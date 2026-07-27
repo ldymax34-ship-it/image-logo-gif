@@ -6,6 +6,7 @@ import { createFabricCanvasElement, disposeFabricCanvasHost, ignoreFabricDisposa
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import { logDiagnostic } from '../diagnostics/client';
 import { classifyWatermarkPreview, loadWatermarkPreview } from './watermarkPreview';
+import { formatFileUrlDiagnostic, runFileUrlDiagnostic, type FileUrlDiagnosticReport, type FileUrlDiagnosticTarget } from './fileUrlDiagnostic';
 
 /* ── types ── */
 type WatermarkKind = 'text' | 'image';
@@ -37,6 +38,9 @@ const DEFAULT_STATE: WatermarkState = {
   darkMode: false, outputDirectory: '',
 };
 
+const IS_FILE_URL_DIAGNOSTIC_RC = import.meta.env.VITE_FILE_URL_DIAGNOSTIC_RC === 'true';
+const FILE_URL_DIAGNOSTIC_VERSION = import.meta.env.VITE_APP_VERSION;
+
 function fmtSize(b?: number): string {
   if (!b || b < 0) return ''; if (b < 1048576) return `${Math.max(1,Math.round(b/1024))} KB`;
   return `${(b/1048576).toFixed(1)} MB`;
@@ -55,6 +59,8 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   const [previewNotice, setPreviewNotice] = useState('');
   const [backgroundPreviewError, setBackgroundPreviewError] = useState('');
   const [overlayError, setOverlayError] = useState('');
+  const [fileUrlReports, setFileUrlReports] = useState<FileUrlDiagnosticReport[]>([]);
+  const [fileUrlDiagnosticInFlight, setFileUrlDiagnosticInFlight] = useState(0);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [fabricReady, setFabricReady] = useState(false);
   const pendingReturnRef = useRef(false);
@@ -85,6 +91,39 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
 
   function nextGen(ref: { current: number }) { ref.current += 1; return ref.current; }
   function isStale(ref: { current: number }, gen: number) { return !mountedRef.current || ref.current !== gen; }
+
+  const recordFileUrlDiagnostic = useCallback(async (target: FileUrlDiagnosticTarget, path: string) => {
+    if (!IS_FILE_URL_DIAGNOSTIC_RC) return;
+    if (mountedRef.current) setFileUrlDiagnosticInFlight((count) => count + 1);
+    try {
+      const report = await runFileUrlDiagnostic({
+        target,
+        rawPath: path,
+        appVersion: FILE_URL_DIAGNOSTIC_VERSION,
+        convertFileSrc: async (input) => {
+          const { convertFileSrc } = await import('@tauri-apps/api/core');
+          return convertFileSrc(input);
+        },
+        fsProbe: async (input) => {
+          const { exists, stat } = await import('@tauri-apps/plugin-fs');
+          const fileExists = await exists(input);
+          if (!fileExists) return { exists: false };
+          const metadata = await stat(input);
+          return { exists: true, metadata: { isFile: metadata.isFile, isDirectory: metadata.isDirectory, size: metadata.size } };
+        },
+        fabricProbe: async (url) => {
+          const { FabricImage } = await import('fabric');
+          const image = await FabricImage.fromURL(url);
+          return { hasObject: Boolean(image), width: image?.width, height: image?.height };
+        },
+      });
+      if (mountedRef.current) setFileUrlReports((previous) => [...previous.slice(-7), report]);
+    } catch {
+      // Diagnostics must never alter the existing preview path when an optional probe cannot start.
+    } finally {
+      if (mountedRef.current) setFileUrlDiagnosticInFlight((count) => Math.max(0, count - 1));
+    }
+  }, []);
 
   /* ── cleanup (run first in unmount) ── */
   useEffect(() => {
@@ -319,6 +358,12 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
     fc.renderAll();
   }, [currentFile, state]);
 
+  async function copyFileUrlDiagnostics() {
+    const content = fileUrlReports.map(formatFileUrlDiagnostic).join('\n\n');
+    if (!content) return;
+    try { await navigator.clipboard.writeText(content); } catch { setMessage('无法复制诊断报告，请检查系统剪贴板权限。'); }
+  }
+
   /* ── file ops ── */
   async function pickFiles() {
     if (!apiRef.current) return;
@@ -465,6 +510,12 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
   useEffect(() => { initFabric(); }, [initFabric]);
   useEffect(() => { if (fabricReady && currentFile && fabricRef.current) loadImage(currentFile); }, [currentFile, fabricReady, loadImage]);
   useEffect(() => { if (fabricReady) renderWatermark(); }, [fabricReady, renderWatermark]);
+  useEffect(() => {
+    if (IS_FILE_URL_DIAGNOSTIC_RC && currentFile) void recordFileUrlDiagnostic('background', currentFile);
+  }, [currentFile, recordFileUrlDiagnostic]);
+  useEffect(() => {
+    if (IS_FILE_URL_DIAGNOSTIC_RC && state.imagePath) void recordFileUrlDiagnostic('watermark-logo', state.imagePath);
+  }, [recordFileUrlDiagnostic, state.imagePath]);
 
   /* ── render ── */
   const canProcess = desktop && tasks.some(t=>t.status==='waiting') && state.outputDirectory && !activeTaskId;
@@ -521,13 +572,33 @@ export function WatermarkWorkbench({ onReturn }: { onReturn: () => void }) {
           {previewState === 'ready' && currentFile && <div className="wm-verify-ok">✓ 图片加载正常</div>}
           {previewNotice && <div className="wm-preview-error"><span>{previewNotice}</span></div>}
           {backgroundPreviewError && <div className="wm-preview-error"><span>{backgroundPreviewError}</span>
-            <button onClick={()=>currentFile&&loadImage(currentFile)}>重试</button></div>}
+            <button onClick={()=>{
+              if (!currentFile) return;
+              void recordFileUrlDiagnostic('background', currentFile);
+              void loadImage(currentFile);
+            }}>重试</button></div>}
           {overlayError && <div className="wm-preview-error"><span>{overlayError}</span>
             <button onClick={()=>renderWatermark()}>重试</button></div>}
           <div className="wm-canvas-hint">按住查看原图</div>
         </main>
 
         <aside className="wm-right" aria-label="水印属性">
+          {IS_FILE_URL_DIAGNOSTIC_RC && <div className="wm-section wm-diagnostic-panel">
+            <div className="wm-section-head"><h3>RC 文件 URL 诊断</h3></div>
+            <p className="wm-hint">仅保留本次会话，不写入日志或文件。报告含本机路径与转换 URL。</p>
+            {fileUrlDiagnosticInFlight > 0 && <p className="wm-hint" role="status">诊断中…（{fileUrlDiagnosticInFlight}）</p>}
+            <button className="wm-btn wm-btn-pick" disabled={!fileUrlReports.length} onClick={() => void copyFileUrlDiagnostics()}>复制诊断报告 ({fileUrlReports.length})</button>
+            {fileUrlReports.length > 0 && <details>
+              <summary>查看最新诊断报告（可手动复制）</summary>
+              <textarea
+                readOnly
+                aria-label="最新文件 URL 诊断报告"
+                value={formatFileUrlDiagnostic(fileUrlReports[fileUrlReports.length - 1])}
+                rows={12}
+                style={{ width: '100%', marginTop: 8, resize: 'vertical' }}
+              />
+            </details>}
+          </div>}
           <div className="wm-section">
             <div className="wm-section-head"><h3>水印类型</h3></div>
             <div className="wm-segmented">

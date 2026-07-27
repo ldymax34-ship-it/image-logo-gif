@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-当前开发版本为 0.1.34，使用 Vite + React + TypeScript 搭建模块化前端应用。桌面 Preview 封包已接入 Tauri 2；已发布的签名更新产物仍为 Windows x64 与 macOS Apple Silicon 的 `0.1.33`，0.1.34 仅完成本地候选包验证，尚未发布 updater。
+当前开发版本为 `0.1.35-rc.1` Diagnostic 候选，使用 Vite + React + TypeScript 搭建模块化前端应用。该候选只用于诊断 macOS 本地文件 URL 加载，未修复、未通过验收且不会发布 updater；已发布的签名更新产物仍为 Windows x64 与 macOS Apple Silicon 的 `0.1.33`。诊断使用说明见 `docs/MACOS_FILE_URL_DIAGNOSTIC_RC.md`。
 
 首次启动默认进入“品宣工具箱”：Logo 与版式可用，GIF / 媒体工具提供内部实验性 MP4/MOV → GIF 队列，水印与追溯（首版可见水印）均可用；设置可选择下次启动打开工具箱首页、Logo 与版式、GIF / 媒体工具、水印与追溯或上次使用的工具。进入 Logo 与版式后，原有设媒与自定义构图工作流、模块导航与导出行为保持不变，并可随时返回工具箱。
 

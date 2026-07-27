@@ -1,5 +1,12 @@
 # 更新日志
 
+## 2026-07-27｜0.1.35-rc.1 macOS 文件 URL 诊断候选（未验收）
+
+- 仅在 Diagnostic RC 构建中增加水印本地文件 URL 的会话内诊断报告：dialog path、plugin-fs、`convertFileSrc`、HTMLImage、只读 fetch 与 Fabric 解码探针均带时间顺序和超时记录。
+- 报告默认不落盘、不上传、不写应用日志；包含本机 path/URL 的完整版只在用户本机复制或手动选取。
+- 使用独立 Bundle ID `com.kuro.internal.brandmaterialworkbench.diagnostic`，不与已安装正式候选共用应用数据。
+- **本问题未修复、未通过验收**：仍等待安装后确认 PNG 显示、图片 Logo 显示和输出文件生成。
+
 ## 2026-07-27｜0.1.34 Fabric 生命周期与 DOM 所有权修复
 
 - 修复 Fabric 7 将 React canvas 重挂到自身 wrapper 后，工具卸载可能触发 `NotFoundError` 的 DOM 所有权冲突。
