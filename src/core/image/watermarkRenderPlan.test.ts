@@ -121,15 +121,31 @@ describe('buildWatermarkRenderLayers', () => {
     expect(layers.length).toBeGreaterThan(0);
   });
 
-  it('instance ids are deterministic row:col', () => {
+  it('single-line tiled ids retain the legacy row:col shape', () => {
     const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 200, spacingY: 200 }));
     const ids = layers.map(l => l.id);
-    // ids should all match wm:r:c pattern
     for (const id of ids) {
       expect(id).toMatch(/^wm:\d+:\d+$/);
     }
     // no duplicates
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('multi-line text expands each cell with preserved blank lines', () => {
+    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ text: '第一行\n\n第三行', fontSize: 50 }));
+    expect(layers).toHaveLength(3);
+    expect(layers.map((layer) => layer.id)).toEqual(['wm:0:0:L0', 'wm:0:0:L1', 'wm:0:0:L2']);
+    expect(layers.map((layer) => layer.kind === 'text' ? layer.text : '')).toEqual(['第一行', '', '第三行']);
+    expect(layers[1].cy - layers[0].cy).toBe(60);
+  });
+
+  it('multi-line tiled output remains capped after line expansion', () => {
+    const layers = buildWatermarkRenderLayers(
+      { width: 99999, height: 99999 },
+      textConfig({ pattern: 'tiled', text: Array.from({ length: 20 }, (_value, index) => `line ${index}`).join('\n'), spacingX: 1, spacingY: 1 }),
+    );
+    expect(layers.length).toBeLessThanOrEqual(500);
+    expect(layers.every((layer) => /^wm:\d+:\d+:L\d+$/.test(layer.id))).toBe(true);
   });
 
   /* ── image zero intrinsic width ── */
@@ -154,8 +170,8 @@ describe('adaptWatermarkConfig', () => {
     expect(cfg!.opacity).toBe(0.6);
     expect(cfg!.offsetX).toBe(10);
     expect(cfg!.offsetY).toBe(20);
-    // fontSize = 500 * 2 * 0.2 = 200
-    expect(cfg!.fontSize).toBe(200);
+    // min(cw=1000, ch=500) * 0.05 * scale=2 = 500 * 0.05 * 2 = 50
+    expect(cfg!.fontSize).toBe(50);
   });
 
   it('image: uses MaterialAsset objectUrl and computes displayWidth', () => {
@@ -196,6 +212,36 @@ describe('adaptWatermarkConfig', () => {
     });
     expect(cfg!.spacingX).toBe(777);
     expect(cfg!.spacingY).toBe(888);
+  });
+
+  it('font size uses short edge as baseline for landscape canvas', () => {
+    const cfg = adaptWatermarkConfig({ width: 2000, height: 600 }, {
+      kind: 'text', pattern: 'single', text: 'a', fontFamily: '', color: '',
+      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
+    });
+    // short edge * 0.05 = 600 * 0.05 = 30
+    if (cfg!.kind !== 'text') throw new Error('expected text');
+    expect(cfg!.fontSize).toBe(30);
+  });
+
+  it('font size uses short edge as baseline for portrait canvas', () => {
+    const cfg = adaptWatermarkConfig({ width: 600, height: 2000 }, {
+      kind: 'text', pattern: 'single', text: 'a', fontFamily: '', color: '',
+      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
+    });
+    // short edge * 0.05 = 600 * 0.05 = 30
+    if (cfg!.kind !== 'text') throw new Error('expected text');
+    expect(cfg!.fontSize).toBe(30);
+  });
+
+  it('font size respects scale multiplier', () => {
+    const cfg = adaptWatermarkConfig({ width: 1000, height: 500 }, {
+      kind: 'text', pattern: 'single', text: 'a', fontFamily: '', color: '',
+      scale: 3, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
+    });
+    // 500 * 0.05 * 3 = 75
+    if (cfg!.kind !== 'text') throw new Error('expected text');
+    expect(cfg!.fontSize).toBe(75);
   });
 });
 
@@ -265,7 +311,7 @@ describe('buildWatermarkRenderLayers — boundary safety', () => {
   });
 
   it('non-finite spacing clamped to minimum', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: NaN, spacingY: undefined as any }));
+    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: NaN, spacingY: NaN }));
     expect(layers.length).toBeGreaterThan(0);
     expect(layers.length).toBeLessThanOrEqual(500);
   });

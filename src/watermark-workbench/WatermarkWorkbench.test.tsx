@@ -1,313 +1,266 @@
 // @vitest-environment jsdom
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { renderToStaticMarkup } from 'react-dom/server';
+import React, { useState, type Dispatch, type SetStateAction } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BoardBrandStateMap, BoardPreviewState, MaterialAsset, MaterialSpec, PresetTemplate } from '../core';
+import type { BoardBrandAction } from '../modules/media-workbench/boardBrandReducer';
+import type { FocusSession } from '../modules/media-workbench/focusSession';
+import type { PendingConfirmation, PresetApplyMode, MediaWorkbenchState } from '../modules/media-workbench/useMediaWorkbenchState';
+import {
+  WatermarkWorkbench,
+  buildWatermarkExportItems,
+  createWatermarkOutputSpec,
+  createWorkbenchWatermarkConfig,
+  watermarkOutputName,
+  type WatermarkBusinessConfig,
+} from './WatermarkWorkbench';
 
-import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const coreHarness = vi.hoisted(() => ({
-  createMaterialAsset: vi.fn(),
-  releaseMaterialAsset: vi.fn(),
-  renderBoardToCanvas: vi.fn(),
-  canvasToBlob: vi.fn(),
+const exportHarness = vi.hoisted(() => ({ exportBoardImage: vi.fn().mockResolvedValue(new Blob(['ok'], { type: 'image/png' })) }));
+const fileSystemHarness = vi.hoisted(() => ({
+  chooseOutputTarget: vi.fn().mockResolvedValue({ kind: 'desktop-directory', path: '/tmp', reservedFileNames: new Set() }),
+  saveBlobToOutputTarget: vi.fn().mockImplementation(async (_target, fileName: string) => fileName),
 }));
 vi.mock('../core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../core')>()),
-  ...coreHarness,
+  exportBoardImage: exportHarness.exportBoardImage,
 }));
-const fileSystemHarness = vi.hoisted(() => ({ saveBlobToOutputTarget: vi.fn() }));
-vi.mock('../platform/fileSystem', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../platform/fileSystem')>()),
-  ...fileSystemHarness,
-}));
-const desktopHarness = vi.hoisted(() => ({ available: false, load: vi.fn(), api: undefined as any }));
-vi.mock('../gif-media/mediaDesktop', () => ({
-  isMediaDesktopAvailable: () => desktopHarness.available,
-  loadMediaDesktopApi: () => desktopHarness.load(),
+vi.mock('../platform/fileSystem', () => ({
+  chooseOutputTarget: fileSystemHarness.chooseOutputTarget,
+  saveBlobToOutputTarget: fileSystemHarness.saveBlobToOutputTarget,
 }));
 
-import { act } from 'react';
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { createWorkbenchWatermarkConfig, isStaticCanvasImage, watermarkOutputName, WatermarkWorkbench } from './WatermarkWorkbench';
-
-class ResizeObserverMock {
-  observe = vi.fn();
-  disconnect = vi.fn();
+function setter<T>(): Dispatch<SetStateAction<T>> {
+  return vi.fn((_next: SetStateAction<T>) => undefined);
 }
-vi.stubGlobal('ResizeObserver', ResizeObserverMock);
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe('WatermarkWorkbench lifecycle', () => {
-  function createDesktopApi(overrides: Record<string, unknown> = {}) {
-    return {
-      getEngineStatus: vi.fn().mockResolvedValue({ ready: true, message: 'ready' }),
-      listenTaskEvents: vi.fn().mockResolvedValue(vi.fn()),
-      pickWatermarkFiles: vi.fn().mockResolvedValue([]),
-      pickOutputDirectory: vi.fn().mockResolvedValue(null),
-      pickWatermarkImage: vi.fn().mockResolvedValue(null),
-      startWatermarkTask: vi.fn().mockResolvedValue({ taskId: 'unused', outputPath: '/tmp/output.png' }),
-      cancelTask: vi.fn(),
-      ...overrides,
-    };
-  }
+function makeSharedState(overrides: Partial<MediaWorkbenchState> = {}): MediaWorkbenchState {
+  return {
+    draftText: '', setDraftText: setter<string>(),
+    appliedText: '', setAppliedText: setter<string>(),
+    specs: [], setSpecs: setter<MaterialSpec[]>(),
+    assets: [], setAssets: setter<MaterialAsset[]>(),
+    selectedAssetId: undefined, setSelectedAssetId: setter<string | undefined>(),
+    selectedSpecId: undefined, setSelectedSpecId: setter<string | undefined>(),
+    previewStates: {}, setPreviewStates: setter<Record<string, BoardPreviewState>>(),
+    boardBrandStates: {}, dispatchBoardBrand: vi.fn((_action: BoardBrandAction) => undefined),
+    customPresets: [], setCustomPresets: setter<PresetTemplate[]>(),
+    presetApplyMode: 'replace', setPresetApplyMode: setter<PresetApplyMode>(),
+    focusAssetId: undefined, setFocusAssetId: setter<string | undefined>(),
+    focusSpecId: undefined, setFocusSpecId: setter<string | undefined>(),
+    focusSession: undefined, setFocusSession: setter<FocusSession | undefined>(),
+    pendingConfirmation: undefined, setPendingConfirmation: setter<PendingConfirmation | undefined>(),
+    newPresetName: '', setNewPresetName: setter<string>(),
+    exportDialogOpen: false, setExportDialogOpen: setter<boolean>(),
+    exporting: false, setExporting: setter<boolean>(),
+    message: '', setMessage: setter<string>(),
+    importFailures: [], setImportFailures: setter<string[]>(),
+    ...overrides,
+  };
+}
 
-  async function mountWorkbench() {
+const assets: MaterialAsset[] = [
+  { id: 'a', fileName: 'photo.png', objectUrl: 'blob:a', width: 100, height: 50, fileSize: 10, mimeType: 'image/png' },
+  { id: 'b', fileName: 'banner.jpg', objectUrl: 'blob:b', width: 200, height: 80, fileSize: 20, mimeType: 'image/jpeg' },
+];
+
+function StatefulHarness() {
+  const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>('a');
+  const state = makeSharedState({ assets, selectedAssetId, setSelectedAssetId });
+  return <WatermarkWorkbench onReturn={() => undefined} sharedState={state} />;
+}
+
+function changeInput(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setterForValue = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+  setterForValue?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+describe('WatermarkWorkbench', () => {
+  beforeEach(() => {
+    exportHarness.exportBoardImage.mockClear();
+    fileSystemHarness.chooseOutputTarget.mockClear();
+    fileSystemHarness.saveBlobToOutputTarget.mockClear();
+  });
+
+  it('renders shared assets with the existing asset list contract', () => {
+    const markup = renderToStaticMarkup(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets })} />);
+    expect(markup).toContain('asset-list');
+    expect(markup).toContain('asset-row');
+    expect(markup).toContain('workspace wm-workspace');
+    expect(markup).toContain('tool-page-icon');
+    expect(markup).toContain('preview-panel');
+    expect(markup).toContain('spec-panel');
+    expect(markup).toContain('导入图片');
+    expect(markup).toContain('删除素材 photo.png');
+    expect(markup).toContain('photo.png');
+    expect(markup).toContain('banner.jpg');
+  });
+
+  it('uses the configured scale in the render config', () => {
+    const config: WatermarkBusinessConfig = { text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, spacingX: 220, spacingY: 160, repeat: false };
+    const result = createWorkbenchWatermarkConfig({ width: 1000, height: 500 }, config, { offsetX: 11, scale: 2 });
+    if (result.kind !== 'text') throw new Error('expected text watermark config');
+    expect(result.fontSize).toBe(50);
+    expect(result.offsetX).toBe(11);
+    expect(result.offsetY).toBe(2);
+  });
+
+  it('keeps watermark font size proportional for smaller output presets', () => {
+    const config: WatermarkBusinessConfig = { text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, spacingX: 220, spacingY: 160, repeat: false };
+    const original = createWorkbenchWatermarkConfig({ width: 1200, height: 800 }, config);
+    const small = createWorkbenchWatermarkConfig({ width: 300, height: 200 }, config);
+    if (original.kind !== 'text' || small.kind !== 'text') throw new Error('expected text watermark config');
+    expect(original.fontSize).toBe(40);
+    expect(small.fontSize).toBe(10);
+  });
+
+  it('uses the same source-name and dimension naming rule as the media workbench', () => {
+    const webpAsset: MaterialAsset = { ...assets[0], fileName: '中文 空格.webp', width: 1200, height: 600 };
+    const spec = createWatermarkOutputSpec(webpAsset, 'original');
+    expect(watermarkOutputName('/tmp/中文 空格.webp', spec)).toBe('中文 空格_1200x600.png');
+    expect(watermarkOutputName('/tmp/photo.jpeg', { ...spec, format: 'jpg' })).toBe('photo_1200x600.jpg');
+  });
+
+  it('creates proportional output sizes without changing aspect ratio', () => {
+    const source = { ...assets[0], width: 1200, height: 800 };
+    expect(createWatermarkOutputSpec(source, 'original')).toMatchObject({ width: 1200, height: 800 });
+    expect(createWatermarkOutputSpec(source, 'large')).toMatchObject({ width: 900, height: 600 });
+    expect(createWatermarkOutputSpec(source, 'medium')).toMatchObject({ width: 600, height: 400 });
+    expect(createWatermarkOutputSpec(source, 'small')).toMatchObject({ width: 300, height: 200 });
+    for (const size of ['original', 'large', 'medium', 'small'] as const) {
+      const output = createWatermarkOutputSpec(source, size);
+      expect(output.width / output.height).toBe(1.5);
+    }
+  });
+
+  it('disambiguates duplicate batch names like the media workbench', () => {
+    const duplicateAssets = [assets[0], { ...assets[0], id: 'duplicate' }];
+    expect(buildWatermarkExportItems(duplicateAssets, 'original').map((item) => item.fileName)).toEqual([
+      'photo_100x50.png',
+      'photo_100x50_2.png',
+    ]);
+  });
+
+  it('falls back to the first shared asset when no selection is stored', () => {
+    const markup = renderToStaticMarkup(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets })} />);
+    expect(markup).toContain('asset-row active');
+  });
+
+  it('keeps overrides isolated by shared asset selection', async () => {
     const container = document.createElement('div');
+    document.body.appendChild(container);
     const root = createRoot(container);
-    await act(async () => { root.render(<WatermarkWorkbench onReturn={() => {}} />); await Promise.resolve(); });
-    return { container, root };
-  }
-
-  function resetLocalCanvasHarness() {
-    const asset = { id: 'asset', fileName: 'input.png', objectUrl: 'blob:input', width: 100, height: 50, fileSize: 10, mimeType: 'image/png' };
-    coreHarness.createMaterialAsset.mockReset().mockResolvedValue(asset);
-    coreHarness.releaseMaterialAsset.mockReset();
-    coreHarness.renderBoardToCanvas.mockReset().mockResolvedValue(document.createElement('canvas'));
-    coreHarness.canvasToBlob.mockReset().mockResolvedValue(new Blob(['ok'], { type: 'image/png' }));
-    fileSystemHarness.saveBlobToOutputTarget.mockReset().mockResolvedValue('/tmp/output.png');
-  }
-
-  it('renders without crashing', () => {
-    const markup = renderToStaticMarkup(
-      React.createElement(WatermarkWorkbench, { onReturn: () => {} })
-    );
-    expect(markup).toContain('水印与追溯');
-    expect(markup).toContain('素材');
-  });
-
-  it('includes all property sections', () => {
-    const markup = renderToStaticMarkup(
-      React.createElement(WatermarkWorkbench, { onReturn: () => {} })
-    );
-    expect(markup).toContain('水印类型');
-    expect(markup).toContain('位置与变换');
-    expect(markup).toContain('外观');
-    expect(markup).toContain('平铺');
-  });
-
-  it('has accessibility labels on key regions', () => {
-    const markup = renderToStaticMarkup(
-      React.createElement(WatermarkWorkbench, { onReturn: () => {} })
-    );
-    expect(markup).toContain('aria-label="素材与任务"');
-    expect(markup).toContain('aria-label="水印预览画布"');
-    expect(markup).toContain('aria-label="水印属性"');
-    expect(markup).toContain('class="wm-canvas-wrap"');
-    expect(markup).not.toContain('wm-fabric-host');
-    expect(markup).not.toContain('<canvas');
-  });
-
-  it('routes both formal image preview chains through the unified MaterialAsset creator without Fabric', () => {
-    const source = readFileSync(`${process.cwd()}/src/watermark-workbench/WatermarkWorkbench.tsx`, 'utf8');
-    expect(source).toContain("createMaterialAsset({ kind: 'path', path: currentFile })");
-    expect(source).toContain("createMaterialAsset({ kind: 'path', path: state.imagePath })");
-    expect(source).not.toContain("from 'fabric'");
-    expect(source).not.toContain('wm-fabric-host');
-    expect(source).toContain("'material-asset preview'");
-    expect(source).toContain("'material-asset watermark overlay'");
-  });
-
-  it('sends only still png/jpeg/webp images to the local Canvas branch', () => {
-    expect(isStaticCanvasImage('/tmp/中文 空格.png')).toBe(true);
-    expect(isStaticCanvasImage('/tmp/photo.JPEG')).toBe(true);
-    expect(isStaticCanvasImage('/tmp/logo.webp')).toBe(true);
-    expect(isStaticCanvasImage('/tmp/animated.gif')).toBe(false);
-    expect(isStaticCanvasImage('/tmp/movie.mp4')).toBe(false);
-    expect(isStaticCanvasImage('/tmp/movie.mov')).toBe(false);
-  });
-
-  it('writes webp local Canvas output as png without changing GIF naming', () => {
-    expect(watermarkOutputName('/tmp/中文 空格.webp', 'png')).toBe('中文 空格_watermarked.png');
-    expect(watermarkOutputName('/tmp/animated.gif', 'png')).toBe('animated_watermarked.png');
-  });
-
-  it('uses the same dark-watermark opacity rule for preview and local Canvas export config', () => {
-    const config = createWorkbenchWatermarkConfig({ width: 100, height: 50 }, {
-      kind: 'text', pattern: 'single', text: '暗水印', fontFamily: 'Arial', color: '#fff',
-      scale: 1, rotation: 0, opacity: .5, x: 0, y: 0, density: 'medium', darkMode: true,
-    });
-    expect(config?.opacity).toBe(.06);
-  });
-
-  it.each(['/tmp/input.png', '/tmp/input.jpg', '/tmp/input.webp'])('renders static %s locally without starting an FFmpeg task', async (path) => {
-    resetLocalCanvasHarness();
-    const api = createDesktopApi();
-    api.pickWatermarkFiles.mockResolvedValueOnce([path]);
-    api.pickOutputDirectory.mockResolvedValueOnce('/tmp');
-    desktopHarness.available = true;
-    desktopHarness.load.mockResolvedValue(api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="导入图片素材"]')?.click(); await Promise.resolve(); });
-    await act(async () => { Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('选择文件夹'))?.click(); await Promise.resolve(); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="开始添加水印到所有素材"]')?.click(); await Promise.resolve(); await Promise.resolve(); });
-    expect(coreHarness.renderBoardToCanvas).toHaveBeenCalledOnce();
-    expect(fileSystemHarness.saveBlobToOutputTarget).toHaveBeenCalledOnce();
-    expect(api.startWatermarkTask).not.toHaveBeenCalled();
+    await act(async () => { root.render(<StatefulHarness />); });
+    const horizontal = container.querySelector<HTMLInputElement>('[aria-label="水平位置偏移"]');
+    const vertical = container.querySelector<HTMLInputElement>('[aria-label="垂直位置偏移"]');
+    const scale = container.querySelector<HTMLInputElement>('[aria-label="水印缩放"]');
+    expect(horizontal).not.toBeNull();
+    expect(vertical).not.toBeNull();
+    expect(scale).not.toBeNull();
+    await act(async () => { changeInput(horizontal!, '37'); changeInput(vertical!, '-12'); changeInput(scale!, '80'); });
+    expect(horizontal!.value).toBe('37');
+    expect(vertical!.value).toBe('-12');
+    expect(scale!.value).toBe('80');
+    const secondAsset = container.querySelector<HTMLButtonElement>('img[alt="banner.jpg"]')?.closest('button');
+    await act(async () => { secondAsset?.click(); });
+    expect(horizontal!.value).toBe('0');
+    expect(vertical!.value).toBe('0');
+    expect(scale!.value).toBe('100');
+    const firstAsset = container.querySelector<HTMLButtonElement>('img[alt="photo.png"]')?.closest('button');
+    await act(async () => { firstAsset?.click(); });
+    expect(horizontal!.value).toBe('37');
+    expect(vertical!.value).toBe('-12');
+    expect(scale!.value).toBe('80');
     await act(async () => { root.unmount(); });
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
+    container.remove();
   });
 
-  it('releases the loaded static preview MaterialAsset on unmount', async () => {
-    resetLocalCanvasHarness();
-    const api = createDesktopApi();
-    api.pickWatermarkFiles.mockResolvedValueOnce(['/tmp/input.png']);
-    desktopHarness.available = true;
-    desktopHarness.load.mockResolvedValue(api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="导入图片素材"]')?.click(); await Promise.resolve(); await Promise.resolve(); });
-    expect(coreHarness.createMaterialAsset).toHaveBeenCalledWith({ kind: 'path', path: '/tmp/input.png' });
+  it('applies the current per-image adjustment proportionally to other images', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<StatefulHarness />); });
+    const horizontal = container.querySelector<HTMLInputElement>('[aria-label="水平位置偏移"]')!;
+    const vertical = container.querySelector<HTMLInputElement>('[aria-label="垂直位置偏移"]')!;
+    const scale = container.querySelector<HTMLInputElement>('[aria-label="水印缩放"]')!;
+    await act(async () => { changeInput(horizontal, '20'); changeInput(vertical, '10'); changeInput(scale, '80'); });
+    const applyButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '其他图片');
+    await act(async () => { applyButton?.click(); });
+    const secondAsset = container.querySelector<HTMLButtonElement>('img[alt="banner.jpg"]')?.closest('button');
+    await act(async () => { secondAsset?.click(); });
+    expect(horizontal.value).toBe('40');
+    expect(vertical.value).toBe('16');
+    expect(scale.value).toBe('80');
     await act(async () => { root.unmount(); });
-    expect(coreHarness.releaseMaterialAsset).toHaveBeenCalledTimes(1);
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
+    container.remove();
   });
 
-  it('releases the background when switching to GIF and releases a logo on kind change and unmount', async () => {
-    const background = { id: 'background', fileName: 'input.png', objectUrl: 'blob:background', width: 100, height: 50, fileSize: 10, mimeType: 'image/png' };
-    const logo = { id: 'logo', fileName: 'logo.png', objectUrl: 'blob:logo', width: 20, height: 10, fileSize: 10, mimeType: 'image/png' };
-    coreHarness.createMaterialAsset.mockReset().mockResolvedValueOnce(background).mockResolvedValueOnce(logo);
-    coreHarness.releaseMaterialAsset.mockReset();
-    const api = createDesktopApi();
-    api.pickWatermarkFiles.mockResolvedValueOnce(['/tmp/input.png', '/tmp/animated.gif']);
-    api.pickWatermarkImage.mockResolvedValueOnce('/tmp/logo.png');
-    desktopHarness.available = true;
-    desktopHarness.load.mockResolvedValue(api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="导入图片素材"]')?.click(); await Promise.resolve(); await Promise.resolve(); });
-    await act(async () => { Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '图片 Logo')?.click(); await Promise.resolve(); });
-    await act(async () => { Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '选择图片')?.click(); await Promise.resolve(); await Promise.resolve(); });
-    expect(coreHarness.createMaterialAsset).toHaveBeenCalledWith({ kind: 'path', path: '/tmp/logo.png' });
-
-    await act(async () => { Array.from(container.querySelectorAll('button')).find((button) => button.textContent === '文字')?.click(); await Promise.resolve(); });
-    expect(coreHarness.releaseMaterialAsset).toHaveBeenCalledWith(logo);
-
-    await act(async () => { container.querySelector<HTMLButtonElement>('.wm-file-remove')?.click(); await Promise.resolve(); });
-    expect(coreHarness.releaseMaterialAsset).toHaveBeenCalledWith(background);
+  it('disables export for a real spaces-only text input', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<StatefulHarness />); });
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    const exportButton = container.querySelector<HTMLButtonElement>('[aria-label="导出水印图片"]');
+    expect(textarea).not.toBeNull();
+    expect(exportButton).not.toBeNull();
+    await act(async () => { changeInput(textarea!, '   '); });
+    expect(exportButton!.disabled).toBe(true);
     await act(async () => { root.unmount(); });
-    expect(coreHarness.releaseMaterialAsset).toHaveBeenCalledTimes(2);
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
+    container.remove();
   });
 
-  it('enables importing after the desktop bridge initializes', async () => {
-    desktopHarness.available = true;
-    desktopHarness.api = createDesktopApi();
-    desktopHarness.load.mockResolvedValue(desktopHarness.api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="导入图片素材"]')?.disabled).toBe(false);
-    expect(container.textContent).not.toContain('桌面环境初始化中');
+  it('uses one shared preview-panel export entry and shared task status', () => {
+    const markup = renderToStaticMarkup(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets, message: '正在处理' })} />);
+    expect((markup.match(/aria-label="导出水印图片"/g) ?? [])).toHaveLength(1);
+    expect(markup).not.toContain('选择文件夹');
+    expect(markup).toContain('status-line');
+    expect(markup).toContain('正在处理');
+    expect(markup).toContain('原尺寸');
+    expect(markup).toContain('大尺寸（75%）');
+    expect(markup).toContain('中尺寸（50%）');
+    expect(markup).toContain('小尺寸（25%）');
+    expect(markup).toContain('其他图片');
+  });
+
+  it('exports every shared image sequentially through the common naming and save pipeline', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets, selectedAssetId: 'a' })} />); });
+    const exportButton = container.querySelector<HTMLButtonElement>('[aria-label="导出水印图片"]');
+    await act(async () => { exportButton?.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(fileSystemHarness.chooseOutputTarget).toHaveBeenCalledTimes(1);
+    expect(exportHarness.exportBoardImage).toHaveBeenCalledTimes(2);
+    expect(fileSystemHarness.saveBlobToOutputTarget.mock.calls.map((call) => call[1])).toEqual([
+      'photo_100x50.png',
+      'banner_200x80.jpg',
+    ]);
     await act(async () => { root.unmount(); });
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
+    container.remove();
   });
 
-  it('reports unavailable desktop bridge instead of waiting forever', async () => {
-    desktopHarness.available = false;
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    expect(container.textContent).toContain('真实水印处理仅在桌面应用中可用');
-    expect(container.textContent).not.toContain('桌面环境初始化中');
+  it('warns before returning after changing a spacing field', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onReturn = vi.fn();
+    await act(async () => { root.render(<WatermarkWorkbench onReturn={onReturn} sharedState={makeSharedState({ assets, selectedAssetId: 'a' })} />); });
+    const spacing = [...container.querySelectorAll<HTMLInputElement>('input[type="number"]')]
+      .find((input) => input.value === '220');
+    await act(async () => { changeInput(spacing!, '240'); });
+    const returnButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '返回工具箱');
+    await act(async () => { returnButton?.click(); });
+    expect(onReturn).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('放弃当前设置？');
     await act(async () => { root.unmount(); });
+    container.remove();
   });
-
-  it('reports a bridge loading failure instead of waiting forever', async () => {
-    desktopHarness.available = true;
-    desktopHarness.load.mockRejectedValueOnce(new Error('bridge unavailable'));
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    expect(container.textContent).toContain('桌面环境初始化失败：bridge unavailable');
-    expect(container.textContent).toContain('桌面环境初始化失败，请返回工具箱后重试');
-    await act(async () => { root.unmount(); });
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
-  });
-
-  it('keeps task start disabled until the listener is ready', async () => {
-    let resolveListener: ((unlisten: () => void) => void) | undefined;
-    const api = createDesktopApi({
-      listenTaskEvents: vi.fn(() => new Promise<() => void>((resolve) => { resolveListener = resolve; })),
-    });
-    desktopHarness.available = true;
-    desktopHarness.api = api;
-    desktopHarness.load.mockResolvedValue(api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="开始添加水印到所有素材"]')?.disabled).toBe(true);
-    await act(async () => { resolveListener?.(vi.fn()); await Promise.resolve(); });
-    await act(async () => { await Promise.resolve(); });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="导入图片素材"]')?.disabled).toBe(false);
-    await act(async () => { root.unmount(); });
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
-  });
-
-  it('shows listener initialization failure and leaves task start unavailable', async () => {
-    const api = createDesktopApi({ listenTaskEvents: vi.fn().mockRejectedValue(new Error('listen failed')) });
-    desktopHarness.available = true;
-    desktopHarness.api = api;
-    desktopHarness.load.mockResolvedValue(api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    expect(container.textContent).toContain('桌面环境初始化失败：listen failed');
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="开始添加水印到所有素材"]')?.disabled).toBe(true);
-    await act(async () => { root.unmount(); });
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
-  });
-
-  it('unsubscribes the initialized task listener exactly once on unmount', async () => {
-    const unlisten = vi.fn();
-    const api = createDesktopApi({ listenTaskEvents: vi.fn().mockResolvedValue(unlisten) });
-    desktopHarness.available = true;
-    desktopHarness.api = api;
-    desktopHarness.load.mockResolvedValue(api);
-    const { root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    await act(async () => { root.unmount(); });
-    expect(unlisten).toHaveBeenCalledTimes(1);
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
-  });
-
-  it.each(['/tmp/input.gif', '/tmp/input.mp4', '/tmp/input.mov'])('routes %s through the accepted FFmpeg task event path', async (inputPath) => {
-    let listener: ((event: { kind: 'completed'; taskId: string; outputPath: string; outputBytes: number }) => void) | undefined;
-    const api = createDesktopApi({
-      listenTaskEvents: vi.fn(async (handler) => { listener = handler; return vi.fn(); }),
-      startWatermarkTask: vi.fn(async (request) => {
-        listener?.({ kind: 'completed', taskId: request.taskId, outputPath: '/tmp/output.png', outputBytes: 123 });
-        return { taskId: request.taskId, outputPath: '/tmp/output.png' };
-      }),
-    });
-    api.pickWatermarkFiles.mockResolvedValueOnce([inputPath]);
-    api.pickOutputDirectory.mockResolvedValueOnce('/tmp');
-    desktopHarness.available = true;
-    desktopHarness.api = api;
-    desktopHarness.load.mockResolvedValue(api);
-    const { container, root } = await mountWorkbench();
-    await act(async () => { await Promise.resolve(); });
-    const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button'));
-    await act(async () => { buttons.find((button) => button.getAttribute('aria-label') === '导入图片素材')?.click(); await Promise.resolve(); });
-    await act(async () => { buttons.find((button) => button.textContent?.includes('选择文件夹'))?.click(); await Promise.resolve(); });
-    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="开始添加水印到所有素材"]')?.click(); await Promise.resolve(); });
-    expect(api.startWatermarkTask).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain('1 KB');
-    expect(container.textContent).not.toContain('取消处理');
-    await act(async () => { root.unmount(); });
-    desktopHarness.available = false;
-    desktopHarness.load.mockReset();
-  });
-
-  it('does not expose stroke or shadow controls in the watermark UI', () => {
-    const markup = renderToStaticMarkup(
-      React.createElement(WatermarkWorkbench, { onReturn: () => {} })
-    );
-    expect(markup).not.toContain('描边');
-    expect(markup).not.toContain('投影');
-  });
-
 });

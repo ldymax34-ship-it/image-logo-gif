@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { StrictMode, useState, type ReactElement } from 'react';
+import { StrictMode, useState, type Dispatch, type ReactElement, type SetStateAction } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,34 @@ vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 import { FocusLogoFabricOverlay } from '../../modules/media-workbench/FocusLogoFabricOverlay';
 import { CustomFabricOverlay } from '../../modules/custom-workbench/CustomFabricOverlay';
 import { WatermarkWorkbench } from '../../watermark-workbench/WatermarkWorkbench';
+import type { MediaWorkbenchState } from '../../modules/media-workbench/useMediaWorkbenchState';
+import type { BoardBrandAction } from '../../modules/media-workbench/boardBrandReducer';
+
+function setter<T>(): Dispatch<SetStateAction<T>> {
+  return vi.fn((_next: SetStateAction<T>) => undefined);
+}
+
+const MOCK_SHARED_STATE: MediaWorkbenchState = {
+  draftText: '', setDraftText: setter<string>(),
+  appliedText: '', setAppliedText: setter<string>(),
+  specs: [], setSpecs: setter<MediaWorkbenchState['specs']>(),
+  assets: [], setAssets: setter<MediaWorkbenchState['assets']>(),
+  selectedAssetId: undefined, setSelectedAssetId: setter<string | undefined>(),
+  selectedSpecId: undefined, setSelectedSpecId: setter<string | undefined>(),
+  previewStates: {}, setPreviewStates: setter<MediaWorkbenchState['previewStates']>(),
+  boardBrandStates: {}, dispatchBoardBrand: vi.fn((_action: BoardBrandAction) => undefined),
+  customPresets: [], setCustomPresets: setter<MediaWorkbenchState['customPresets']>(),
+  presetApplyMode: 'replace', setPresetApplyMode: setter<MediaWorkbenchState['presetApplyMode']>(),
+  focusAssetId: undefined, setFocusAssetId: setter<string | undefined>(),
+  focusSpecId: undefined, setFocusSpecId: setter<string | undefined>(),
+  focusSession: undefined, setFocusSession: setter<MediaWorkbenchState['focusSession']>(),
+  pendingConfirmation: undefined, setPendingConfirmation: setter<MediaWorkbenchState['pendingConfirmation']>(),
+  newPresetName: '', setNewPresetName: setter<string>(),
+  exportDialogOpen: false, setExportDialogOpen: setter<boolean>(),
+  exporting: false, setExporting: setter<boolean>(),
+  message: '', setMessage: setter<string>(),
+  importFailures: [], setImportFailures: setter<string[]>(),
+};
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -62,7 +90,7 @@ describe('Fabric component lifecycle', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
-    await act(async () => { root.render(<StrictMode><WatermarkWorkbench onReturn={() => {}} /></StrictMode>); });
+    await act(async () => { root.render(<StrictMode><WatermarkWorkbench onReturn={() => {}} sharedState={MOCK_SHARED_STATE} /></StrictMode>); });
     expect(container.querySelector('.wm-fabric-host')).toBeNull();
     expect(container.querySelector('.wm-canvas-wrap')).not.toBeNull();
     expect(() => act(() => root.unmount())).not.toThrow();

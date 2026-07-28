@@ -13,6 +13,8 @@ export type PendingConfirmation =
   | { type: 'delete-preset'; presetId: string; presetName: string }
   | { type: 'delete-asset'; assetId: string; fileName: string };
 
+export type MediaWorkbenchState = ReturnType<typeof useMediaWorkbenchState>;
+
 export function useMediaWorkbenchState() {
   const [draftText, setDraftText] = useState(''); const [appliedText, setAppliedText] = useState('');
   const [specs, setSpecs] = useState<MaterialSpec[]>([]); const [assets, setAssets] = useState<MaterialAsset[]>([]);

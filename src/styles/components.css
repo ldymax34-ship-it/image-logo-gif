@@ -587,6 +587,12 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
   transform: translateY(-3px);
 }
 .toolbox-tool-button:hover:not(:disabled)::after { background: rgb(61 131 213 / 11%); }
+.toolbox-tool-button.is-disabled { opacity: .5; filter: saturate(.2); cursor: not-allowed; }
+.toolbox-tool-button.is-disabled .toolbox-tool-icon { border-color: var(--color-border); background: var(--color-panel-muted); color: var(--color-text-faint); box-shadow: none; }
+.toolbox-tool-button.is-disabled .toolbox-tool-meta,
+.toolbox-tool-button.is-disabled .toolbox-tool-name,
+.toolbox-tool-button.is-disabled .toolbox-tool-description,
+.toolbox-tool-button.is-disabled .toolbox-tool-action { color: var(--color-text-faint); }
 
 .toolbox-tool-button:focus-visible {
   outline: 2px solid var(--color-focus-ring);

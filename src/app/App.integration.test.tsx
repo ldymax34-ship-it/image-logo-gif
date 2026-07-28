@@ -8,9 +8,12 @@ describe('App root integration', () => {
 
     expect(markup).toContain('品宣工具箱');
     expect(markup).toContain('Logo 与版式');
-    expect(markup).toContain('GIF 合成与压缩');
-    expect(markup).toContain('批量模板 GIF 合成器');
     expect(markup).toContain('水印与追溯');
+    expect(markup).toContain('暗水印与像素指纹（实验）');
+    expect(markup).toContain('视频水印（实验）');
+    expect((markup.match(/未开启/g) ?? [])).toHaveLength(4);
+    expect(markup).not.toContain('GIF 合成与压缩');
+    expect(markup).not.toContain('批量模板 GIF 合成器');
     expect(markup).toContain('aria-label="工作台模块"');
     expect(markup).not.toContain('brand-settings-title');
   });

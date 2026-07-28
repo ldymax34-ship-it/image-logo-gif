@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_BRAND_LAYER, type MaterialAsset, type MaterialSpec } from '../../core';
@@ -25,6 +26,11 @@ function render(configValue?: WatermarkConfig) {
 }
 
 describe('BoardCanvas watermark layers', () => {
+  it('never auto-wraps watermark text while preserving manual line breaks', () => {
+    const styles = readFileSync(`${process.cwd()}/src/styles.css`, 'utf8');
+    expect(styles).toMatch(/\.watermark-layer\s*\{[^}]*white-space:pre;/);
+    expect(styles).not.toMatch(/\.watermark-layer\s*\{[^}]*white-space:pre-wrap;/);
+  });
   it('renders every planned layer with CSS rotation and opacity', () => {
     const markup = render(config);
     const plannedCount = (markup.match(/class="watermark-layer"/g) ?? []).length;

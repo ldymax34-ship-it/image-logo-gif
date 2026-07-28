@@ -1,5 +1,24 @@
 # 更新日志
 
+## 2026-07-28｜0.1.35-rc.7 本地 macOS 验收候选（未发布）
+
+- 水印文字预览使用 `white-space: pre`，不再按容器宽度自动折行；用户手动输入的换行仍由 Render Plan 原样保留并与导出一致。
+- 水印输出命名复用设媒的 `buildOutputFileName` 规则，格式为“源文件名_宽x高.扩展名”，同名批量文件追加 `_2`、`_3`；移除水印专用 `_watermarked` 命名。
+- 水印导出改为按共享素材列表顺序批量执行，继续复用统一输出目录、Canvas 导出与文件保存能力；单图位置/缩放可按图片比例同步至所有其他图片。
+- 新增原尺寸、大尺寸（75%）、中尺寸（50%）、小尺寸（25%）输出选项，宽高使用同一缩放系数，不裁切、不改变长宽比；字号继续按输出图短边比例缩放，不再被 16px 下限放大。
+- 水印工作台页头增加与首页入口一致的盾牌图标，帮助用户在工具切换后快速确认当前模块；沿用共用 `ToolPageHeader`，其他工具页默认行为不变。
+- 架构收敛：MediaWorkbench 与 WatermarkWorkbench 共享素材状态；水印工作台复用 Logo 与版式的 assets/selectedAsset/selectedSpec/`assetId:specId` previewStates，并以同一 BoardCanvas 状态预览和 exportBoardImage 导出。删除水印模块内手写 createMaterialAsset→renderBoardToCanvas→canvasToBlob 的独立静态导出链。
+- 新增 WatermarkOverride（offsetX/offsetY/scale）按素材 ID 隔离；全局 WatermarkConfig 负责默认值。
+- 默认水印文字改为 ©KURO GAMES ALL RIGHTS RESERVED；字体固定思源黑体，颜色固定白色（内置默认，不再作为独立 UI/状态）。
+- 水印配置简化为 text/fontSize/rotation/opacity/offsetX/offsetY/spacingX/spacingY/repeat；fontSize 为短边百分比（默认 5%），UI 提供字号滑块。
+- 多行文字支持：手动换行在 Render Plan 中拆分为多个 text layer（lineHeight=1.2×fontSize），预览/导出同源。
+- 移除 React 水印页的 GIF/视频入口；`src-tauri/src/media.rs`、`src/gif-media/**` 与 `src/watermark-tool/**` 的 FFmpeg 底层及既有调用代码完整保留、零改动。
+- 移除描边/投影/暗水印控件、image Logo 水印种类、密度/排列选择、桌面桥初始化状态、FFmpeg 任务队列 UI、独立文件导入等冗余 UI/状态。
+- 静态导出格式：PNG→PNG、JPEG→JPG、WebP→PNG，复用 exportBoardImage 管道。
+- 主包体约 367.9 kB（gzip 117.4 kB）；零新增依赖。
+- 已生成 Apple Silicon 本地验收 DMG（41.6 MiB），镜像校验与应用深度签名校验通过；使用 ad-hoc 签名、未公证，未配置发布用 updater 私钥，因此不生成可发布签名。
+- 待桌面实机验证：字号合理、X/Y 滑块范围准确、多行文字预览/导出一致。
+
 ## 2026-07-28｜0.1.35-rc.6 本地 macOS 验收候选（未发布）
 
 - 删除当前受限 Watermark Render Plan 未实现的文字描边与投影状态、默认值和 UI 控件，避免用户设置不会出现在预览或导出中的无效选项。

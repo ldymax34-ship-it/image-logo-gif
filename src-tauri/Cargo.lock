@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "brand_material_workbench"
-version = "0.1.35-rc.6"
+version = "0.1.35-rc.7"
 dependencies = [
  "log",
  "regex",

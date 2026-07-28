@@ -100,19 +100,37 @@ export function buildWatermarkRenderLayers(
 
   // Content fields shared by every instance
   const base = { rotation, opacity };
-  const makeInstance = (id: string, cx: number, cy: number): WatermarkLayerInstance => {
+  const makeInstance = (id: string, cx: number, cy: number): WatermarkLayerInstance | WatermarkLayerInstance[] => {
     if (config.kind === 'text') {
-      return {
-        id,
+      const fontSize = positiveFinite(config.fontSize, 16);
+      if (!config.text.includes('\n')) {
+        return {
+          id,
+          cx,
+          cy,
+          ...base,
+          kind: 'text',
+          text: config.text,
+          fontFamily: config.fontFamily,
+          color: config.color,
+          fontSize,
+        };
+      }
+      const lineHeight = fontSize * 1.2;
+      const lines = config.text.split('\n');
+      const totalHeight = lines.length * lineHeight;
+      const startY = cy - totalHeight / 2 + lineHeight / 2;
+      return lines.map((line, li) => ({
+        id: `${id}:L${li}`,
         cx,
-        cy,
+        cy: startY + li * lineHeight,
         ...base,
-        kind: 'text',
-        text: config.text,
+        kind: 'text' as const,
+        text: line,
         fontFamily: config.fontFamily,
         color: config.color,
-        fontSize: positiveFinite(config.fontSize, 16)
-      };
+        fontSize,
+      }));
     }
     const width = positiveFinite(config.displayWidth, 1);
     const intrinsicWidth = positiveFinite(config.intrinsicWidth, 1);
@@ -130,7 +148,8 @@ export function buildWatermarkRenderLayers(
   };
 
   if (config.pattern === 'single') {
-    return [makeInstance('wm:0:0', cx0, cy0)];
+    const result = makeInstance('wm:0:0', cx0, cy0);
+    return (Array.isArray(result) ? result : [result]).slice(0, MAX_INSTANCES);
   }
 
   // Tiled: independently overscan both axes by the diagonal plus one cell.
@@ -172,7 +191,11 @@ export function buildWatermarkRenderLayers(
   const instances: WatermarkLayerInstance[] = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      instances.push(makeInstance(`wm:${r}:${c}`, startX + c * spacingX, startY + r * spacingY));
+      const sub = makeInstance(`wm:${r}:${c}`, startX + c * spacingX, startY + r * spacingY);
+      const remaining = MAX_INSTANCES - instances.length;
+      if (remaining <= 0) return instances;
+      if (Array.isArray(sub)) instances.push(...sub.slice(0, remaining));
+      else instances.push(sub);
     }
   }
   return instances;
@@ -228,7 +251,7 @@ export function adaptWatermarkConfig(
   };
 
   if (state.kind === 'text') {
-    const fontSize = Math.max(16, ch * finiteOr(state.scale, 1) * 0.2);
+    const fontSize = Math.max(16, Math.min(cw, ch) * 0.05 * finiteOr(state.scale, 1));
     return { kind: 'text', text: state.text, fontFamily: state.fontFamily, color: state.color, fontSize, ...common };
   }
 

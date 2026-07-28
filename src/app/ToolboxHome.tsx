@@ -1,19 +1,17 @@
 import {
   ArrowUpRight,
-  Film,
-  Layers3,
+  Fingerprint,
   LockKeyhole,
   Palette,
   Settings,
   ShieldCheck,
   Sparkles,
+  Video,
   type LucideIcon
 } from 'lucide-react';
 
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
-  onOpenGifCompress: () => void;
-  onOpenBatchTemplateGif: () => void;
   onOpenWatermarkTrace: () => void;
   onOpenSettings: () => void;
 };
@@ -24,11 +22,11 @@ type ToolEntry = {
   description: string;
   eyebrow: string;
   icon: LucideIcon;
-  action: () => void;
-  experimental: boolean;
+  action?: () => void;
+  enabled: boolean;
 };
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenGifCompress, onOpenBatchTemplateGif, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
   const tools: ToolEntry[] = [
     {
       id: 'logo-layout',
@@ -37,34 +35,32 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenGifCompress, onOpenBatchTe
       eyebrow: '图片生产',
       icon: Palette,
       action: onOpenLogoLayout,
-      experimental: false
-    },
-    {
-      id: 'gif-compress',
-      label: 'GIF 合成与压缩',
-      description: '截取视频片段、预览压缩结果，并自动控制在 8MB 以内。',
-      eyebrow: '动效处理',
-      icon: Film,
-      action: onOpenGifCompress,
-      experimental: false
-    },
-    {
-      id: 'batch-template-gif',
-      label: '批量模板 GIF 合成器',
-      description: '把视频批量装入 PNG 模板，面向多语言与多版位生产。',
-      eyebrow: '批量合成',
-      icon: Layers3,
-      action: onOpenBatchTemplateGif,
-      experimental: true
+      enabled: true
     },
     {
       id: 'watermark-trace',
       label: '水印与追溯',
-      description: '在画布中直接调整文字或 Logo 水印，再按队列批量落盘。',
+      description: '复用图片素材与画布预览，调整文字水印参数后导出静态图片。',
       eyebrow: '内容保护',
       icon: ShieldCheck,
       action: onOpenWatermarkTrace,
-      experimental: true
+      enabled: true
+    },
+    {
+      id: 'dark-watermark',
+      label: '暗水印与像素指纹（实验）',
+      description: '用于更隐蔽的内容追踪与像素级来源识别。',
+      eyebrow: '隐形追溯',
+      icon: Fingerprint,
+      enabled: false
+    },
+    {
+      id: 'video-watermark',
+      label: '视频水印（实验）',
+      description: '面向视频与动态媒体的水印处理能力。',
+      eyebrow: '视频保护',
+      icon: Video,
+      enabled: false
     }
   ];
 
@@ -102,20 +98,21 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenGifCompress, onOpenBatchTe
             <button
               key={tool.id}
               type="button"
-              className={`toolbox-tool-button toolbox-tool-${tool.id}`}
+              className={`toolbox-tool-button toolbox-tool-${tool.id}${tool.enabled ? '' : ' is-disabled'}`}
               onClick={tool.action}
               aria-label={tool.label}
+              disabled={!tool.enabled}
             >
               <span className="toolbox-tool-icon"><Icon icon={ToolIcon} /></span>
               <span className="toolbox-tool-copy">
                 <span className="toolbox-tool-meta">
                   <span>{tool.eyebrow}</span>
-                  {tool.experimental ? <span className="toolbox-tool-badge">实验</span> : <span className="toolbox-tool-badge is-stable">可用</span>}
+                  {tool.enabled ? <span className="toolbox-tool-badge is-stable">可用</span> : <span className="toolbox-tool-badge">未开启</span>}
                 </span>
                 <strong className="toolbox-tool-name">{tool.label}</strong>
                 <span className="toolbox-tool-description">{tool.description}</span>
               </span>
-              <span className="toolbox-tool-action" aria-hidden="true">打开<ArrowUpRight size={16} /></span>
+              <span className="toolbox-tool-action" aria-hidden="true">{tool.enabled ? <><span>打开</span><ArrowUpRight size={16} /></> : '未开启'}</span>
             </button>
           );
         })}

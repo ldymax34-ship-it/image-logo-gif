@@ -41,7 +41,7 @@ import { ConfirmationDialog } from './ConfirmationDialog';
 import { BrandControlsPanel } from './BrandControlsPanel';
 import { selectBoardBrandState, selectBoardKey, selectBoardPreviewState } from './mediaWorkbenchSelectors';
 import { applyCropScope, updateBoardCrop } from './mediaWorkbenchActions';
-import { useMediaWorkbenchState } from './useMediaWorkbenchState';
+import { type MediaWorkbenchState } from './useMediaWorkbenchState';
 import { useMediaAssetActions } from './useMediaAssetActions';
 import { useMediaSpecActions } from './useMediaSpecActions';
 import { useMediaBrandActions } from './useMediaBrandActions';
@@ -135,14 +135,14 @@ type PendingBrandScope = {
   targetDescription: string;
 };
 
-export function MediaWorkbench({ active }: { active: boolean }) {
+export function MediaWorkbench({ active, sharedState }: { active: boolean; sharedState: MediaWorkbenchState }) {
   const [pendingModuleChange, setPendingModuleChange] = useState<AppNavigationTarget>();
   const [pendingBrandScope, setPendingBrandScope] = useState<PendingBrandScope>();
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
   const focusReturnRef = useRef<HTMLElement | null>(null);
   const { brandAssets, brandLayer, setBrandLayer, brandSettings, setBrandSettings, updateActivity, setMediaHeader, registerGlobalBrandResourceHandlers, setSettingsSelectedCompanyLogoId, setActiveModule, setActiveTool, registerMediaModuleChangeGuard } = useAppRuntime();
-  const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusSession, setFocusSession, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures } = useMediaWorkbenchState();
+  const { draftText, setDraftText, appliedText, setAppliedText, specs, setSpecs, assets, setAssets, selectedAssetId, setSelectedAssetId, selectedSpecId, setSelectedSpecId, previewStates, setPreviewStates, boardBrandStates, dispatchBoardBrand, customPresets, setCustomPresets, presetApplyMode, setPresetApplyMode, focusAssetId, setFocusAssetId, focusSpecId, setFocusSpecId, focusSession, setFocusSession, pendingConfirmation, setPendingConfirmation, newPresetName, setNewPresetName, exportDialogOpen, setExportDialogOpen, exporting, setExporting, message, setMessage, importFailures, setImportFailures } = sharedState;
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
   const hasPendingSpecChanges = draftText.trim() !== appliedText.trim();

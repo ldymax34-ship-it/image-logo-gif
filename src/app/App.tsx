@@ -3,6 +3,7 @@ import type { ModuleStatus, WorkbenchModule } from '../components/ModuleNav';
 import { WorkbenchHeader } from '../components';
 import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
 import { MediaWorkbench } from '../modules/media-workbench/MediaWorkbench';
+import { useMediaWorkbenchState } from '../modules/media-workbench/useMediaWorkbenchState';
 import { AppRuntimeProvider, useAppRuntime } from './AppRuntimeProvider';
 import { AppShell } from './AppShell';
 import { ApplicationSettingsDialog } from './ApplicationSettingsDialog';
@@ -52,6 +53,7 @@ function AppContent() {
   const selectedCpr = cprAssets.find((asset) => asset.id === brandLayer.selectedCprId);
   const companyLogo = logoAssets.find((asset) => asset.language === 'custom');
   const gameLogo = selectedLogo?.language !== 'custom' ? selectedLogo : logoAssets.find((asset) => asset.language !== 'custom');
+  const sharedState = useMediaWorkbenchState();
   const handleCustomWorkbenchDirty = useCallback((customWorkbenchDirty: boolean) => {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
@@ -81,8 +83,6 @@ function AppContent() {
     {activeTool === 'toolbox' && (
       <ToolboxHome
         onOpenLogoLayout={() => navigateTo('logo-layout')}
-        onOpenGifCompress={() => navigateTo('gif-compress')}
-        onOpenBatchTemplateGif={() => navigateTo('batch-template-gif')}
         onOpenWatermarkTrace={() => navigateTo('watermark-trace')}
         onOpenSettings={() => setApplicationSettingsOpen(true)}
       />
@@ -103,7 +103,7 @@ function AppContent() {
           />
         }
       >
-        <MediaWorkbench active={activeModule === 'media'} />
+        <MediaWorkbench active={activeModule === 'media'} sharedState={sharedState} />
         {activeModule === 'custom' ? (
           <CustomWorkbench
             brandLayer={brandLayer}
@@ -130,7 +130,7 @@ function AppContent() {
 
     {/* Watermark Trace */}
     {activeTool === 'watermark-trace' && (
-      <WatermarkWorkbench onReturn={requestToolbox} />
+      <WatermarkWorkbench onReturn={requestToolbox} sharedState={sharedState} />
     )}
 
     <GlobalDialogs />
