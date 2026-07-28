@@ -40,7 +40,7 @@ Tauri v2 updater 在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中按数
 | 大文件 | 约 200MB 的 updater tar.gz/exe 正常下载 |
 | Range 请求 | 支持 HTTP Range / 断点续传 |
 | URL 稳定性 | 不含短期 token 或临时签名参数 |
-| Manifest 格式 | 与 GitHub 的 latest-preview.json 完全一致（SHA-256 相同） |
+| Manifest 格式 | 版本、平台和签名与 GitHub 一致；下载 URL 指向 CNB 附件 |
 | 404/无效 JSON | CNB manifest 404 或无效 JSON → 自动回退 GitHub |
 | 超时 | CNB 超时 → 自动回退 GitHub |
 | 签名 | 公钥和签名机制保持不变 |
@@ -69,7 +69,7 @@ Tauri v2 updater 在 `tauri.conf.json` 的 `plugins.updater.endpoints` 中按数
 ]
 ```
 
-`0.1.30` 只桥接端点配置；`0.1.31` 才首次通过 CNB 下载 updater 包，并在此前完成大附件与签名一致性验收。
+自 `0.9.0` 起，正式 Preview 流水线先把双平台 updater、签名文件和人工安装包镜像到 CNB，再最后覆盖指向 CNB 附件的国内 manifest。GitHub manifest 继续指向 GitHub 资产，作为完整回退源。
 
 ## 发布脚本设计
 
@@ -90,12 +90,12 @@ CNB 仓库当前未初始化，需要先完成仓库初始化（至少一个初�
 - **公钥**：`tauri.conf.json` 中的 `pubkey` 公开不变。
 - **签名文件**：`.sig` 文件从 GitHub Release 直接复制到 CNB，不重新生成。
 
-## 未完成项清单
+## 验收清单
 
-- [ ] 确认 CNB 仓库位置/URL
-- [ ] 确认 CNB Release 附件直链格式
-- [ ] 验证匿名下载（curl 测试）
-- [ ] 验证 Range 请求支持
-- [ ] 将 CNB URL 写入 `tauri.conf.json` endpoints 首位
+- [x] 确认 CNB 仓库位置/URL
+- [x] 确认 CNB Release 附件直链格式
+- [x] 验证匿名下载（curl 测试）
+- [x] 验证 Range 请求支持
+- [x] 将 CNB URL 写入 `tauri.conf.json` endpoints 首位
 - [ ] 完整更新回归：从旧版 → 检测 CNB → 下载 → 签名验证 → 安装
 - [ ] 回退测试：CNB 不可达时自动使用 GitHub

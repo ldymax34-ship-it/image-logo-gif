@@ -166,7 +166,7 @@ jobs:
         shell: bash
         env:
           CNB_RELEASE_TOKEN: ${{ secrets.CNB_RELEASE_TOKEN }}
-        run: bash scripts/upload-cnb-preview-manifest.sh release/latest-preview.json
+        run: bash scripts/upload-cnb-preview-manifest.sh release/latest-preview.json release
 
   cleanup:
     if: always()
