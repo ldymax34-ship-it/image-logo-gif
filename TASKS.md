@@ -2,11 +2,11 @@
 
 ## 当前目标
 
-0.1.33 工具箱路线：Stage 5A、5B、6B-UI Checkpoint、6B 真实 GIF 和 Stage 6C 首版可见水印均已完成。所有真实媒体处理使用同一份内置 FFmpeg/FFprobe sidecar、同一 Vue 窗口/队列与同一任务引擎；中文字体已随 Tauri bundle 打包。隐形指纹继续不做。miniPaint 与专业静态编辑器已取消当前路线，不作为当前待办。
+v0.9.0 功能版本冻结：Logo 与版式、静态图片水印和既有 FFmpeg 媒体链路完成核心闭环。本版本不再增加功能；后续仅在独立 `ui-refresh/v1.0` 分支升级 Button、Dialog、Tooltip、Toast、Progress、Switch、Slider 等基础交互，不改变业务逻辑和 Render Plan。
 
 ## 本轮任务
 
-- [ ] 0.1.35-rc.1 macOS 文件 URL 诊断候选：只增加会话内 path / asset URL / plugin-fs / HTMLImage / fetch / Fabric 探针与可复制报告，不修改加载、权限、画布或更新器。**未修复、未通过验收**；等待用户安装 Diagnostic 包后验证 PNG、图片 Logo 与输出文件。说明见 `docs/MACOS_FILE_URL_DIAGNOSTIC_RC.md`。
+- [x] v0.9.0 发布冻结：版本号与正式 Bundle ID 统一，Logo/CPR、静态图片水印、Render Plan、Canvas 预览/导出和既有 FFmpeg 媒体代码纳入第一个可用生产版本；暗水印、新工具与 UI 组件体系升级不进入本版本。
 
 - [x] 2026-07-26 工具箱首页由主线程独立重写：设置从生产工具中分离到页头，四个工作流改为带用途说明、可用/实验状态和本地处理提示的 2×2 启动卡；统一复用现有深色 token、Lucide 图标与克制蓝色强调。1280×720 浏览器目视通过，无横向溢出；`git diff --check`、`npm run verify:core`、271 个前端测试与 `npm run build` 通过。截图保存在 Codex 可视化目录，不纳入仓库。
 - [ ] 2026-07-26 复核 `af44e14` 后仍未验收第一批 P0：`run_gif_encode_with_progress` 仍在 `child_arc.lock()` guard 内调用 `wait()`，取消仍会争用同一把锁；临时输出扩展名为 `.gif.tmp` 且未显式 `-f gif`；原子落盘前仍删除最终路径；`max_retries` 仍为 8，最后一次只改强压缩参数后退出。现有新增测试只覆盖两个纯函数，未覆盖真实 `start_gif_media_task → cancel_gif_media_task`、重试、强压缩与失败清理链路。
@@ -29,7 +29,7 @@
 - Windows x64 交互式实机媒体任务仍待完成；当前只验证了 sidecar PE x86-64 架构与 Tauri target-triple 打包规则，不能冒充 Windows 实机通过。
 - miniPaint、Photopea / Canva / Photoshop 类专业静态编辑器和完整开源图片编辑器已取消当前路线。本项目当前不集成、分发或提供高级编辑入口，也不主动预留图层、插件、时间轴、通用文档模型或兼容层；未来若其他已确认功能有真实需求，须重新经过用户确认、边界审计、依赖/许可证与包体评估。
 - 旧 `docs/FFMPEG_GUI_CANDIDATE_AUDIT.md` 的 No-Go 保留为历史审计记录，不回滚、不删除。
-- 用户未跟踪的 `artifacts/audit-export-flow-2026-07-22/` 与 `artifacts/visual/` 保留且不纳入提交。
+- v0.9.0 release preflight 将未跟踪的 `artifacts/audit-export-flow-2026-07-22/` 与 `artifacts/visual/` 移至本机废纸篓，不纳入提交。
 
 ## 已完成
 

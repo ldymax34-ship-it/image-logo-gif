@@ -1,5 +1,16 @@
 # 更新日志
 
+## 2026-07-28｜0.9.0 品宣工具箱第一个可用生产版本
+
+- 功能冻结：Logo 与版式保留图片导入、素材列表、Logo/CPR 配置、Render Plan、Canvas 预览和图片导出完整链路。
+- 水印与追溯复用共享 `MaterialAsset`、图片列表、当前素材、Watermark Render Plan、Canvas 预览和批量导出；移除重复的静态图片加载、素材状态与独立导出链。
+- 水印默认文案为 `©KURO GAMES ALL RIGHTS RESERVED`；默认单行，不按容器宽度自动换行，用户手动输入的换行在预览与导出中保留。
+- 水印批量输出命名与设媒一致，提供原尺寸、大尺寸（75%）、中尺寸（50%）、小尺寸（25%）四档等比缩放，不裁切、不改变长宽比。
+- FFmpeg 相关代码及既有 GIF/视频媒体链路完整保留，本版本不迁移、不重构、不扩展媒体能力。
+- 正式应用名称恢复为“品宣物料工作台”，Bundle ID 恢复为 `com.kuro.internal.brandmaterialworkbench`；所有应用版本统一为 `0.9.0`。
+- 本版本不包含 HeroUI、shadcn/ui、React/Tailwind 升级、UI 组件体系重构、暗水印/抗去除水印、新工具入口或复杂单图 Override。
+- 后续 `v1.0` 在独立 `ui-refresh/v1.0` 分支推进，仅升级 Button、Dialog、Tooltip、Toast、Progress、Switch、Slider 等基础交互，不改变业务逻辑和 Render Plan。
+
 ## 2026-07-28｜0.1.35-rc.7 本地 macOS 验收候选（未发布）
 
 - 水印文字预览使用 `white-space: pre`，不再按容器宽度自动折行；用户手动输入的换行仍由 Render Plan 原样保留并与导出一致。
