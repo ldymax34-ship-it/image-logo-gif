@@ -54,6 +54,7 @@ export type MediaProbeResult = {
   height: number;
   fps: number;
   codec: string;
+  hasAudio?: boolean;
 };
 
 export type PreviewGifRequest = {

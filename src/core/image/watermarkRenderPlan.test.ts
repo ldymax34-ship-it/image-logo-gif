@@ -95,6 +95,36 @@ describe('buildWatermarkRenderLayers', () => {
     expect(layers.length).toBeGreaterThan(1);
   });
 
+  it('staggered differs from tiled by shifting odd rows', () => {
+    const tiled = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 200, spacingY: 200 }));
+    const staggered = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered', spacingX: 200, spacingY: 200, phaseOffset: 0.5 }));
+    expect(staggered.length).toBe(tiled.length);
+    // Every odd row (grid row index) is horizontally shifted by phase * spacingX.
+    const byRow = new Map<string, number[]>();
+    for (const layer of staggered) {
+      const row = layer.id.split(':')[1];
+      byRow.set(row, [...(byRow.get(row) ?? []), layer.cx]);
+    }
+    const tiledByRow = new Map<string, number[]>();
+    for (const layer of tiled) {
+      const row = layer.id.split(':')[1];
+      tiledByRow.set(row, [...(tiledByRow.get(row) ?? []), layer.cx]);
+    }
+    let sawShift = false;
+    for (const row of byRow.keys()) {
+      const shift = (byRow.get(row)![0] ?? 0) - (tiledByRow.get(row)![0] ?? 0);
+      if (Math.abs(shift) > 0.5) sawShift = true;
+    }
+    expect(sawShift).toBe(true);
+  });
+
+  it('staggered phase offset controls the row shift magnitude', () => {
+    const half = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered', spacingX: 200, spacingY: 200, phaseOffset: 0.25 }));
+    const full = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered', spacingX: 200, spacingY: 200, phaseOffset: 0.5 }));
+    const pickRow1X = (layers: { id: string; cx: number }[]) => layers.filter((l) => l.id.startsWith('wm:1:')).map((l) => l.cx).sort((a, b) => a - b);
+    expect(pickRow1X(full)[0]).not.toBe(pickRow1X(half)[0]);
+  });
+
   it('larger spacing → fewer instances', () => {
     const small = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 50, spacingY: 50 })).length;
     const large = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 500, spacingY: 500 })).length;

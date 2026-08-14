@@ -2,7 +2,17 @@
 
 ## 当前目标
 
-v0.9.0 功能版本冻结：Logo 与版式、静态图片水印和既有 FFmpeg 媒体链路完成核心闭环。本版本不再增加功能；后续仅在独立 `ui-refresh/v1.0` 分支升级 Button、Dialog、Tooltip、Toast、Progress、Switch、Slider 等基础交互，不改变业务逻辑和 Render Plan。
+阶段一图片水印与阶段二视频水印均已完成实现，当前进入发布前审查；阶段三暗水印/像素指纹继续冻结。
+
+阶段一：产品名统一为「水印工具」，路由 `watermark-trace` 迁移为 `watermark`，删除「追溯」表述，统一文字/Logo 水印配置与 Render Plan。
+
+阶段二：同一工作台提供图片/视频模式，视频复用随包 FFmpeg/FFprobe、CPU drawtext/overlay 滤镜、正式 FIFO 和独立静帧预览；Windows 默认 `h264_nvenc → libx264`，macOS 默认 `h264_videotoolbox → libx264`。当前机器只验证探测流程与合法 CPU 降级，不宣称 Windows NVENC 性能收益。
+
+阶段三（不做）：暗水印、像素指纹。
+
+明确不做：剪辑、时间轴、字幕、转场、关键帧、通用编码参数、拖入、文件夹/源目录导出、持久化队列、可调并发、QSV/AMF、硬件解码、GPU 水印滤镜、新 workspace/store/context、远程运行时。
+
+架构边界：本阶段不做 Tailwind 4、React 19、CVA、shadcn 或其他大版本/全栈迁移；允许为已实现交互引入最小 Radix 依赖。本阶段实际新增且均有真实 import 的直接依赖为 `@radix-ui/react-collapsible`、`@radix-ui/react-select`、`@radix-ui/react-slider`、`@radix-ui/react-tabs`、`@radix-ui/react-tooltip`，视频 UI 未新增其他依赖。
 
 ## 本轮任务
 

@@ -1,14 +1,21 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Select from '@radix-ui/react-select';
+import * as Tabs from '@radix-ui/react-tabs';
+import * as Collapsible from '@radix-ui/react-collapsible';
+import * as Tooltip from '@radix-ui/react-tooltip';
+import { WatermarkSlider } from './WatermarkSlider';
 import { ShieldCheck } from 'lucide-react';
 import { AssetSidebar, BoardOverview, SpecPanel, ToolPageHeader } from '../components';
 import { BoardCanvas } from '../components/canvas';
 import {
   createInitialCropState,
   buildOutputFileName,
+  createMaterialAsset,
   DEFAULT_BRAND_LAYER,
   exportBoardImage,
   formatFileSize,
   getBoardPreviewKey,
+  releaseMaterialAsset,
   type BoardPreviewState,
   type MaterialAsset,
   type MaterialSpec,
@@ -16,11 +23,16 @@ import {
 import type { WatermarkConfig } from '../core/image/watermarkRenderPlan';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import { useMediaAssetActions } from '../modules/media-workbench/useMediaAssetActions';
+import { useWatermarkLogoAsset } from './useWatermarkLogoAsset';
 import type { MediaWorkbenchState } from '../modules/media-workbench/useMediaWorkbenchState';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../platform/fileSystem';
 import { exportSequentially } from '../services/export/exportBatch';
+import { buildWatermarkRenderInput } from './watermarkExport';
+import { VideoWatermarkWorkspace } from './VideoWatermarkWorkspace';
+import type { MediaDesktopApi } from '../gif-media/mediaDesktop';
 
 export type WatermarkBusinessConfig = {
+  contentKind: 'text' | 'logo';
   text: string;
   fontSize: number; // percentage of short canvas edge, default 5
   rotation: number;
@@ -29,7 +41,9 @@ export type WatermarkBusinessConfig = {
   offsetY: number;
   spacingX: number;
   spacingY: number;
-  repeat: boolean;
+  pattern: 'single' | 'tiled' | 'staggered';
+  phaseOffset: number;
+  anchor: WatermarkAnchor;
 };
 
 export type WatermarkOverride = {
@@ -39,6 +53,20 @@ export type WatermarkOverride = {
 };
 
 export type WatermarkOutputSize = 'original' | 'large' | 'medium' | 'small';
+
+export type WatermarkAnchor = 'top-left' | 'top-center' | 'top-right' | 'middle-left' | 'center' | 'middle-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+const ANCHOR_OFFSETS: Record<WatermarkAnchor, { x: number; y: number }> = {
+  'top-left': { x: -0.5, y: -0.5 },
+  'top-center': { x: 0, y: -0.5 },
+  'top-right': { x: 0.5, y: -0.5 },
+  'middle-left': { x: -0.5, y: 0 },
+  center: { x: 0, y: 0 },
+  'middle-right': { x: 0.5, y: 0 },
+  'bottom-left': { x: -0.5, y: 0.5 },
+  'bottom-center': { x: 0, y: 0.5 },
+  'bottom-right': { x: 0.5, y: 0.5 },
+};
 
 const WATERMARK_OUTPUT_SCALES: Record<WatermarkOutputSize, number> = {
   original: 1,
@@ -55,6 +83,7 @@ const WATERMARK_OUTPUT_LABELS: Record<WatermarkOutputSize, string> = {
 };
 
 const DEFAULT_CONFIG: WatermarkBusinessConfig = {
+  contentKind: 'text',
   text: '\u00a9KURO GAMES ALL RIGHTS RESERVED',
   fontSize: 5,
   rotation: 45,
@@ -63,10 +92,13 @@ const DEFAULT_CONFIG: WatermarkBusinessConfig = {
   offsetY: 0,
   spacingX: 220,
   spacingY: 160,
-  repeat: true,
+  pattern: 'tiled',
+  phaseOffset: 0.5,
+  anchor: 'center',
 };
 
 function imageFormat(path: string): 'png' | 'jpg' { return /\.jpe?g$/i.test(path) ? 'jpg' : 'png'; }
+export function imageFormatForName(path: string): 'png' | 'jpg' { return imageFormat(path); }
 
 export function createWatermarkOutputSpec(asset: MaterialAsset, size: WatermarkOutputSize): MaterialSpec {
   const scale = WATERMARK_OUTPUT_SCALES[size];
@@ -109,25 +141,60 @@ export function createWorkbenchWatermarkConfig(
   canvas: { width: number; height: number },
   config: WatermarkBusinessConfig,
   override?: WatermarkOverride,
-): WatermarkConfig {
-  const fontSize = Math.max(1, Math.min(canvas.width, canvas.height) * config.fontSize / 100 * (override?.scale ?? 1));
+  logoAsset?: MaterialAsset,
+): WatermarkConfig | undefined {
+  const short = Math.min(canvas.width, canvas.height);
+  const sizePercent = config.fontSize / 100 * (override?.scale ?? 1);
+  const anchor = ANCHOR_OFFSETS[config.anchor] ?? ANCHOR_OFFSETS.center;
+  const anchorApplies = config.pattern === 'single';
+  const offsetX = (anchorApplies ? anchor.x * canvas.width : 0) + (override?.offsetX ?? config.offsetX);
+  const offsetY = (anchorApplies ? anchor.y * canvas.height : 0) + (override?.offsetY ?? config.offsetY);
+  const common = {
+    pattern: config.pattern,
+    rotation: config.rotation,
+    opacity: config.opacity,
+    offsetX,
+    offsetY,
+    spacingX: config.spacingX,
+    spacingY: config.spacingY,
+    phaseOffset: config.phaseOffset,
+  };
+  if (config.contentKind === 'logo') {
+    if (!logoAsset) return undefined;
+    return {
+      kind: 'image',
+      src: logoAsset.objectUrl,
+      intrinsicWidth: logoAsset.width,
+      intrinsicHeight: logoAsset.height,
+      displayWidth: Math.max(1, short * sizePercent),
+      ...common,
+    };
+  }
   return {
     kind: 'text',
     text: config.text,
     fontFamily: 'Source Han Sans SC',
     color: '#ffffff',
-    fontSize,
-    pattern: config.repeat ? 'tiled' : 'single',
-    rotation: config.rotation,
-    opacity: config.opacity,
-    offsetX: override?.offsetX ?? config.offsetX,
-    offsetY: override?.offsetY ?? config.offsetY,
-    spacingX: config.spacingX,
-    spacingY: config.spacingY,
+    fontSize: Math.max(16, short * sizePercent),
+    ...common,
   };
 }
 
-export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => void; sharedState: MediaWorkbenchState }) {
+export type WatermarkWorkbenchMode = 'image' | 'video';
+
+export function WatermarkWorkbench({
+  onReturn,
+  sharedState,
+  initialMode = 'image',
+  onModeChange,
+  injectedVideoApi,
+}: {
+  onReturn: () => void;
+  sharedState: MediaWorkbenchState;
+  initialMode?: WatermarkWorkbenchMode;
+  onModeChange?: (mode: WatermarkWorkbenchMode) => void;
+  injectedVideoApi?: MediaDesktopApi;
+}) {
   const {
     assets, setAssets, selectedAssetId, setSelectedAssetId, setSelectedSpecId,
     previewStates, setPreviewStates, focusAssetId, setFocusAssetId, setFocusSpecId,
@@ -135,13 +202,42 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
     setPendingConfirmation, dispatchBoardBrand, exporting, setExporting,
   } = sharedState;
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
   const focusReturnRef = useRef<HTMLElement | null>(null);
 
   const [config, setConfig] = useState<WatermarkBusinessConfig>(DEFAULT_CONFIG);
+
   const [overrides, setOverrides] = useState<Record<string, WatermarkOverride>>({});
   const [outputSize, setOutputSize] = useState<WatermarkOutputSize>('original');
   const [showOriginal, setShowOriginal] = useState(false);
+  const originalKeyHeldRef = useRef(false);
+
+  const pressOriginal = useCallback(() => { originalKeyHeldRef.current = true; setShowOriginal(true); }, []);
+  const releaseOriginal = useCallback(() => { originalKeyHeldRef.current = false; setShowOriginal(false); }, []);
+  const handleOriginalKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (originalKeyHeldRef.current) return;
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      pressOriginal();
+    }
+  }, [pressOriginal]);
+  const handleOriginalKeyUp = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      releaseOriginal();
+    }
+  }, [releaseOriginal]);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const [mode, setMode] = useState<WatermarkWorkbenchMode>(initialMode);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
+  const selectMode = useCallback((nextMode: WatermarkWorkbenchMode) => {
+    setMode(nextMode);
+    onModeChange?.(nextMode);
+  }, [onModeChange]);
 
   const selectedAsset = useMemo(() => assets.find((a) => a.id === selectedAssetId) ?? assets[0], [assets, selectedAssetId]);
   const effectiveAssetId = selectedAsset?.id;
@@ -178,10 +274,18 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
     };
   }, [previewStates, selectedAsset, spec]);
 
+  const logo = useWatermarkLogoAsset();
+  const logoAsset = logo.asset;
+  const handleLogoFiles = useCallback(async (files: FileList | null) => {
+    const file = files?.[0];
+    await logo.loadLogo(file);
+    if (logo.error) setSharedMessage(`Logo 水印加载失败：${logo.error}`);
+  }, [logo, setSharedMessage]);
+
   const watermarkCoreConfig = useMemo<WatermarkConfig | undefined>(() => {
     if (!selectedAsset) return undefined;
-    return createWorkbenchWatermarkConfig(spec, config, override);
-  }, [config, override, selectedAsset, spec]);
+    return buildWatermarkRenderInput({ asset: selectedAsset, spec }, config, override, logoAsset, previewStates).watermarkConfig;
+  }, [config, logoAsset, override, previewStates, selectedAsset, spec]);
 
   const updateConfig = useCallback(<K extends keyof WatermarkBusinessConfig>(key: K, value: WatermarkBusinessConfig[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
@@ -243,13 +347,8 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
           fitMode: 'contain' as const,
           crop: createInitialCropState(item.asset, item.spec, 'contain'),
         };
-        const blob = await exportBoardImage({
-          asset: item.asset,
-          spec: item.spec,
-          previewState: itemPreviewState,
-          brandLayer: { ...DEFAULT_BRAND_LAYER, logoEnabled: false, cprEnabled: false },
-          watermarkConfig: createWorkbenchWatermarkConfig(item.spec, config, overrides[item.asset.id]),
-        });
+        const renderInput = buildWatermarkRenderInput(item, config, overrides[item.asset.id], logoAsset, previewStates);
+        const blob = await exportBoardImage(renderInput);
         const actualFileName = await saveBlobToOutputTarget(outputTarget, item.fileName, blob);
         return { result: 'success' as const, outputBytes: blob.size, actualFileName };
       }, ({ current, total }) => setSharedMessage(`正在导出 ${current}/${total}…`));
@@ -261,9 +360,9 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
     } finally {
       setExporting(false);
     }
-  }, [assets, config, exporting, outputSize, overrides, previewStates, setExporting, setSharedMessage]);
+  }, [assets, config, exporting, logoAsset, outputSize, overrides, previewStates, setExporting, setSharedMessage]);
 
-  const canExport = Boolean(assets.length) && !exporting && Boolean(config.text.trim());
+  const canExport = Boolean(assets.length) && !exporting && (config.contentKind === 'logo' ? Boolean(logoAsset) : Boolean(config.text.trim()));
 
   const requestReturn = () => {
     const dirty = (Object.keys(DEFAULT_CONFIG) as (keyof WatermarkBusinessConfig)[])
@@ -275,13 +374,22 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
   return (
     <div className="embedded-tool-wrapper">
       <ToolPageHeader
-        title="水印与追溯"
-        description="设置水印文字参数，预览当前素材并导出。"
+        title="水印工具"
+        description="设置文字或 Logo 水印参数，预览当前素材并导出。"
         status="available"
         icon={<ShieldCheck size={20} strokeWidth={1.6} />}
         onReturn={requestReturn}
       />
-      <section className="workspace wm-workspace">
+      <Tabs.Root value={mode} onValueChange={(value) => selectMode(value as WatermarkWorkbenchMode)}>
+        <div className="wm-mode-tabs-wrap">
+          <Tabs.List className="wm-mode-tabs" aria-label="水印工具模式">
+            <Tabs.Trigger className="wm-mode-tab" value="image">图片</Tabs.Trigger>
+            <Tabs.Trigger className="wm-mode-tab" value="video">视频</Tabs.Trigger>
+          </Tabs.List>
+        </div>
+      {mode === 'video' ? (
+        <Tabs.Content value="video"><VideoWatermarkWorkspace config={config} updateConfig={updateConfig} injectedApi={injectedVideoApi} /></Tabs.Content>
+      ) : <Tabs.Content value="image"><section className="workspace wm-workspace">
         <AssetSidebar ariaLabel="水印素材">
           <div className="panel-heading">
             <h2>素材</h2>
@@ -324,7 +432,7 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
           message={sharedMessage}
         >
           <main className="wm-canvas-wrap" aria-label="水印预览画布" role="img"
-            onPointerDown={() => setShowOriginal(true)} onPointerUp={() => setShowOriginal(false)} onPointerLeave={() => setShowOriginal(false)}>
+            onPointerDown={pressOriginal} onPointerUp={releaseOriginal} onPointerCancel={releaseOriginal} onPointerLeave={releaseOriginal}>
             {selectedAsset && previewState ? (
               <BoardCanvas
                 asset={selectedAsset}
@@ -341,38 +449,99 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
               <div className="wm-empty-canvas">{assets.length ? '选择素材后在此预览水印效果' : '导入图片后在此预览水印效果'}</div>
             )}
           </main>
+          <Tooltip.Provider>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button type="button" className="wm-btn wm-btn-pick wm-view-original" onPointerDown={pressOriginal} onPointerUp={releaseOriginal} onPointerCancel={releaseOriginal} onPointerLeave={releaseOriginal} onKeyDown={handleOriginalKeyDown} onKeyUp={handleOriginalKeyUp} onBlur={releaseOriginal} aria-pressed={showOriginal} disabled={!selectedAsset}>按住查看原图</button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal><Tooltip.Content className="wm-tooltip-content" sideOffset={4}>按住显示原图，松开恢复水印</Tooltip.Content></Tooltip.Portal>
+            </Tooltip.Root>
+          </Tooltip.Provider>
         </BoardOverview>
 
         <SpecPanel boardCount={selectedAsset ? 1 : 0} title="水印参数" countLabel={selectedAsset ? '当前素材' : '未选择素材'} ariaLabel="水印参数">
           <div className="wm-parameter-sections">
+          <div className="wm-section">
+            <div className="wm-section-head"><h3>水印内容</h3></div>
+            <Tabs.Root value={config.contentKind} onValueChange={(v) => updateConfig('contentKind', v as 'text' | 'logo')}>
+              <Tabs.List className="wm-tabs-list" aria-label="水印内容类型">
+                <Tabs.Trigger className="wm-tabs-trigger" value="text">文字</Tabs.Trigger>
+                <Tabs.Trigger className="wm-tabs-trigger" value="logo">Logo</Tabs.Trigger>
+              </Tabs.List>
+            </Tabs.Root>
+          </div>
+          {config.contentKind === 'text' ? (
           <div className="wm-section">
             <div className="wm-section-head"><h3>文字</h3></div>
             <label className="wm-prop">
               <span>内容</span>
               <textarea value={config.text} onChange={(e) => updateConfig('text', e.target.value)} placeholder="支持多行文字，按 Enter 换行" rows={3} wrap="off" style={{ resize: 'vertical', minHeight: 48, width: '100%' }} />
             </label>
-            <label className="wm-prop"><span>字号 {config.fontSize}%</span><input type="range" min={1} max={20} value={config.fontSize} onChange={(e) => updateConfig('fontSize', Number(e.target.value))} /></label>
+            <WatermarkSlider label="字号" value={config.fontSize} min={1} max={20} step={1} onChange={(v) => updateConfig('fontSize', v)} formatValue={(v) => `${v}%`} />
           </div>
+          ) : (
+          <div className="wm-section">
+            <div className="wm-section-head"><h3>Logo 图片</h3></div>
+            <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void handleLogoFiles(e.target.files)} />
+            <button type="button" className="wm-btn wm-btn-pick" onClick={() => logoInputRef.current?.click()}>{logoAsset ? logoAsset.fileName : '选择 Logo 图片'}</button>
+            {logo.error && <p className="wm-error">{logo.error}</p>}
+            <WatermarkSlider label="大小" value={config.fontSize} min={1} max={50} step={1} onChange={(v) => updateConfig('fontSize', v)} formatValue={(v) => `${v}%`} />
+          </div>
+          )}
           <div className="wm-section">
             <div className="wm-section-head"><h3>位置与变换</h3></div>
-            <div className="wm-prop-grid">
-              <label className="wm-prop"><span>X {override?.offsetX ?? config.offsetX}px</span><input type="range" min={-Math.round(spec.width / 2)} max={Math.round(spec.width / 2)} value={override?.offsetX ?? config.offsetX} onChange={(e) => updateOverride('offsetX', Number(e.target.value))} aria-label="水平位置偏移" disabled={!selectedAsset} /></label>
-              <label className="wm-prop"><span>Y {override?.offsetY ?? config.offsetY}px</span><input type="range" min={-Math.round(spec.height / 2)} max={Math.round(spec.height / 2)} value={override?.offsetY ?? config.offsetY} onChange={(e) => updateOverride('offsetY', Number(e.target.value))} aria-label="垂直位置偏移" disabled={!selectedAsset} /></label>
-              <div className="wm-snap-btns"><button className="wm-btn-sm" onClick={resetOverride} disabled={!selectedAsset}>重置为全局</button></div>
+            {config.pattern === 'single' && (
+              <div className="wm-anchor-grid" role="group" aria-label="九宫格锚点">
+                {(Object.keys(ANCHOR_OFFSETS) as WatermarkAnchor[]).map((anchor) => (
+                  <button key={anchor} type="button" className={config.anchor === anchor ? 'active' : ''} onClick={() => updateConfig('anchor', anchor)} aria-pressed={config.anchor === anchor} aria-label={anchor} />
+                ))}
+              </div>
+            )}
+            <Collapsible.Root defaultOpen={false}>
+              <Collapsible.Trigger className="wm-collapsible-trigger">当前图片高级微调 <span aria-hidden>▾</span></Collapsible.Trigger>
+              <Collapsible.Content className="wm-collapsible-content">
+                <div className="wm-prop-grid">
+                  <WatermarkSlider label="X" value={override?.offsetX ?? config.offsetX} min={-Math.round(spec.width / 2)} max={Math.round(spec.width / 2)} step={1} onChange={(v) => updateOverride('offsetX', v)} disabled={!selectedAsset} formatValue={(v) => `${v}px`} />
+                  <WatermarkSlider label="Y" value={override?.offsetY ?? config.offsetY} min={-Math.round(spec.height / 2)} max={Math.round(spec.height / 2)} step={1} onChange={(v) => updateOverride('offsetY', v)} disabled={!selectedAsset} formatValue={(v) => `${v}px`} />
+                  <div className="wm-snap-btns"><button className="wm-btn-sm" onClick={resetOverride} disabled={!selectedAsset}>重置为全局</button></div>
+                </div>
+                <WatermarkSlider label="缩放" value={Math.round((override?.scale ?? 1) * 100)} min={20} max={200} step={1} onChange={(v) => updateOverride('scale', v / 100)} disabled={!selectedAsset} formatValue={(v) => `${v}%`} />
+              </Collapsible.Content>
+            </Collapsible.Root>
+            <WatermarkSlider label="旋转" value={config.rotation} min={-180} max={180} step={1} onChange={(v) => updateConfig('rotation', v)} formatValue={(v) => `${v}°`} />
+            <div className="wm-snap-btns" role="group" aria-label="角度预设">
+              {[0, 45, -45, 90].map((deg) => (
+                <button key={deg} type="button" onClick={() => updateConfig('rotation', deg)} aria-pressed={config.rotation === deg}>{deg}°</button>
+              ))}
+              <button type="button" onClick={() => updateConfig('rotation', 30)} aria-pressed={config.rotation === 30}>自定义</button>
             </div>
-            <label className="wm-prop"><span>缩放 {(override?.scale ?? 1) * 100}%</span><input type="range" min={20} max={200} value={(override?.scale ?? 1) * 100} onChange={(e) => updateOverride('scale', Number(e.target.value) / 100)} aria-label="水印缩放" disabled={!selectedAsset} /></label>
-            <label className="wm-prop"><span>旋转 {config.rotation}°</span><input type="range" min={-180} max={180} value={config.rotation} onChange={(e) => updateConfig('rotation', Number(e.target.value))} /></label>
             <div className="brand-apply-actions"><span>应用范围</span><button type="button" onClick={applyCurrentWatermarkToOtherAssets} disabled={assets.length < 2}>其他图片</button></div>
           </div>
           <div className="wm-section">
             <div className="wm-section-head"><h3>外观</h3></div>
-            <label className="wm-prop"><span>透明度 {Math.round(config.opacity * 100)}%</span><input type="range" min={0} max={100} value={Math.round(config.opacity * 100)} onChange={(e) => updateConfig('opacity', Number(e.target.value) / 100)} /></label>
-            <label className="wm-prop wm-prop-toggle"><input type="checkbox" checked={config.repeat} onChange={(e) => updateConfig('repeat', e.target.checked)} /><span>平铺水印</span></label>
-            {config.repeat && (
-              <div className="wm-prop-row">
-                <label className="wm-prop"><span>横向间距</span><input type="number" value={config.spacingX} onChange={(e) => updateConfig('spacingX', Number(e.target.value))} /></label>
-                <label className="wm-prop"><span>纵向间距</span><input type="number" value={config.spacingY} onChange={(e) => updateConfig('spacingY', Number(e.target.value))} /></label>
-              </div>
+            <WatermarkSlider label="透明度" value={Math.round(config.opacity * 100)} min={0} max={100} step={1} onChange={(v) => updateConfig('opacity', v / 100)} formatValue={(v) => `${v}%`} />
+            <label className="wm-prop"><span>排列</span>
+              <Select.Root value={config.pattern} onValueChange={(v) => updateConfig('pattern', v as 'single' | 'tiled' | 'staggered')}>
+                <Select.Trigger className="wm-select-trigger" aria-label="排列方式"><Select.Value /><Select.Icon /></Select.Trigger>
+                <Select.Portal><Select.Content className="wm-select-content" position="popper">
+                  <Select.Viewport>
+                    <Select.Item value="single"><Select.ItemText>单个</Select.ItemText></Select.Item>
+                    <Select.Item value="tiled"><Select.ItemText>规则平铺</Select.ItemText></Select.Item>
+                    <Select.Item value="staggered"><Select.ItemText>错位平铺</Select.ItemText></Select.Item>
+                  </Select.Viewport>
+                </Select.Content></Select.Portal>
+              </Select.Root>
+            </label>
+            {config.pattern !== 'single' && (
+              <>
+                <div className="wm-prop-row">
+                  <label className="wm-prop"><span>横向间距</span><input type="number" value={config.spacingX} onChange={(e) => updateConfig('spacingX', Number(e.target.value))} /></label>
+                  <label className="wm-prop"><span>纵向间距</span><input type="number" value={config.spacingY} onChange={(e) => updateConfig('spacingY', Number(e.target.value))} /></label>
+                </div>
+                {config.pattern === 'staggered' && (
+                  <WatermarkSlider label="相位偏移" value={Math.round(config.phaseOffset * 100)} min={0} max={100} step={1} onChange={(v) => updateConfig('phaseOffset', v / 100)} formatValue={(v) => `${v}%`} />
+                )}
+              </>
             )}
           </div>
           <div className="wm-section">
@@ -387,7 +556,8 @@ export function WatermarkWorkbench({ onReturn, sharedState }: { onReturn: () => 
           </div>
           </div>
         </SpecPanel>
-      </section>
+      </section></Tabs.Content>}
+      </Tabs.Root>
       {showReturnConfirm && (
         <ConfirmationDialog
           title="放弃当前设置？"

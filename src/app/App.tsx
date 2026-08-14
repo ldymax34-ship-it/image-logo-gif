@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ModuleStatus, WorkbenchModule } from '../components/ModuleNav';
 import { WorkbenchHeader } from '../components';
 import { CustomWorkbench } from '../modules/custom-workbench/CustomWorkbench';
@@ -11,7 +11,7 @@ import { GlobalDialogs } from './GlobalDialogs';
 import { ToolboxHome } from './ToolboxHome';
 import { VueToolWrapper } from './VueToolWrapper';
 import { BatchTemplateGif } from '../batch-template-gif/BatchTemplateGif';
-import { WatermarkWorkbench } from '../watermark-workbench/WatermarkWorkbench';
+import { WatermarkWorkbench, type WatermarkWorkbenchMode } from '../watermark-workbench/WatermarkWorkbench';
 import '../watermark-workbench/watermarkWorkbench.css';
 import '../batch-template-gif/batchTemplateGif.css';
 import { UpdateDialog, UpdateProvider, useUpdate } from '../update';
@@ -54,6 +54,7 @@ function AppContent() {
   const companyLogo = logoAssets.find((asset) => asset.language === 'custom');
   const gameLogo = selectedLogo?.language !== 'custom' ? selectedLogo : logoAssets.find((asset) => asset.language !== 'custom');
   const sharedState = useMediaWorkbenchState();
+  const [watermarkMode, setWatermarkMode] = useState<WatermarkWorkbenchMode>('image');
   const handleCustomWorkbenchDirty = useCallback((customWorkbenchDirty: boolean) => {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
@@ -83,7 +84,8 @@ function AppContent() {
     {activeTool === 'toolbox' && (
       <ToolboxHome
         onOpenLogoLayout={() => navigateTo('logo-layout')}
-        onOpenWatermarkTrace={() => navigateTo('watermark-trace')}
+        onOpenWatermark={() => { setWatermarkMode('image'); navigateTo('watermark'); }}
+        onOpenVideoWatermark={() => { setWatermarkMode('video'); navigateTo('watermark'); }}
         onOpenSettings={() => setApplicationSettingsOpen(true)}
       />
     )}
@@ -129,8 +131,13 @@ function AppContent() {
     )}
 
     {/* Watermark Trace */}
-    {activeTool === 'watermark-trace' && (
-      <WatermarkWorkbench onReturn={requestToolbox} sharedState={sharedState} />
+    {activeTool === 'watermark' && (
+      <WatermarkWorkbench
+        onReturn={requestToolbox}
+        sharedState={sharedState}
+        initialMode={watermarkMode}
+        onModeChange={setWatermarkMode}
+      />
     )}
 
     <GlobalDialogs />

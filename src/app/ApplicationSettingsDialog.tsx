@@ -5,7 +5,7 @@ const STARTUP_OPTIONS: Array<{ value: StartupTool; label: string }> = [
   { value: 'toolbox', label: '工具箱首页' },
   { value: 'logo-layout', label: 'Logo 与版式' },
   { value: 'gif-media', label: 'GIF / 媒体工具' },
-  { value: 'watermark-trace', label: '水印与追溯' },
+  { value: 'watermark', label: '水印工具' },
   { value: 'last', label: '上次使用的工具' }
 ];
 
@@ -14,6 +14,7 @@ export function ApplicationSettingsDialog({ preferences, onPreferencesChange, on
   onPreferencesChange: (preferences: AppPreferencesV1) => void;
   onClose: () => void;
 }) {
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -43,7 +44,7 @@ export function ApplicationSettingsDialog({ preferences, onPreferencesChange, on
             </select>
           </label>
           <p>启动偏好会保存在本机，只记录工具入口，不恢复未保存的工作内容。</p>
-          <p className="inline-note">GIF / 媒体工具会在启动后打开独立窗口，且不会恢复未保存任务；水印与追溯仍会安全回退到工具箱首页。</p>
+          <p className="inline-note">GIF / 媒体工具会在启动后打开独立窗口，且不会恢复未保存任务；水印工具会直接打开水印工作台。</p>
         </div>
         <div className="dialog-footer">
           <span />

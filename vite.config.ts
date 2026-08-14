@@ -9,6 +9,9 @@ export default defineConfig({
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
   },
   plugins: [react(), vue()],
+  test: {
+    setupFiles: ['./src/test/setup.ts'],
+  },
   build: {
     rollupOptions: {
       input: {

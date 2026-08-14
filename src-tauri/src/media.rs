@@ -1,11 +1,14 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     ffi::OsString,
     fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Condvar, Mutex,
+    },
     thread,
 };
 
@@ -13,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 const MEDIA_EVENT: &str = "gif-media://task";
+const WATERMARK_QUEUE_STATUS_EVENT: &str = "watermark-queue://status";
+const WATERMARK_PREVIEW_STATUS_EVENT: &str = "watermark-preview://status";
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +70,16 @@ pub struct WatermarkOptions {
     pub angle: Option<i32>,
     #[serde(default)]
     pub dark_mode: Option<bool>,
+    #[serde(default)]
+    pub offset_x: Option<f64>,
+    #[serde(default)]
+    pub offset_y: Option<f64>,
+    #[serde(default)]
+    pub spacing_x: Option<f64>,
+    #[serde(default)]
+    pub spacing_y: Option<f64>,
+    #[serde(default)]
+    pub phase_offset: Option<f64>,
     pub output_directory: String,
 }
 
@@ -125,6 +140,7 @@ pub struct MediaProbeResult {
     pub height: u32,
     pub fps: f64,
     pub codec: String,
+    pub has_audio: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -144,6 +160,7 @@ pub struct PreviewGifRequest {
 pub struct MediaTaskRegistry {
     children: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
     cancelled: Mutex<HashSet<String>>,
+    cancel_tokens: Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
     preview_tasks: Mutex<HashMap<String, Arc<Mutex<Child>>>>,
     preview_cancelled: Mutex<HashSet<String>>,
 }
@@ -170,7 +187,30 @@ impl MediaTaskRegistry {
             .remove(task_id)
     }
 
+    fn register_cancel_token(&self, task_id: &str, token: Arc<std::sync::atomic::AtomicBool>) {
+        self.cancel_tokens
+            .lock()
+            .expect("media cancel token registry poisoned")
+            .insert(task_id.to_string(), token);
+    }
+
+    fn remove_cancel_token(&self, task_id: &str) {
+        self.cancel_tokens
+            .lock()
+            .expect("media cancel token registry poisoned")
+            .remove(task_id);
+    }
+
     fn cancel(&self, task_id: &str) -> Result<(), String> {
+        if let Some(token) = self
+            .cancel_tokens
+            .lock()
+            .expect("media cancel token registry poisoned")
+            .get(task_id)
+            .cloned()
+        {
+            token.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         let child = self
             .children
             .lock()
@@ -178,6 +218,18 @@ impl MediaTaskRegistry {
             .get(task_id)
             .cloned();
         let Some(child) = child else {
+            if self
+                .cancel_tokens
+                .lock()
+                .expect("media cancel token registry poisoned")
+                .contains_key(task_id)
+            {
+                self.cancelled
+                    .lock()
+                    .expect("media child registry poisoned")
+                    .insert(task_id.to_string());
+                return Ok(());
+            }
             return Err("未找到正在处理的媒体任务".into());
         };
         self.cancelled
@@ -356,6 +408,10 @@ fn is_static_image(path: &Path) -> bool {
     )
 }
 
+fn is_video_media(path: &Path) -> bool {
+    matches!(media_extension(path).as_deref(), Some("mp4" | "mov"))
+}
+
 fn validate_watermark_request(request: &WatermarkMediaTaskRequest) -> Result<(), String> {
     let input = Path::new(&request.input_path);
     let output_directory = Path::new(&request.options.output_directory);
@@ -376,7 +432,15 @@ fn validate_watermark_request(request: &WatermarkMediaTaskRequest) -> Result<(),
     }
     if !matches!(
         request.options.position.as_str(),
-        "top-left" | "top-center" | "top-right" | "bottom-left" | "bottom-center" | "bottom-right"
+        "top-left"
+            | "top-center"
+            | "top-right"
+            | "middle-left"
+            | "center"
+            | "middle-right"
+            | "bottom-left"
+            | "bottom-center"
+            | "bottom-right"
     ) {
         return Err("水印位置无效".into());
     }
@@ -440,6 +504,13 @@ fn output_path(request: &GifMediaTaskRequest) -> PathBuf {
 }
 
 fn watermark_output_path(request: &WatermarkMediaTaskRequest) -> PathBuf {
+    next_available_path(
+        Path::new(&request.options.output_directory),
+        &watermark_preferred_name(request),
+    )
+}
+
+fn watermark_preferred_name(request: &WatermarkMediaTaskRequest) -> String {
     let input = Path::new(&request.input_path);
     let source_stem = input
         .file_stem()
@@ -447,10 +518,7 @@ fn watermark_output_path(request: &WatermarkMediaTaskRequest) -> PathBuf {
         .filter(|value| !value.is_empty())
         .unwrap_or("media");
     let extension = media_extension(input).unwrap_or_else(|| "png".into());
-    next_available_path(
-        Path::new(&request.options.output_directory),
-        &format!("{source_stem}_watermarked.{extension}"),
-    )
+    format!("{source_stem}_watermarked.{extension}")
 }
 
 fn duration_seconds(app: &AppHandle, input: &Path) -> Result<f64, String> {
@@ -487,10 +555,8 @@ pub fn probe_media(app: AppHandle, input_path: String) -> Result<MediaProbeResul
         .args([
             "-v",
             "error",
-            "-select_streams",
-            "v:0",
             "-show_entries",
-            "stream=duration,width,height,r_frame_rate,codec_name:format=duration",
+            "stream=codec_type,duration,width,height,r_frame_rate,codec_name:format=duration",
             "-of",
             "json",
         ])
@@ -503,7 +569,13 @@ pub fn probe_media(app: AppHandle, input_path: String) -> Result<MediaProbeResul
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|_| "FFprobe 返回数据无法解析".to_string())?;
 
-    let stream = json["streams"][0].clone();
+    let streams = json["streams"].as_array().cloned().unwrap_or_default();
+    let stream = streams
+        .iter()
+        .find(|stream| stream["codec_type"] == "video")
+        .cloned()
+        .ok_or_else(|| "媒体没有视频流".to_string())?;
+    let has_audio = streams.iter().any(|stream| stream["codec_type"] == "audio");
     let format_duration = json["format"]["duration"]
         .as_str()
         .and_then(|v| v.parse::<f64>().ok());
@@ -536,6 +608,7 @@ pub fn probe_media(app: AppHandle, input_path: String) -> Result<MediaProbeResul
         height,
         fps,
         codec,
+        has_audio,
     })
 }
 
@@ -707,6 +780,9 @@ fn overlay_coordinates(position: &str) -> (&'static str, &'static str) {
         "top-left" => ("20", "20"),
         "top-center" => ("(main_w-overlay_w)/2", "20"),
         "top-right" => ("main_w-overlay_w-20", "20"),
+        "middle-left" => ("20", "(main_h-overlay_h)/2"),
+        "center" => ("(main_w-overlay_w)/2", "(main_h-overlay_h)/2"),
+        "middle-right" => ("main_w-overlay_w-20", "(main_h-overlay_h)/2"),
         "bottom-left" => ("20", "main_h-overlay_h-20"),
         "bottom-center" => ("(main_w-overlay_w)/2", "main_h-overlay_h-20"),
         _ => ("main_w-overlay_w-20", "main_h-overlay_h-20"),
@@ -733,6 +809,9 @@ fn drawtext_single_position(position: &str) -> (&'static str, &'static str) {
         "top-left" => ("10", "10"),
         "top-center" => ("(w-text_w)/2", "10"),
         "top-right" => ("w-text_w-10", "10"),
+        "middle-left" => ("10", "(h-text_h)/2"),
+        "center" => ("(w-text_w)/2", "(h-text_h)/2"),
+        "middle-right" => ("w-text_w-10", "(h-text_h)/2"),
         "bottom-left" => ("10", "h-text_h-10"),
         "bottom-center" => ("(w-text_w)/2", "h-text_h-10"),
         _ => ("w-text_w-10", "h-text_h-10"),
@@ -752,6 +831,103 @@ fn drawtext_tiled_coordinates() -> [(&'static str, &'static str); 9] {
         ("w*0.50-text_w/2", "h*0.83-text_h/2"),
         ("w*0.83-text_w/2", "h*0.83-text_h/2"),
     ]
+}
+
+fn filter_number(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{}", value as i64)
+    } else {
+        format!("{value:.4}")
+    }
+}
+
+fn filter_offset(value: Option<f64>) -> String {
+    let value = value.filter(|value| value.is_finite()).unwrap_or(0.0);
+    if value == 0.0 {
+        String::new()
+    } else if value.is_sign_negative() {
+        format!("-{}", filter_number(value.abs()))
+    } else {
+        format!("+{}", filter_number(value))
+    }
+}
+
+fn offset_filter_position(base: &str, offset: Option<f64>) -> String {
+    format!("({base}){}", filter_offset(offset))
+}
+
+fn text_watermark_positions(
+    pattern: &str,
+    position: &str,
+    spacing_x: Option<f64>,
+    spacing_y: Option<f64>,
+    offset_x: Option<f64>,
+    offset_y: Option<f64>,
+) -> Vec<(String, String)> {
+    if pattern == "single" {
+        let (x, y) = drawtext_single_position(position);
+        return vec![(
+            offset_filter_position(x, offset_x),
+            offset_filter_position(y, offset_y),
+        )];
+    }
+    if spacing_x.is_none() && spacing_y.is_none() && offset_x.is_none() && offset_y.is_none() {
+        return drawtext_tiled_coordinates()
+            .iter()
+            .map(|(x, y)| ((*x).to_string(), (*y).to_string()))
+            .collect();
+    }
+    let spacing_x = filter_number(spacing_x.filter(|value| value.is_finite()).unwrap_or(220.0));
+    let spacing_y = filter_number(spacing_y.filter(|value| value.is_finite()).unwrap_or(160.0));
+    let x_shifts = [format!("-{spacing_x}"), "0".into(), format!("+{spacing_x}")];
+    let y_shifts = [format!("-{spacing_y}"), "0".into(), format!("+{spacing_y}")];
+    let mut positions = Vec::with_capacity(9);
+    for y_shift in &y_shifts {
+        for x_shift in &x_shifts {
+            positions.push((
+                format!("(w-text_w)/2{x_shift}{}", filter_offset(offset_x)),
+                format!("(h-text_h)/2{y_shift}{}", filter_offset(offset_y)),
+            ));
+        }
+    }
+    positions
+}
+
+fn image_watermark_positions(
+    pattern: &str,
+    position: &str,
+    spacing_x: Option<f64>,
+    spacing_y: Option<f64>,
+    offset_x: Option<f64>,
+    offset_y: Option<f64>,
+) -> Vec<(String, String)> {
+    if pattern == "single" {
+        let (x, y) = overlay_coordinates(position);
+        return vec![(
+            offset_filter_position(x, offset_x),
+            offset_filter_position(y, offset_y),
+        )];
+    }
+    if spacing_x.is_none() && spacing_y.is_none() && offset_x.is_none() && offset_y.is_none() {
+        return tiled_coordinates()
+            .iter()
+            .map(|(x, y)| ((*x).to_string(), (*y).to_string()))
+            .collect();
+    }
+    let spacing_x = filter_number(spacing_x.filter(|value| value.is_finite()).unwrap_or(220.0));
+    let spacing_y = filter_number(spacing_y.filter(|value| value.is_finite()).unwrap_or(160.0));
+    let x_shifts = [format!("-{spacing_x}"), "0".into(), format!("+{spacing_x}")];
+    let y_shifts = [format!("-{spacing_y}"), "0".into(), format!("+{spacing_y}")];
+    let mut positions = Vec::with_capacity(9);
+    for y_shift in &y_shifts {
+        for x_shift in &x_shifts {
+            positions.push((
+                format!("(main_w-overlay_w)/2{x_shift}{}", filter_offset(offset_x)),
+                format!("(main_h-overlay_h)/2{y_shift}{}", filter_offset(offset_y)),
+            ));
+        }
+    }
+    positions
 }
 
 fn escape_filter_value(value: &str) -> String {
@@ -812,8 +988,161 @@ fn brick_coordinates(density: &str, count: usize) -> Vec<(&'static str, &'static
     tiled_coordinates().to_vec()
 }
 
-fn watermark_filter(
-    app: &AppHandle,
+/// Public hardware encoder selection. Only the platform's default public
+/// encoder is ever considered; QSV/AMF are intentionally out of scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncoderBackend {
+    Hardware,
+    Cpu,
+}
+
+/// Map a platform + backend to the exact public FFmpeg video encoder name.
+/// Hardware video encoders only change the video codec; filters stay on CPU.
+fn video_encoder_name(platform: &str, backend: EncoderBackend) -> &'static str {
+    match (platform, backend) {
+        (_, EncoderBackend::Cpu) => "libx264",
+        ("windows", EncoderBackend::Hardware) => "h264_nvenc",
+        ("macos", EncoderBackend::Hardware) => "h264_videotoolbox",
+        (_, EncoderBackend::Hardware) => "libx264",
+    }
+}
+
+/// Build the `-c:v <encoder>` arguments for the selected backend.
+fn current_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else {
+        "linux"
+    }
+}
+
+/// Session-scoped hardware probe result (never persisted to disk). The probe
+/// runs a very short real encode and validates the output with FFprobe.
+fn probe_hardware_encoder(ffmpeg: &Path, ffprobe: &Path, platform: &str) -> bool {
+    let encoder = video_encoder_name(platform, EncoderBackend::Hardware);
+    if encoder == "libx264" {
+        return false;
+    }
+    let temp = std::env::temp_dir().join(format!(".bmw-hw-probe-{}.mp4", std::process::id()));
+    let status = Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=64x64:r=1",
+            "-frames:v",
+            "1",
+            "-c:v",
+            encoder,
+            "-pix_fmt",
+            "yuv420p",
+            "-f",
+            "mp4",
+            "-y",
+        ])
+        .arg(&temp)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let ok = match status {
+        Ok(status) if status.success() => {
+            let probe = Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_name,pix_fmt",
+                    "-of",
+                    "json",
+                ])
+                .arg(&temp)
+                .output();
+            matches!(probe, Ok(out) if out.status.success() && String::from_utf8_lossy(&out.stdout).contains("\"codec_name\": \"h264\""))
+        }
+        _ => false,
+    };
+    let _ = fs::remove_file(&temp);
+    ok
+}
+
+/// Cached session probe. `OnceLock` guarantees concurrent callers share one
+/// probe and it runs at most once per process lifetime.
+fn hardware_encoder_available(ffmpeg: &Path, ffprobe: &Path) -> bool {
+    static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    cached_probe(&CACHE, || {
+        probe_hardware_encoder(ffmpeg, ffprobe, current_platform())
+    })
+}
+
+/// Minimal injectable OnceLock wrapper so tests can assert a probe executor
+/// runs exactly once across concurrent callers without touching disk state.
+fn cached_probe<F: FnOnce() -> bool>(cache: &std::sync::OnceLock<bool>, probe: F) -> bool {
+    *cache.get_or_init(probe)
+}
+
+/// Conservative whitelist of hardware encoder failures that justify a single
+/// automatic CPU fallback. Unknown errors never fall back.
+fn is_hardware_fallback_error(stderr: &str) -> bool {
+    let patterns = ["nvenc", "videotoolbox", "device", "encoder not found"];
+    let lower = stderr.to_ascii_lowercase();
+    patterns
+        .iter()
+        .any(|p| lower.contains(&p.to_ascii_lowercase()))
+}
+
+/// Attempt orchestration: try the selected backend, and on a hardware
+/// initialization/device failure only, retry once with the CPU encoder. All
+/// other failures and cancellation are terminal without fallback.
+fn orchestrate_watermark_encode<F>(backend: EncoderBackend, run_attempt: F) -> MediaTerminal
+where
+    F: FnMut(EncoderBackend) -> (MediaTerminal, String),
+{
+    orchestrate_watermark_encode_with_fallback(backend, run_attempt, &mut || {})
+}
+
+fn orchestrate_watermark_encode_with_fallback<F>(
+    backend: EncoderBackend,
+    mut run_attempt: F,
+    on_fallback: &mut dyn FnMut(),
+) -> MediaTerminal
+where
+    F: FnMut(EncoderBackend) -> (MediaTerminal, String),
+{
+    let mut current = backend;
+    let mut attempt = 0;
+    loop {
+        let (terminal, stderr) = run_attempt(current);
+        attempt += 1;
+        match terminal {
+            MediaTerminal::Completed { .. } | MediaTerminal::Cancelled => return terminal,
+            MediaTerminal::Failed { message } => {
+                if current == EncoderBackend::Hardware
+                    && attempt == 1
+                    && is_hardware_fallback_error(&stderr)
+                {
+                    current = EncoderBackend::Cpu;
+                    on_fallback();
+                    continue;
+                }
+                return MediaTerminal::Failed { message };
+            }
+        }
+    }
+}
+
+fn video_encoder_args(platform: &str, backend: EncoderBackend) -> Vec<OsString> {
+    vec![
+        OsString::from("-c:v"),
+        OsString::from(video_encoder_name(platform, backend)),
+    ]
+}
+
+fn watermark_filter_with_font(
+    font_path: Option<&Path>,
     request: &WatermarkMediaTaskRequest,
 ) -> Result<(String, Vec<PathBuf>), String> {
     let options = &request.options;
@@ -825,11 +1154,19 @@ fn watermark_filter(
     };
     let pattern = options.pattern.as_deref().unwrap_or("diagonal");
     if options.kind == "text" {
-        let positions: Vec<(&str, &str)> = match pattern {
-            "single" => vec![drawtext_single_position(&options.position)],
-            _ => drawtext_tiled_coordinates().to_vec(),
-        };
-        let font = escape_filter_value(&watermark_font_path(app)?.to_string_lossy());
+        let positions = text_watermark_positions(
+            pattern,
+            &options.position,
+            options.spacing_x,
+            options.spacing_y,
+            options.offset_x,
+            options.offset_y,
+        );
+        let font = escape_filter_value(
+            &font_path
+                .ok_or_else(|| "内置中文水印字体未找到".to_string())?
+                .to_string_lossy(),
+        );
         let text_file = watermark_text_file(&request.task_id, &options.text)?;
         let text_file_value = escape_filter_value(&text_file.to_string_lossy());
         let font_size = format!("h*{}/100", options.size_percent);
@@ -848,10 +1185,14 @@ fn watermark_filter(
     }
 
     // image Logo overlay branch — uses overlay coordinates
-    let positions: Vec<(&str, &str)> = match pattern {
-        "single" => vec![overlay_coordinates(&options.position)],
-        _ => tiled_coordinates().to_vec(),
-    };
+    let positions = image_watermark_positions(
+        pattern,
+        &options.position,
+        options.spacing_x,
+        options.spacing_y,
+        options.offset_x,
+        options.offset_y,
+    );
     let mut graph = vec![
         format!("[1:v]format=rgba,colorchannelmixer=aa={alpha}[watermark-alpha]"),
         format!(
@@ -860,7 +1201,7 @@ fn watermark_filter(
         ),
     ];
     if positions.len() == 1 {
-        let (x, y) = positions[0];
+        let (x, y) = &positions[0];
         graph.push(format!(
             "[base][watermark]overlay=x={x}:y={y}:format=auto[watermarked]"
         ));
@@ -894,11 +1235,25 @@ fn watermark_ffmpeg_args(
     app: &AppHandle,
     request: &WatermarkMediaTaskRequest,
     output: &Path,
+    backend: EncoderBackend,
+) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
+    let font_path = if request.options.kind == "text" {
+        Some(watermark_font_path(app)?)
+    } else {
+        None
+    };
+    watermark_ffmpeg_args_with_font(font_path.as_deref(), request, output, backend)
+}
+
+fn watermark_ffmpeg_args_with_font(
+    font_path: Option<&Path>,
+    request: &WatermarkMediaTaskRequest,
+    output: &Path,
+    backend: EncoderBackend,
 ) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
     let mut args = vec![
         OsString::from("-hide_banner"),
         OsString::from("-nostdin"),
-        OsString::from("-y"), // -y for retry safety (prev output removed before encode)
         OsString::from("-i"),
         OsString::from(&request.input_path),
     ];
@@ -908,7 +1263,7 @@ fn watermark_ffmpeg_args(
             OsString::from(request.options.image_path.clone().unwrap_or_default()),
         ]);
     }
-    let (filter, cleanup) = watermark_filter(app, request)?;
+    let (filter, cleanup) = watermark_filter_with_font(font_path, request)?;
     args.extend([
         OsString::from("-filter_complex"),
         OsString::from(filter),
@@ -917,6 +1272,19 @@ fn watermark_ffmpeg_args(
     ]);
     if is_static_image(Path::new(&request.input_path)) {
         args.extend([OsString::from("-frames:v"), OsString::from("1")]);
+    } else {
+        // Video watermark CPU closure: fixed libx264 + AAC, yuv420p, faststart,
+        // and optional audio mapping so silent sources never fail.
+        args.extend([OsString::from("-map"), OsString::from("0:a?")]);
+        args.extend(video_encoder_args(current_platform(), backend));
+        args.extend([
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-movflags"),
+            OsString::from("+faststart"),
+            OsString::from("-c:a"),
+            OsString::from("aac"),
+        ]);
     }
     args.extend([
         OsString::from("-progress"),
@@ -944,6 +1312,104 @@ fn gif_temp_output_path(final_output_path: &Path) -> PathBuf {
             .and_then(|value| value.to_str())
             .unwrap_or("media")
     ))
+}
+
+/// Unique temp `.mp4` in the same directory as the final watermark output.
+fn video_watermark_temp_path(final_output_path: &Path) -> PathBuf {
+    let dir = final_output_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = final_output_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("watermarked");
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    dir.join(format!(".{stem}.{nonce}.mp4"))
+}
+
+/// Post-encode CPU validation. The exact video codec is `h264`, pixel format
+/// `yuv420p`, and the format must be `mp4`; audio is optional and reported.
+/// Lightweight ffprobe summary used by the CPU watermark validator.
+#[derive(Debug, Clone, PartialEq)]
+struct VideoProbe {
+    width: u32,
+    height: u32,
+    duration: f64,
+    has_audio: bool,
+    codec: String,
+    pix_fmt: String,
+}
+
+fn probe_video(ffprobe: &Path, path: &Path) -> Result<VideoProbe, String> {
+    let out = Command::new(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,codec_name,pix_fmt,width,height:format=format_name,duration",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output()
+        .map_err(|e| format!("无法启动 FFprobe：{e}"))?;
+    if !out.status.success() {
+        return Err("FFprobe 验证失败：文件不可解析".into());
+    }
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).map_err(|_| "FFprobe 返回数据无法解析".to_string())?;
+    let streams = json["streams"].as_array().cloned().unwrap_or_default();
+    let video = streams.iter().find(|s| s["codec_type"] == "video");
+    let audio = streams.iter().find(|s| s["codec_type"] == "audio");
+    let video = video.ok_or("输出没有视频流")?;
+    let width = video["width"].as_u64().unwrap_or(0) as u32;
+    let height = video["height"].as_u64().unwrap_or(0) as u32;
+    let codec = video["codec_name"].as_str().unwrap_or("").to_string();
+    let pix_fmt = video["pix_fmt"].as_str().unwrap_or("").to_string();
+    let duration = json["format"]["duration"]
+        .as_str()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    Ok(VideoProbe {
+        width,
+        height,
+        duration,
+        has_audio: audio.is_some(),
+        codec,
+        pix_fmt,
+    })
+}
+
+fn validate_watermark_video(ffprobe: &Path, input: &Path, output: &Path) -> Result<(), String> {
+    let expected = probe_video(ffprobe, input)?;
+    let actual = probe_video(ffprobe, output)?;
+    if actual.codec != "h264" {
+        return Err(format!("输出视频编码不是 H.264：{}", actual.codec));
+    }
+    if actual.pix_fmt != "yuv420p" {
+        return Err(format!("输出像素格式不是 yuv420p：{}", actual.pix_fmt));
+    }
+    if actual.width != expected.width || actual.height != expected.height {
+        return Err(format!(
+            "输出尺寸 {}x{} 与输入 {}x{} 不一致",
+            actual.width, actual.height, expected.width, expected.height
+        ));
+    }
+    let duration_tolerance = 0.35_f64.max(expected.duration * 0.15);
+    if (actual.duration - expected.duration).abs() > duration_tolerance {
+        return Err(format!(
+            "输出时长 {:.2}s 与输入 {:.2}s 超出容差",
+            actual.duration, expected.duration
+        ));
+    }
+    if actual.has_audio != expected.has_audio {
+        return Err(format!(
+            "输出音频存在性({})与输入({})不一致",
+            actual.has_audio, expected.has_audio
+        ));
+    }
+    Ok(())
 }
 
 fn ffmpeg_failure_message(stderr: &str) -> String {
@@ -990,6 +1456,265 @@ fn emit(app: &AppHandle, event: MediaTaskEvent) {
     }
 }
 
+/// Typed finalize policy for media tasks that write to a temp file first.
+/// When `Some`, `output` is a unique temp path, and on success the temp file is
+/// optionally FFprobe-validated then atomically renamed into `final_output`.
+/// Typed terminal outcome committed exactly once per task.
+#[derive(Debug, Clone, PartialEq)]
+enum MediaTerminal {
+    Completed {
+        output_path: String,
+        output_bytes: u64,
+    },
+    Failed {
+        message: String,
+    },
+    Cancelled,
+}
+
+/// AppHandle-free watermark process lifecycle: spawn, poll (honoring a cancel
+/// token), wait for exit, validate + rename through the shared finalizer, and
+/// return exactly one terminal outcome. The Tauri layer maps this to an event.
+fn run_watermark_process(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    args: &[OsString],
+    temp_output: &Path,
+    finalize: Option<&MediaFinalize>,
+    cancel_token: &std::sync::atomic::AtomicBool,
+) -> (MediaTerminal, String) {
+    run_watermark_process_with_progress(
+        ffmpeg,
+        ffprobe,
+        args,
+        temp_output,
+        finalize,
+        cancel_token,
+        None,
+        &mut |_| {},
+    )
+}
+
+/// Same lifecycle as `run_watermark_process`, additionally draining stdout
+/// (FFmpeg writes `-progress` there) and forwarding parsed progress values to
+/// `on_progress`. Draining both pipes prevents the child from deadlocking on a
+/// full pipe for long-running encodes.
+fn run_watermark_process_with_progress(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    args: &[OsString],
+    temp_output: &Path,
+    finalize: Option<&MediaFinalize>,
+    cancel_token: &std::sync::atomic::AtomicBool,
+    progress_window: Option<(f64, f64)>,
+    on_progress: &mut dyn FnMut(f64),
+) -> (MediaTerminal, String) {
+    run_watermark_process_with_hooks(
+        ffmpeg,
+        ffprobe,
+        args,
+        temp_output,
+        finalize,
+        cancel_token,
+        progress_window,
+        on_progress,
+        &mut || {},
+    )
+}
+
+/// Same as `run_watermark_process_with_progress`, plus a `before_finalize`
+/// callback invoked immediately before the validated rename, so production can
+/// surface the `Finalizing` lifecycle state.
+fn run_watermark_process_with_hooks(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    args: &[OsString],
+    temp_output: &Path,
+    finalize: Option<&MediaFinalize>,
+    cancel_token: &std::sync::atomic::AtomicBool,
+    progress_window: Option<(f64, f64)>,
+    on_progress: &mut dyn FnMut(f64),
+    before_finalize: &mut dyn FnMut(),
+) -> (MediaTerminal, String) {
+    let mut command = Command::new(ffmpeg);
+    command
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return (
+                MediaTerminal::Failed {
+                    message: format!("无法启动 FFmpeg：{error}"),
+                },
+                String::new(),
+            )
+        }
+    };
+
+    // Drain stdout concurrently; forward parsed progress over an mpsc channel
+    // so the callback stays on the polling thread (dyn FnMut is not Send).
+    let stdout = child.stdout.take();
+    let (progress_tx, progress_rx) = std::sync::mpsc::channel::<f64>();
+    let stdout_thread = thread::spawn(move || {
+        if let Some(stdout) = stdout {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Some((started_at, duration)) = progress_window {
+                    if let Some(progress) = parse_progress_line(&line, started_at, duration) {
+                        let _ = progress_tx.send(progress);
+                    }
+                }
+            }
+        }
+    });
+
+    // Drain stderr concurrently so a full pipe cannot deadlock the child.
+    let stderr = child.stderr.take();
+    let stderr_thread = thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(mut stderr) = stderr {
+            let _ = stderr.read_to_string(&mut buf);
+        }
+        buf
+    });
+
+    let status = loop {
+        if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+            let _ = child.kill();
+        }
+        while let Ok(progress) = progress_rx.try_recv() {
+            on_progress(progress);
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) => thread::sleep(std::time::Duration::from_millis(20)),
+            Err(_) => break None,
+        }
+    };
+    let _ = stdout_thread.join();
+    while let Ok(progress) = progress_rx.try_recv() {
+        on_progress(progress);
+    }
+    let stderr = stderr_thread.join().unwrap_or_default();
+
+    if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+        remove_incomplete_output(temp_output);
+        return (MediaTerminal::Cancelled, stderr.clone());
+    }
+    match status {
+        Some(status) if status.success() => match finalize {
+            Some(finalize) => {
+                before_finalize();
+                match finalize_media_output(ffprobe, temp_output, finalize) {
+                    Ok(bytes) => (
+                        MediaTerminal::Completed {
+                            output_path: finalize.final_output.to_string_lossy().into_owned(),
+                            output_bytes: bytes,
+                        },
+                        stderr.clone(),
+                    ),
+                    Err(message) => {
+                        remove_incomplete_output(temp_output);
+                        (MediaTerminal::Failed { message }, stderr.clone())
+                    }
+                }
+            }
+            None => match fs::metadata(temp_output) {
+                Ok(meta) => (
+                    MediaTerminal::Completed {
+                        output_path: temp_output.to_string_lossy().into_owned(),
+                        output_bytes: meta.len(),
+                    },
+                    stderr.clone(),
+                ),
+                Err(_) => {
+                    remove_incomplete_output(temp_output);
+                    (
+                        MediaTerminal::Failed {
+                            message: "FFmpeg 完成后未找到输出文件".into(),
+                        },
+                        stderr.clone(),
+                    )
+                }
+            },
+        },
+        Some(_) => {
+            remove_incomplete_output(temp_output);
+            (
+                MediaTerminal::Failed {
+                    message: ffmpeg_failure_message(&stderr),
+                },
+                stderr.clone(),
+            )
+        }
+        None => {
+            remove_incomplete_output(temp_output);
+            (
+                MediaTerminal::Failed {
+                    message: "无法读取 FFmpeg 任务状态".into(),
+                },
+                stderr.clone(),
+            )
+        }
+    }
+}
+struct MediaFinalize {
+    final_output: PathBuf,
+    input: PathBuf,
+    validate: bool,
+}
+
+/// Legacy immediate-spawn context for GIF watermark (kept distinct from the
+/// FIFO queue so GIF/static behavior does not regress).
+struct WatermarkEncodeContext {
+    request: WatermarkMediaTaskRequest,
+    backend: EncoderBackend,
+}
+
+/// AppHandle-free finalize used by both the production spawn path and tests.
+/// Validates the temp file against the input, refuses to overwrite an existing
+/// final target, then atomically renames the temp file into place. Returns the
+/// final byte size on success.
+fn finalize_media_output(
+    ffprobe: &Path,
+    temp_output: &Path,
+    finalize: &MediaFinalize,
+) -> Result<u64, String> {
+    if finalize.validate {
+        validate_watermark_video(ffprobe, &finalize.input, temp_output)?;
+    }
+    // Atomic non-overwrite finalization: hard_link creates `final` only when it
+    // does not already exist (AlreadyExists otherwise) and never overwrites.
+    // After a successful link, remove the temp link so only `final` remains.
+    match fs::hard_link(temp_output, &finalize.final_output) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            remove_incomplete_output(temp_output);
+            return Err(format!(
+                "目标文件已存在，未覆盖：{}",
+                finalize.final_output.to_string_lossy()
+            ));
+        }
+        Err(error) => {
+            remove_incomplete_output(temp_output);
+            return Err(format!("无法创建最终文件：{error}"));
+        }
+    }
+    let size = fs::metadata(&finalize.final_output)
+        .map(|m| m.len())
+        .map_err(|_| {
+            remove_incomplete_output(temp_output);
+            "创建最终文件后未找到输出".to_string()
+        })?;
+    // The final is already fully validated and linked; a temp-removal failure
+    // must not delete the final, so only report it without corrupting output.
+    if let Err(error) = fs::remove_file(temp_output) {
+        log::warn!("移除临时水印文件失败（不影响已产出）：{error}");
+    }
+    Ok(size)
+}
+
 fn spawn_media_task(
     app: AppHandle,
     registry: tauri::State<'_, MediaTaskRegistry>,
@@ -998,6 +1723,8 @@ fn spawn_media_task(
     args: Vec<OsString>,
     progress_window: Option<(f64, f64)>,
     cleanup_paths: Vec<PathBuf>,
+    finalize: Option<MediaFinalize>,
+    encode: Option<WatermarkEncodeContext>,
 ) -> Result<MediaTaskStarted, String> {
     if !engine_status(app.clone()).ready {
         return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
@@ -1011,6 +1738,100 @@ fn spawn_media_task(
         return Err("该媒体任务已在运行".into());
     }
     let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    if let Some(finalize) = finalize {
+        // Legacy immediate-spawn branch used only by GIF watermark. Video
+        // (MP4/MOV) is handled by the FIFO queue instead.
+        let encode = encode.expect("finalize watermark requires encode context");
+        let ffprobe = sidecar_path(&app, "ffprobe")?;
+        let token = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        registry.register_cancel_token(&task_id, token.clone());
+        let app_for_task = app.clone();
+        let task_id_for_thread = task_id.clone();
+        let output_name = finalize
+            .final_output
+            .file_name()
+            .and_then(|v| v.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let finalize_for_task = finalize;
+        let request_for_task = encode.request;
+        let backend = encode.backend;
+        let progress_window_for_task = progress_window;
+        thread::spawn(move || {
+            let mut collected_cleanup: Vec<PathBuf> = Vec::new();
+            let terminal = orchestrate_watermark_encode(backend, |attempt_backend| {
+                if token.load(std::sync::atomic::Ordering::SeqCst) {
+                    return (MediaTerminal::Cancelled, String::new());
+                }
+                let temp = video_watermark_temp_path(&finalize_for_task.final_output);
+                match watermark_ffmpeg_args(
+                    &app_for_task,
+                    &request_for_task,
+                    &temp,
+                    attempt_backend,
+                ) {
+                    Ok((args, cleanup)) => {
+                        collected_cleanup.extend(cleanup);
+                        run_watermark_process_with_progress(
+                            &ffmpeg,
+                            &ffprobe,
+                            &args,
+                            &temp,
+                            Some(&finalize_for_task),
+                            &token,
+                            progress_window_for_task,
+                            &mut |progress| {
+                                emit(
+                                    &app_for_task,
+                                    MediaTaskEvent::Progress {
+                                        task_id: task_id_for_thread.clone(),
+                                        progress,
+                                    },
+                                );
+                            },
+                        )
+                    }
+                    Err(message) => (MediaTerminal::Failed { message }, String::new()),
+                }
+            });
+            for path in collected_cleanup {
+                let _ = fs::remove_file(path);
+            }
+            let registry = app_for_task.state::<MediaTaskRegistry>();
+            registry.remove_cancel_token(&task_id_for_thread);
+            registry.remove(&task_id_for_thread);
+            match terminal {
+                MediaTerminal::Completed {
+                    output_path,
+                    output_bytes,
+                } => emit(
+                    &app_for_task,
+                    MediaTaskEvent::Completed {
+                        task_id: task_id_for_thread,
+                        output_path,
+                        output_bytes,
+                    },
+                ),
+                MediaTerminal::Failed { message } => emit(
+                    &app_for_task,
+                    MediaTaskEvent::Failed {
+                        task_id: task_id_for_thread,
+                        message,
+                    },
+                ),
+                MediaTerminal::Cancelled => emit(
+                    &app_for_task,
+                    MediaTaskEvent::Cancelled {
+                        task_id: task_id_for_thread,
+                    },
+                ),
+            }
+        });
+        return Ok(MediaTaskStarted {
+            task_id,
+            output_path: output_name,
+        });
+    }
     let mut command = Command::new(ffmpeg);
     command
         .args(args)
@@ -1584,35 +2405,1394 @@ fn format_file_size(bytes: u64) -> String {
 pub fn start_watermark_media_task(
     app: AppHandle,
     registry: tauri::State<'_, MediaTaskRegistry>,
+    queue: tauri::State<'_, WatermarkVideoQueueCore<WatermarkEncodePayload>>,
     request: WatermarkMediaTaskRequest,
 ) -> Result<MediaTaskStarted, String> {
     validate_watermark_request(&request)?;
-    let output = watermark_output_path(&request);
-    let (args, cleanup_paths) = watermark_ffmpeg_args(&app, &request, &output)?;
-    let progress = if is_static_image(Path::new(&request.input_path)) {
-        None
-    } else {
-        duration_seconds(&app, Path::new(&request.input_path))
+    let task_id = request.task_id.clone();
+    let is_video = is_video_media(Path::new(&request.input_path));
+    // Static images and GIF keep the legacy immediate-spawn path. Only real
+    // video (MP4/MOV) goes through the FIFO queue.
+    if is_video {
+        let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+        let ffprobe = sidecar_path(&app, "ffprobe")?;
+        let backend = if hardware_encoder_available(&ffmpeg, &ffprobe) {
+            EncoderBackend::Hardware
+        } else {
+            EncoderBackend::Cpu
+        };
+        let font_path = if request.options.kind == "text" {
+            Some(watermark_font_path(&app)?)
+        } else {
+            None
+        };
+        let progress_window = duration_seconds(&app, Path::new(&request.input_path))
             .ok()
-            .map(|duration| (0.0, duration))
+            .map(|duration| (0.0, duration));
+        let input_path = PathBuf::from(&request.input_path);
+        let payload = WatermarkEncodePayload {
+            request,
+            backend,
+            font_path,
+            ffmpeg,
+            ffprobe,
+            progress_window,
+            input_path,
+        };
+        let directory = PathBuf::from(&payload.request.options.output_directory);
+        let preferred_name = watermark_preferred_name(&payload.request);
+        let final_output = queue
+            .enqueue_with_reservation(task_id.clone(), payload, &directory, &preferred_name)
+            .map_err(|error| match error {
+                WatermarkQueueError::Shutdown => "水印队列已关闭".to_string(),
+                other => format!("无法加入水印队列：{other:?}"),
+            })?;
+        return Ok(MediaTaskStarted {
+            task_id,
+            output_path: final_output.to_string_lossy().into_owned(),
+        });
+    }
+
+    let final_output = watermark_output_path(&request);
+    // GIF is not a static image; it keeps the legacy immediate orchestrate +
+    // validate/finalize branch. Static images (PNG/JPG/WebP) use the plain
+    // child path with a single frame.
+    let legacy_is_video = !is_static_image(Path::new(&request.input_path));
+    let backend = if legacy_is_video {
+        let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+        let ffprobe = sidecar_path(&app, "ffprobe")?;
+        if hardware_encoder_available(&ffmpeg, &ffprobe) {
+            EncoderBackend::Hardware
+        } else {
+            EncoderBackend::Cpu
+        }
+    } else {
+        EncoderBackend::Cpu
     };
-    spawn_media_task(
-        app,
-        registry,
-        request.task_id,
-        output,
-        args,
-        progress,
-        cleanup_paths,
-    )
+    if legacy_is_video {
+        let progress = duration_seconds(&app, Path::new(&request.input_path))
+            .ok()
+            .map(|duration| (0.0, duration));
+        spawn_media_task(
+            app,
+            registry,
+            task_id,
+            final_output.clone(),
+            Vec::new(),
+            progress,
+            Vec::new(),
+            Some(MediaFinalize {
+                final_output,
+                input: PathBuf::from(&request.input_path),
+                validate: true,
+            }),
+            Some(WatermarkEncodeContext { request, backend }),
+        )
+    } else {
+        let (args, cleanup_paths) = watermark_ffmpeg_args(&app, &request, &final_output, backend)?;
+        spawn_media_task(
+            app,
+            registry,
+            task_id,
+            final_output,
+            args,
+            None,
+            cleanup_paths,
+            None,
+            None,
+        )
+    }
 }
 
 #[tauri::command]
 pub fn cancel_gif_media_task(
     registry: tauri::State<'_, MediaTaskRegistry>,
+    queue: tauri::State<'_, WatermarkVideoQueueCore<WatermarkEncodePayload>>,
     task_id: String,
 ) -> Result<(), String> {
+    // Watermark video jobs live in the FIFO queue; waiting/status-tracking
+    // tasks are cancelled there first, then fall back to the legacy registry.
+    match queue.cancel(&task_id) {
+        Ok(()) => return Ok(()),
+        Err(WatermarkQueueError::TaskNotFound { .. }) => {}
+        Err(error) => return Err(format!("无法取消水印任务：{error:?}")),
+    }
     registry.cancel(&task_id)
+}
+
+// ---- 2C-1: AppHandle-free formal watermark video FIFO scheduler core ----
+// Minimal business-specific scheduler. It owns no AppHandle, no FFmpeg, and no
+// UI: callers inject a typed runner and a typed event sink. Concurrency is
+// fixed at one running job; waiting jobs are strictly FIFO.
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WatermarkJobStatus {
+    Waiting,
+    Probing,
+    Processing,
+    Fallback,
+    Finalizing,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+/// Serializable lifecycle status emitted on `watermark-queue://status`. Kept
+/// separate from `MediaTaskEvent` so GIF/legacy listeners stay unchanged.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkQueueStatusEvent {
+    pub task_id: String,
+    pub status: WatermarkJobStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatermarkTerminal {
+    Completed {
+        output_path: String,
+        output_bytes: u64,
+    },
+    Failed {
+        message: String,
+    },
+    Cancelled,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum WatermarkQueueEvent {
+    Status {
+        task_id: String,
+        status: WatermarkJobStatus,
+        reason: Option<String>,
+    },
+    Progress {
+        task_id: String,
+        progress: f64,
+    },
+    Terminal {
+        task_id: String,
+        terminal: WatermarkTerminal,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatermarkQueueError {
+    ReservedPathConflict { path: PathBuf },
+    TaskNotFound { task_id: String },
+    Shutdown,
+}
+
+#[derive(Clone, Debug)]
+pub struct FrozenWatermarkJob<T> {
+    pub task_id: String,
+    pub payload: T,
+    pub reserved_final: PathBuf,
+    pub cancel: Arc<AtomicBool>,
+}
+
+/// Frozen production payload for one queued watermark video job. It carries
+/// everything the worker needs to run FFmpeg without holding an `AppHandle`:
+/// the full request (frozen), the selected backend, the resolved sidecar and
+/// font paths, the input duration progress window, and the input path used for
+/// output validation.
+#[derive(Clone, Debug)]
+pub struct WatermarkEncodePayload {
+    pub request: WatermarkMediaTaskRequest,
+    pub backend: EncoderBackend,
+    pub font_path: Option<PathBuf>,
+    pub ffmpeg: PathBuf,
+    pub ffprobe: PathBuf,
+    pub progress_window: Option<(f64, f64)>,
+    pub input_path: PathBuf,
+}
+
+struct WatermarkQueueInner<T> {
+    state: Mutex<WatermarkQueueState<T>>,
+    condvar: Condvar,
+}
+
+struct WatermarkQueueState<T> {
+    pending: VecDeque<FrozenWatermarkJob<T>>,
+    states: HashMap<String, WatermarkJobStatus>,
+    reserved: HashSet<PathBuf>,
+    running_task_id: Option<String>,
+    running_cancel: Option<Arc<AtomicBool>>,
+    shutdown: bool,
+}
+
+/// The owned scheduler handle. The worker thread is spawned in
+/// `start_watermark_video_queue` and lives until `shutdown`.
+pub struct WatermarkVideoQueueCore<T> {
+    inner: Arc<WatermarkQueueInner<T>>,
+    sink: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+    busy: Arc<AtomicBool>,
+    before_start: Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>,
+}
+
+pub fn start_watermark_video_queue<T, F>(
+    sink: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+    runner: F,
+) -> WatermarkVideoQueueCore<T>
+where
+    T: Clone + Send + 'static,
+    F: Fn(
+            FrozenWatermarkJob<T>,
+            Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+        ) -> WatermarkTerminal
+        + Send
+        + 'static,
+{
+    let inner = Arc::new(WatermarkQueueInner {
+        state: Mutex::new(WatermarkQueueState {
+            pending: VecDeque::new(),
+            states: HashMap::new(),
+            reserved: HashSet::new(),
+            running_task_id: None,
+            running_cancel: None,
+            shutdown: false,
+        }),
+        condvar: Condvar::new(),
+    });
+    let busy = Arc::new(AtomicBool::new(false));
+    let before_start = Arc::new(Mutex::new(None));
+
+    let worker_inner = inner.clone();
+    let worker_sink = sink.clone();
+    let worker_busy = busy.clone();
+    let worker_before_start = before_start.clone();
+    let handle = std::thread::spawn(move || {
+        run_watermark_queue_worker(
+            worker_inner,
+            worker_sink,
+            worker_busy,
+            worker_before_start,
+            runner,
+        )
+    });
+
+    WatermarkVideoQueueCore {
+        inner,
+        sink,
+        worker: Mutex::new(Some(handle)),
+        busy,
+        before_start,
+    }
+}
+
+fn run_watermark_queue_worker<T, F>(
+    inner: Arc<WatermarkQueueInner<T>>,
+    sink: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+    busy: Arc<AtomicBool>,
+    before_start: Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>,
+    runner: F,
+) where
+    T: Clone + Send + 'static,
+    F: Fn(
+        FrozenWatermarkJob<T>,
+        Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+    ) -> WatermarkTerminal,
+{
+    loop {
+        let job = {
+            let mut state = inner.state.lock().expect("watermark queue poisoned");
+            loop {
+                if state.shutdown {
+                    return;
+                }
+                if let Some(job) = state.pending.pop_front() {
+                    state.running_task_id = Some(job.task_id.clone());
+                    state.running_cancel = Some(job.cancel.clone());
+                    state
+                        .states
+                        .insert(job.task_id.clone(), WatermarkJobStatus::Running);
+                    break job;
+                }
+                state = inner.condvar.wait(state).expect("watermark queue poisoned");
+            }
+        };
+
+        let task_id = job.task_id.clone();
+        let reserved = job.reserved_final.clone();
+        if let Some(before_start) = before_start
+            .lock()
+            .expect("watermark queue hook poisoned")
+            .clone()
+        {
+            before_start();
+        }
+        busy.store(true, Ordering::SeqCst);
+        (sink)(WatermarkQueueEvent::Status {
+            task_id: task_id.clone(),
+            status: WatermarkJobStatus::Running,
+            reason: None,
+        });
+
+        let terminal = runner(job, sink.clone());
+        let final_status = terminal_status(&terminal);
+
+        {
+            let mut state = inner.state.lock().expect("watermark queue poisoned");
+            state.running_task_id = None;
+            state.running_cancel = None;
+            state.reserved.remove(&reserved);
+            state.states.insert(task_id.clone(), final_status.clone());
+            let has_pending = !state.pending.is_empty();
+            busy.store(has_pending, Ordering::SeqCst);
+        }
+        inner.condvar.notify_all();
+        (sink)(WatermarkQueueEvent::Terminal { task_id, terminal });
+    }
+}
+
+fn terminal_status(terminal: &WatermarkTerminal) -> WatermarkJobStatus {
+    match terminal {
+        WatermarkTerminal::Completed { .. } => WatermarkJobStatus::Completed,
+        WatermarkTerminal::Failed { .. } => WatermarkJobStatus::Failed,
+        WatermarkTerminal::Cancelled => WatermarkJobStatus::Cancelled,
+    }
+}
+
+impl<T: Clone + Send + 'static> WatermarkVideoQueueCore<T> {
+    pub fn set_before_start_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self
+            .before_start
+            .lock()
+            .expect("watermark queue hook poisoned") = Some(hook);
+    }
+
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::SeqCst) || {
+            let state = self.inner.state.lock().expect("watermark queue poisoned");
+            !state.pending.is_empty() || state.running_task_id.is_some()
+        }
+    }
+
+    pub fn busy_handle(&self) -> Arc<AtomicBool> {
+        self.busy.clone()
+    }
+
+    /// Atomically pick a non-conflicting final output name and enqueue the job.
+    /// The reserved set and the filesystem are both consulted while holding the
+    /// queue lock, so two concurrent enqueues with the same basename get two
+    /// distinct names and never overwrite each other.
+    pub fn enqueue_with_reservation(
+        &self,
+        task_id: String,
+        payload: T,
+        directory: &Path,
+        preferred_name: &str,
+    ) -> Result<PathBuf, WatermarkQueueError> {
+        let reserved_final = {
+            let mut state = self.inner.state.lock().expect("watermark queue poisoned");
+            if state.shutdown {
+                return Err(WatermarkQueueError::Shutdown);
+            }
+            let stem = Path::new(preferred_name)
+                .file_stem()
+                .and_then(|v| v.to_str())
+                .unwrap_or("watermarked");
+            let extension = Path::new(preferred_name)
+                .extension()
+                .and_then(|v| v.to_str())
+                .unwrap_or("mp4");
+            let reserved_final = {
+                let candidate = directory.join(preferred_name);
+                if !candidate.exists() && !state.reserved.contains(&candidate) {
+                    candidate
+                } else {
+                    let mut index = 2;
+                    loop {
+                        let candidate = directory.join(format!("{stem}_{index}.{extension}"));
+                        if !candidate.exists() && !state.reserved.contains(&candidate) {
+                            break candidate;
+                        }
+                        index += 1;
+                    }
+                }
+            };
+            state.reserved.insert(reserved_final.clone());
+            self.busy.store(true, Ordering::SeqCst);
+            state
+                .states
+                .insert(task_id.clone(), WatermarkJobStatus::Waiting);
+            let job = FrozenWatermarkJob {
+                task_id: task_id.clone(),
+                payload: payload.clone(),
+                reserved_final: reserved_final.clone(),
+                cancel: Arc::new(AtomicBool::new(false)),
+            };
+            state.pending.push_back(job);
+            reserved_final
+        };
+        self.inner.condvar.notify_one();
+        (self.sink)(WatermarkQueueEvent::Status {
+            task_id,
+            status: WatermarkJobStatus::Waiting,
+            reason: None,
+        });
+        Ok(reserved_final)
+    }
+
+    pub fn enqueue(
+        &self,
+        task_id: String,
+        payload: T,
+        reserved_final: PathBuf,
+    ) -> Result<(), WatermarkQueueError> {
+        let job = FrozenWatermarkJob {
+            task_id: task_id.clone(),
+            payload: payload.clone(),
+            reserved_final: reserved_final.clone(),
+            cancel: Arc::new(AtomicBool::new(false)),
+        };
+        {
+            let mut state = self.inner.state.lock().expect("watermark queue poisoned");
+            if state.shutdown {
+                return Err(WatermarkQueueError::Shutdown);
+            }
+            if state.reserved.contains(&reserved_final) {
+                return Err(WatermarkQueueError::ReservedPathConflict {
+                    path: reserved_final,
+                });
+            }
+            state.reserved.insert(reserved_final);
+            self.busy.store(true, Ordering::SeqCst);
+            state
+                .states
+                .insert(task_id.clone(), WatermarkJobStatus::Waiting);
+            state.pending.push_back(job);
+        }
+        self.inner.condvar.notify_one();
+        (self.sink)(WatermarkQueueEvent::Status {
+            task_id,
+            status: WatermarkJobStatus::Waiting,
+            reason: None,
+        });
+        Ok(())
+    }
+
+    pub fn cancel(&self, task_id: &str) -> Result<(), WatermarkQueueError> {
+        let mut state = self.inner.state.lock().expect("watermark queue poisoned");
+        let current = state.states.get(task_id).cloned();
+        let emit_cancelled = match current {
+            None => {
+                return Err(WatermarkQueueError::TaskNotFound {
+                    task_id: task_id.to_string(),
+                })
+            }
+            Some(
+                WatermarkJobStatus::Completed
+                | WatermarkJobStatus::Failed
+                | WatermarkJobStatus::Cancelled,
+            ) => false,
+            Some(WatermarkJobStatus::Waiting) => {
+                if let Some(pos) = state.pending.iter().position(|j| j.task_id == task_id) {
+                    let job = state.pending.remove(pos).expect("job must exist");
+                    state.reserved.remove(&job.reserved_final);
+                    if state.pending.is_empty() && state.running_task_id.is_none() {
+                        self.busy.store(false, Ordering::SeqCst);
+                    }
+                    state
+                        .states
+                        .insert(task_id.to_string(), WatermarkJobStatus::Cancelled);
+                    true
+                } else {
+                    return Err(WatermarkQueueError::TaskNotFound {
+                        task_id: task_id.to_string(),
+                    });
+                }
+            }
+            Some(
+                WatermarkJobStatus::Running
+                | WatermarkJobStatus::Probing
+                | WatermarkJobStatus::Processing
+                | WatermarkJobStatus::Fallback
+                | WatermarkJobStatus::Finalizing,
+            ) => {
+                if let Some(cancel) = &state.running_cancel {
+                    cancel.store(true, Ordering::SeqCst);
+                }
+                false
+            }
+        };
+        drop(state);
+        if emit_cancelled {
+            self.inner.condvar.notify_all();
+            (self.sink)(WatermarkQueueEvent::Terminal {
+                task_id: task_id.to_string(),
+                terminal: WatermarkTerminal::Cancelled,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn shutdown(&self) {
+        let waiting = {
+            let mut state = self.inner.state.lock().expect("watermark queue poisoned");
+            state.shutdown = true;
+            let mut waiting = Vec::new();
+            while let Some(job) = state.pending.pop_front() {
+                state.reserved.remove(&job.reserved_final);
+                state
+                    .states
+                    .insert(job.task_id.clone(), WatermarkJobStatus::Cancelled);
+                waiting.push(job.task_id.clone());
+            }
+            if let Some(cancel) = &state.running_cancel {
+                cancel.store(true, Ordering::SeqCst);
+            }
+            waiting
+        };
+        self.inner.condvar.notify_all();
+        for task_id in waiting {
+            (self.sink)(WatermarkQueueEvent::Terminal {
+                task_id,
+                terminal: WatermarkTerminal::Cancelled,
+            });
+        }
+        if let Some(handle) = self.worker.lock().expect("watermark queue poisoned").take() {
+            let _ = handle.join();
+        }
+        self.busy.store(false, Ordering::SeqCst);
+    }
+}
+
+// ---- 2C-3: independent low-priority single-frame video preview scheduler ----
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPreviewRequest {
+    pub task_id: String,
+    pub input_path: String,
+    pub temp_directory: String,
+    pub kind: String,
+    pub text: String,
+    pub image_path: Option<String>,
+    pub position: String,
+    pub size_percent: u32,
+    pub opacity: f64,
+    #[serde(default)]
+    pub pattern: Option<String>,
+    #[serde(default)]
+    pub angle: Option<i32>,
+    #[serde(default)]
+    pub offset_x: Option<f64>,
+    #[serde(default)]
+    pub offset_y: Option<f64>,
+    #[serde(default)]
+    pub spacing_x: Option<f64>,
+    #[serde(default)]
+    pub spacing_y: Option<f64>,
+    #[serde(default)]
+    pub phase_offset: Option<f64>,
+    pub timestamp_seconds: Option<f64>,
+    pub width: Option<u32>,
+    pub duration: Option<f64>,
+    #[serde(skip)]
+    pub ffmpeg_path: Option<PathBuf>,
+    #[serde(skip)]
+    pub ffprobe_path: Option<PathBuf>,
+    #[serde(skip)]
+    pub font_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPreviewStarted {
+    pub task_id: String,
+    pub output_path: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WatermarkPreviewStatus {
+    Waiting,
+    Processing,
+    Completed,
+    Failed,
+    Cancelled,
+    RejectedBusy,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPreviewStatusEvent {
+    pub task_id: String,
+    pub status: WatermarkPreviewStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatermarkPreviewStartError {
+    RejectedBusy,
+    Shutdown,
+    InvalidRequest(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatermarkPreviewTerminal {
+    Completed { output_path: PathBuf },
+    Failed { message: String },
+    Cancelled,
+}
+
+#[derive(Clone, Debug)]
+pub struct FrozenWatermarkPreviewJob {
+    task_id: String,
+    payload: WatermarkPreviewRequest,
+    output_path: PathBuf,
+    cancel: Arc<AtomicBool>,
+}
+
+#[derive(Default)]
+struct WatermarkPreviewState {
+    pending: Option<FrozenWatermarkPreviewJob>,
+    running: Option<(String, Arc<AtomicBool>, PathBuf)>,
+    statuses: HashMap<String, WatermarkPreviewStatus>,
+    completed_path: Option<PathBuf>,
+    shutdown: bool,
+}
+
+struct WatermarkPreviewInner {
+    state: Mutex<WatermarkPreviewState>,
+    condvar: Condvar,
+}
+
+pub struct WatermarkPreviewQueueCore {
+    inner: Arc<WatermarkPreviewInner>,
+    sink: Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>,
+    worker: Mutex<Option<std::thread::JoinHandle<()>>>,
+    formal_busy: Arc<AtomicBool>,
+}
+
+#[derive(Clone)]
+pub struct WatermarkPreviewControl {
+    inner: Arc<WatermarkPreviewInner>,
+    sink: Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>,
+}
+
+pub fn start_watermark_preview_queue_with_runner(
+    sink: Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>,
+    runner: Arc<dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync>,
+    formal_busy: Arc<AtomicBool>,
+) -> WatermarkPreviewQueueCore {
+    let inner = Arc::new(WatermarkPreviewInner {
+        state: Mutex::new(WatermarkPreviewState::default()),
+        condvar: Condvar::new(),
+    });
+    let worker_inner = inner.clone();
+    let worker_sink = sink.clone();
+    let worker_runner = runner.clone();
+    let handle = std::thread::spawn(move || {
+        run_watermark_preview_worker(worker_inner, worker_sink, worker_runner)
+    });
+    WatermarkPreviewQueueCore {
+        inner,
+        sink,
+        worker: Mutex::new(Some(handle)),
+        formal_busy,
+    }
+}
+
+fn emit_preview_terminal(
+    sink: &Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>,
+    task_id: &str,
+    terminal: &WatermarkPreviewTerminal,
+) {
+    let (status, output_path, message) = match terminal {
+        WatermarkPreviewTerminal::Completed { output_path } => (
+            WatermarkPreviewStatus::Completed,
+            Some(output_path.to_string_lossy().into_owned()),
+            None,
+        ),
+        WatermarkPreviewTerminal::Failed { message } => {
+            (WatermarkPreviewStatus::Failed, None, Some(message.clone()))
+        }
+        WatermarkPreviewTerminal::Cancelled => (WatermarkPreviewStatus::Cancelled, None, None),
+    };
+    (sink)(WatermarkPreviewStatusEvent {
+        task_id: task_id.to_string(),
+        status,
+        output_path,
+        message,
+    });
+}
+
+fn run_watermark_preview_worker(
+    inner: Arc<WatermarkPreviewInner>,
+    sink: Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>,
+    runner: Arc<dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync>,
+) {
+    loop {
+        let job = {
+            let mut state = inner.state.lock().expect("watermark preview poisoned");
+            loop {
+                if state.shutdown {
+                    return;
+                }
+                if let Some(job) = state.pending.take() {
+                    state.running = Some((
+                        job.task_id.clone(),
+                        job.cancel.clone(),
+                        job.output_path.clone(),
+                    ));
+                    state
+                        .statuses
+                        .insert(job.task_id.clone(), WatermarkPreviewStatus::Processing);
+                    break job;
+                }
+                state = inner
+                    .condvar
+                    .wait(state)
+                    .expect("watermark preview poisoned");
+            }
+        };
+
+        (sink)(WatermarkPreviewStatusEvent {
+            task_id: job.task_id.clone(),
+            status: WatermarkPreviewStatus::Processing,
+            output_path: None,
+            message: None,
+        });
+        let terminal = runner(job.clone());
+        let task_id = job.task_id.clone();
+        let terminal_status = match &terminal {
+            WatermarkPreviewTerminal::Completed { .. } => WatermarkPreviewStatus::Completed,
+            WatermarkPreviewTerminal::Failed { .. } => WatermarkPreviewStatus::Failed,
+            WatermarkPreviewTerminal::Cancelled => WatermarkPreviewStatus::Cancelled,
+        };
+        {
+            let mut state = inner.state.lock().expect("watermark preview poisoned");
+            state.running = None;
+            state.statuses.insert(task_id.clone(), terminal_status);
+            if let WatermarkPreviewTerminal::Completed { output_path } = &terminal {
+                if state.shutdown {
+                    let _ = fs::remove_file(output_path);
+                } else if let Some(previous) = state.completed_path.replace(output_path.clone()) {
+                    if previous != *output_path {
+                        let _ = fs::remove_file(previous);
+                    }
+                }
+            }
+        }
+        inner.condvar.notify_all();
+        emit_preview_terminal(&sink, &task_id, &terminal);
+    }
+}
+
+impl WatermarkPreviewQueueCore {
+    pub fn control(&self) -> WatermarkPreviewControl {
+        WatermarkPreviewControl {
+            inner: self.inner.clone(),
+            sink: self.sink.clone(),
+        }
+    }
+
+    pub fn start(
+        &self,
+        request: WatermarkPreviewRequest,
+    ) -> Result<WatermarkPreviewStarted, WatermarkPreviewStartError> {
+        if self.formal_busy.load(Ordering::SeqCst) {
+            (self.sink)(WatermarkPreviewStatusEvent {
+                task_id: request.task_id.clone(),
+                status: WatermarkPreviewStatus::RejectedBusy,
+                output_path: None,
+                message: Some("正式视频任务正在排队或处理".into()),
+            });
+            return Err(WatermarkPreviewStartError::RejectedBusy);
+        }
+        let output_path = preview_temp_path(&request)?;
+        let job = FrozenWatermarkPreviewJob {
+            task_id: request.task_id.clone(),
+            payload: request.clone(),
+            output_path: output_path.clone(),
+            cancel: Arc::new(AtomicBool::new(false)),
+        };
+        let mut cancelled = None;
+        {
+            let mut state = self.inner.state.lock().expect("watermark preview poisoned");
+            if state.shutdown {
+                return Err(WatermarkPreviewStartError::Shutdown);
+            }
+            if let Some(previous) = state.pending.replace(job) {
+                state
+                    .statuses
+                    .insert(previous.task_id.clone(), WatermarkPreviewStatus::Cancelled);
+                let _ = fs::remove_file(previous.output_path);
+                cancelled = Some(previous.task_id);
+            }
+            if let Some((_, cancel, _)) = &state.running {
+                cancel.store(true, Ordering::SeqCst);
+            }
+            state
+                .statuses
+                .insert(request.task_id.clone(), WatermarkPreviewStatus::Waiting);
+        }
+        if let Some(task_id) = cancelled {
+            (self.sink)(WatermarkPreviewStatusEvent {
+                task_id,
+                status: WatermarkPreviewStatus::Cancelled,
+                output_path: None,
+                message: None,
+            });
+        }
+        (self.sink)(WatermarkPreviewStatusEvent {
+            task_id: request.task_id.clone(),
+            status: WatermarkPreviewStatus::Waiting,
+            output_path: Some(output_path.to_string_lossy().into_owned()),
+            message: None,
+        });
+        self.inner.condvar.notify_one();
+        Ok(WatermarkPreviewStarted {
+            task_id: request.task_id,
+            output_path: output_path.to_string_lossy().into_owned(),
+        })
+    }
+
+    pub fn cancel(&self, task_id: &str) -> Result<(), String> {
+        self.control().cancel(task_id)
+    }
+
+    pub fn shutdown(&self) {
+        self.control().shutdown();
+        if let Some(handle) = self
+            .worker
+            .lock()
+            .expect("watermark preview poisoned")
+            .take()
+        {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl WatermarkPreviewControl {
+    pub fn cancel(&self, task_id: &str) -> Result<(), String> {
+        let mut state = self.inner.state.lock().expect("watermark preview poisoned");
+        if let Some((running_task, cancel, _)) = &state.running {
+            if running_task == task_id {
+                cancel.store(true, Ordering::SeqCst);
+                return Ok(());
+            }
+        }
+        if state
+            .pending
+            .as_ref()
+            .is_some_and(|job| job.task_id == task_id)
+        {
+            let job = state.pending.take().expect("preview pending job exists");
+            state
+                .statuses
+                .insert(task_id.to_string(), WatermarkPreviewStatus::Cancelled);
+            drop(state);
+            let _ = fs::remove_file(job.output_path);
+            (self.sink)(WatermarkPreviewStatusEvent {
+                task_id: task_id.to_string(),
+                status: WatermarkPreviewStatus::Cancelled,
+                output_path: None,
+                message: None,
+            });
+            return Ok(());
+        }
+        if matches!(
+            state.statuses.get(task_id),
+            Some(WatermarkPreviewStatus::Completed)
+                | Some(WatermarkPreviewStatus::Failed)
+                | Some(WatermarkPreviewStatus::Cancelled)
+        ) {
+            return Ok(());
+        }
+        Err("未找到水印预览任务".into())
+    }
+
+    pub fn cancel_and_wait(&self) {
+        let mut cancelled_pending = None;
+        {
+            let mut state = self.inner.state.lock().expect("watermark preview poisoned");
+            if let Some(job) = state.pending.take() {
+                state
+                    .statuses
+                    .insert(job.task_id.clone(), WatermarkPreviewStatus::Cancelled);
+                cancelled_pending = Some(job.task_id);
+            }
+            if let Some((_, cancel, _)) = &state.running {
+                cancel.store(true, Ordering::SeqCst);
+            }
+            while state.running.is_some() {
+                state = self
+                    .inner
+                    .condvar
+                    .wait(state)
+                    .expect("watermark preview poisoned");
+            }
+        }
+        if let Some(task_id) = cancelled_pending {
+            (self.sink)(WatermarkPreviewStatusEvent {
+                task_id,
+                status: WatermarkPreviewStatus::Cancelled,
+                output_path: None,
+                message: None,
+            });
+        }
+    }
+
+    pub fn shutdown(&self) {
+        let mut pending = None;
+        let completed;
+        {
+            let mut state = self.inner.state.lock().expect("watermark preview poisoned");
+            state.shutdown = true;
+            if let Some(job) = state.pending.take() {
+                state
+                    .statuses
+                    .insert(job.task_id.clone(), WatermarkPreviewStatus::Cancelled);
+                pending = Some(job.task_id);
+            }
+            completed = state.completed_path.take();
+            if let Some((_, cancel, _)) = &state.running {
+                cancel.store(true, Ordering::SeqCst);
+            }
+            self.inner.condvar.notify_all();
+        }
+        if let Some(path) = completed {
+            let _ = fs::remove_file(path);
+        }
+        if let Some(task_id) = pending {
+            (self.sink)(WatermarkPreviewStatusEvent {
+                task_id,
+                status: WatermarkPreviewStatus::Cancelled,
+                output_path: None,
+                message: None,
+            });
+        }
+    }
+}
+
+fn preview_temp_path(
+    request: &WatermarkPreviewRequest,
+) -> Result<PathBuf, WatermarkPreviewStartError> {
+    let directory = Path::new(&request.temp_directory);
+    if !directory.is_dir() {
+        fs::create_dir_all(directory).map_err(|error| {
+            WatermarkPreviewStartError::InvalidRequest(format!("无法创建预览临时目录：{error}"))
+        })?;
+    }
+    let safe_id: String = request
+        .task_id
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    Ok(directory.join(format!(".watermark-preview-{safe_id}-{nonce}.png")))
+}
+
+fn watermark_preview_args(
+    font_path: Option<&Path>,
+    request: &WatermarkPreviewRequest,
+    output: &Path,
+) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
+    if request.kind != "text" && request.kind != "image" {
+        return Err("水印预览仅支持文字或 Logo".into());
+    }
+    if request.pattern.as_deref() == Some("staggered") {
+        return Err("视频预览暂不支持错位平铺".into());
+    }
+    let watermark_request = WatermarkMediaTaskRequest {
+        task_id: request.task_id.clone(),
+        input_path: request.input_path.clone(),
+        options: WatermarkOptions {
+            kind: request.kind.clone(),
+            text: request.text.clone(),
+            image_path: request.image_path.clone(),
+            position: request.position.clone(),
+            size_percent: request.size_percent,
+            opacity: request.opacity,
+            pattern: request.pattern.clone(),
+            density: None,
+            angle: request.angle,
+            dark_mode: None,
+            offset_x: request.offset_x,
+            offset_y: request.offset_y,
+            spacing_x: request.spacing_x,
+            spacing_y: request.spacing_y,
+            phase_offset: request.phase_offset,
+            output_directory: request.temp_directory.clone(),
+        },
+    };
+    let (filter, cleanup) = watermark_filter_with_font(font_path, &watermark_request)?;
+    let mut args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+    ];
+    if let Some(timestamp) = request.timestamp_seconds {
+        args.extend([
+            OsString::from("-ss"),
+            OsString::from(timestamp.max(0.0).to_string()),
+        ]);
+    }
+    args.extend([OsString::from("-i"), OsString::from(&request.input_path)]);
+    if request.kind == "image" {
+        args.extend([
+            OsString::from("-i"),
+            OsString::from(request.image_path.clone().unwrap_or_default()),
+        ]);
+    }
+    let mut filter = filter;
+    if let Some(width) = request.width.filter(|width| *width > 0) {
+        filter.push_str(&format!(
+            ";[watermarked]scale={width}:-2:flags=lanczos[preview]"
+        ));
+    } else {
+        filter.push_str(";[watermarked]null[preview]");
+    }
+    args.extend([
+        OsString::from("-frames:v"),
+        OsString::from("1"),
+        OsString::from("-filter_complex"),
+        OsString::from(filter),
+        OsString::from("-map"),
+        OsString::from("[preview]"),
+        OsString::from("-f"),
+        OsString::from("image2"),
+        output.as_os_str().to_owned(),
+    ]);
+    Ok((args, cleanup))
+}
+
+fn run_watermark_preview_job(job: FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal {
+    let input = PathBuf::from(&job.payload.input_path);
+    if !is_video_media(&input) || !input.is_file() {
+        return WatermarkPreviewTerminal::Failed {
+            message: "预览输入必须是可访问的视频文件".into(),
+        };
+    }
+    let ffmpeg = match job.payload.ffmpeg_path.clone() {
+        Some(path) if path.is_file() => path,
+        _ => {
+            return WatermarkPreviewTerminal::Failed {
+                message: "内置 ffmpeg 未找到".into(),
+            }
+        }
+    };
+    let ffprobe = match job.payload.ffprobe_path.clone() {
+        Some(path) if path.is_file() => path,
+        _ => {
+            return WatermarkPreviewTerminal::Failed {
+                message: "内置 ffprobe 未找到".into(),
+            }
+        }
+    };
+    let font = if job.payload.kind == "text" {
+        job.payload.font_path.clone()
+    } else {
+        None
+    };
+    let (args, cleanup) =
+        match watermark_preview_args(font.as_deref(), &job.payload, &job.output_path) {
+            Ok(value) => value,
+            Err(message) => return WatermarkPreviewTerminal::Failed { message },
+        };
+    let (terminal, _stderr) = run_watermark_process_with_hooks(
+        &ffmpeg,
+        &ffprobe,
+        &args,
+        &job.output_path,
+        None,
+        &job.cancel,
+        None,
+        &mut |_| {},
+        &mut || {},
+    );
+    for path in cleanup {
+        let _ = fs::remove_file(path);
+    }
+    match terminal {
+        MediaTerminal::Cancelled => WatermarkPreviewTerminal::Cancelled,
+        MediaTerminal::Failed { message } => WatermarkPreviewTerminal::Failed { message },
+        MediaTerminal::Completed { .. } => {
+            let probe = Command::new(&ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=codec_name,width,height",
+                    "-of",
+                    "json",
+                ])
+                .arg(&job.output_path)
+                .output();
+            let is_png = matches!(probe, Ok(output) if output.status.success()
+                && String::from_utf8_lossy(&output.stdout).contains("png"));
+            if is_png {
+                WatermarkPreviewTerminal::Completed {
+                    output_path: job.output_path,
+                }
+            } else {
+                remove_incomplete_output(&job.output_path);
+                WatermarkPreviewTerminal::Failed {
+                    message: "预览输出不是有效 PNG".into(),
+                }
+            }
+        }
+    }
+}
+
+pub fn start_watermark_preview_queue(
+    app: AppHandle,
+    formal_busy: Arc<AtomicBool>,
+) -> WatermarkPreviewQueueCore {
+    let app_for_sink = app.clone();
+    let sink: Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync> = Arc::new(move |event| {
+        let _ = app_for_sink.emit(WATERMARK_PREVIEW_STATUS_EVENT, event);
+    });
+    start_watermark_preview_queue_with_runner(
+        sink,
+        Arc::new(run_watermark_preview_job),
+        formal_busy,
+    )
+}
+
+#[tauri::command]
+pub fn start_watermark_preview(
+    app: AppHandle,
+    queue: tauri::State<'_, WatermarkPreviewQueueCore>,
+    mut request: WatermarkPreviewRequest,
+) -> Result<WatermarkPreviewStarted, String> {
+    let input = Path::new(&request.input_path);
+    if !is_video_media(input) || !input.is_file() {
+        return Err("水印预览输入必须是可访问的 MP4 或 MOV 视频".into());
+    }
+    if request.kind == "image"
+        && request
+            .image_path
+            .as_deref()
+            .is_none_or(|path| path.is_empty())
+    {
+        return Err("Logo 预览缺少图片素材".into());
+    }
+    if !matches!(request.kind.as_str(), "text" | "image") {
+        return Err("水印预览仅支持文字或 Logo".into());
+    }
+    let pattern = request.pattern.as_deref().unwrap_or("single");
+    if !matches!(pattern, "single" | "tiled") {
+        return Err("视频预览暂不支持错位平铺".into());
+    }
+    request.pattern = Some(pattern.to_string());
+    if let Some(width) = request.width {
+        request.width = Some(width.saturating_sub(width % 2).max(2));
+    }
+    if let Some(duration) = request
+        .duration
+        .filter(|duration| duration.is_finite() && *duration > 0.0)
+    {
+        request.timestamp_seconds = Some(
+            request
+                .timestamp_seconds
+                .unwrap_or(0.0)
+                .max(0.0)
+                .min(duration),
+        );
+    }
+    request.temp_directory = std::env::temp_dir()
+        .join("brand-material-workbench-watermark-preview")
+        .to_string_lossy()
+        .into_owned();
+    request.ffmpeg_path = Some(sidecar_path(&app, "ffmpeg")?);
+    request.ffprobe_path = Some(sidecar_path(&app, "ffprobe")?);
+    request.font_path = if request.kind == "text" {
+        Some(watermark_font_path(&app)?)
+    } else {
+        None
+    };
+    queue.start(request).map_err(|error| match error {
+        WatermarkPreviewStartError::RejectedBusy => "正式视频任务正在排队或处理".into(),
+        WatermarkPreviewStartError::Shutdown => "水印预览队列已关闭".into(),
+        WatermarkPreviewStartError::InvalidRequest(message) => message,
+    })
+}
+
+#[tauri::command]
+pub fn cancel_watermark_preview(
+    queue: tauri::State<'_, WatermarkPreviewQueueCore>,
+    task_id: String,
+) -> Result<(), String> {
+    queue.cancel(&task_id)
+}
+
+/// Production runner for the FIFO core: builds args for each backend, runs the
+/// 2B orchestrator and 2A process/finalizer, and emits the full lifecycle
+/// (Probing/Processing/Fallback/Finalizing/progress) through the typed sink.
+fn run_watermark_production_job(
+    job: FrozenWatermarkJob<WatermarkEncodePayload>,
+    emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+) -> WatermarkTerminal {
+    let payload = &job.payload;
+    let task_id = job.task_id.clone();
+    (emit)(WatermarkQueueEvent::Status {
+        task_id: task_id.clone(),
+        status: WatermarkJobStatus::Probing,
+        reason: None,
+    });
+    (emit)(WatermarkQueueEvent::Status {
+        task_id: task_id.clone(),
+        status: WatermarkJobStatus::Processing,
+        reason: None,
+    });
+
+    let finalize = MediaFinalize {
+        final_output: job.reserved_final.clone(),
+        input: payload.input_path.clone(),
+        validate: true,
+    };
+    let mut collected_cleanup: Vec<PathBuf> = Vec::new();
+    let mut last_progress: f64 = 0.0;
+
+    let terminal = orchestrate_watermark_encode_with_fallback(
+        payload.backend,
+        |backend| {
+            if job.cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                return (MediaTerminal::Cancelled, String::new());
+            }
+            let temp = video_watermark_temp_path(&finalize.final_output);
+            match watermark_ffmpeg_args_with_font(
+                payload.font_path.as_deref(),
+                &payload.request,
+                &temp,
+                backend,
+            ) {
+                Ok((args, cleanup)) => {
+                    collected_cleanup.extend(cleanup);
+                    run_watermark_process_with_hooks(
+                        &payload.ffmpeg,
+                        &payload.ffprobe,
+                        &args,
+                        &temp,
+                        Some(&finalize),
+                        &job.cancel,
+                        payload.progress_window,
+                        &mut |p| {
+                            let clamped = p.clamp(0.0, 0.99);
+                            if clamped > last_progress {
+                                last_progress = clamped;
+                            }
+                            (emit)(WatermarkQueueEvent::Progress {
+                                task_id: task_id.clone(),
+                                progress: last_progress,
+                            });
+                        },
+                        &mut || {
+                            (emit)(WatermarkQueueEvent::Status {
+                                task_id: task_id.clone(),
+                                status: WatermarkJobStatus::Finalizing,
+                                reason: None,
+                            });
+                        },
+                    )
+                }
+                Err(message) => (MediaTerminal::Failed { message }, String::new()),
+            }
+        },
+        &mut || {
+            (emit)(WatermarkQueueEvent::Status {
+                task_id: task_id.clone(),
+                status: WatermarkJobStatus::Fallback,
+                reason: Some("硬件加速不可用，已切换兼容模式".to_string()),
+            });
+        },
+    );
+
+    for path in collected_cleanup {
+        let _ = fs::remove_file(path);
+    }
+
+    match terminal {
+        MediaTerminal::Completed {
+            output_path,
+            output_bytes,
+        } => WatermarkTerminal::Completed {
+            output_path,
+            output_bytes,
+        },
+        MediaTerminal::Failed { message } => WatermarkTerminal::Failed { message },
+        MediaTerminal::Cancelled => WatermarkTerminal::Cancelled,
+    }
+}
+
+/// Build the application-wide watermark video queue. The returned handle is
+/// Send + Sync and can be stored in Tauri managed state. The event sink adapts
+/// queue lifecycle events to the existing `gif-media://task` protocol plus a
+/// dedicated status channel for the richer Waiting/Probing/Processing/Fallback/
+/// Finalizing lifecycle.
+pub fn start_watermark_production_queue(
+    app: AppHandle,
+) -> WatermarkVideoQueueCore<WatermarkEncodePayload> {
+    let app_for_sink = app.clone();
+    let sink: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync> = Arc::new(move |event| match event {
+        WatermarkQueueEvent::Progress { task_id, progress } => {
+            emit(
+                &app_for_sink,
+                MediaTaskEvent::Progress { task_id, progress },
+            );
+        }
+        WatermarkQueueEvent::Status {
+            task_id,
+            status,
+            reason,
+        } => {
+            let _ = app_for_sink.emit(
+                WATERMARK_QUEUE_STATUS_EVENT,
+                WatermarkQueueStatusEvent {
+                    task_id,
+                    status,
+                    reason,
+                },
+            );
+        }
+        WatermarkQueueEvent::Terminal { task_id, terminal } => match terminal {
+            WatermarkTerminal::Completed {
+                output_path,
+                output_bytes,
+            } => emit(
+                &app_for_sink,
+                MediaTaskEvent::Completed {
+                    task_id,
+                    output_path,
+                    output_bytes,
+                },
+            ),
+            WatermarkTerminal::Failed { message } => {
+                emit(&app_for_sink, MediaTaskEvent::Failed { task_id, message })
+            }
+            WatermarkTerminal::Cancelled => {
+                emit(&app_for_sink, MediaTaskEvent::Cancelled { task_id })
+            }
+        },
+    });
+    let runner = move |job: FrozenWatermarkJob<WatermarkEncodePayload>,
+                       emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>| {
+        run_watermark_production_job(job, emit)
+    };
+    start_watermark_video_queue(sink, runner)
 }
 
 // ---- Chroma Key types (reserved for multi-language template) ----
@@ -2293,15 +4473,26 @@ pub fn preview_watermark_frame(
 mod tests {
     use super::{
         drawtext_single_position, drawtext_tiled_coordinates, escape_filter_value, event_kind,
-        event_task_id, ffmpeg_args, gif_temp_output_path, is_static_image, next_available_path,
-        output_path, overlay_coordinates, parse_progress_line, reduce_gif_params,
-        target_sidecar_name, tiled_coordinates, watermark_output_path, GifMediaOptions,
-        GifMediaTaskRequest, MediaTaskEvent, WatermarkMediaTaskRequest, WatermarkOptions,
+        event_task_id, ffmpeg_args, gif_temp_output_path, is_static_image, is_video_media,
+        next_available_path, output_path, overlay_coordinates, parse_progress_line,
+        reduce_gif_params, run_watermark_preview_job, run_watermark_production_job,
+        start_watermark_preview_queue_with_runner, start_watermark_video_queue,
+        target_sidecar_name, tiled_coordinates, watermark_output_path, EncoderBackend,
+        FrozenWatermarkJob, FrozenWatermarkPreviewJob, GifMediaOptions, GifMediaTaskRequest,
+        MediaTaskEvent, WatermarkEncodePayload, WatermarkJobStatus, WatermarkMediaTaskRequest,
+        WatermarkOptions, WatermarkPreviewRequest, WatermarkPreviewStatus,
+        WatermarkPreviewStatusEvent, WatermarkPreviewTerminal, WatermarkQueueError,
+        WatermarkQueueEvent, WatermarkTerminal,
     };
     use std::{
         ffi::OsString,
         fs,
         path::{Path, PathBuf},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc, Arc, Mutex,
+        },
+        thread,
     };
 
     fn request() -> GifMediaTaskRequest {
@@ -2413,7 +4604,6 @@ mod tests {
         let mut args = vec![
             OsString::from("-hide_banner"),
             OsString::from("-nostdin"),
-            OsString::from("-y"), // -y for retry safety (prev output removed before encode)
             OsString::from("-i"),
             OsString::from(&request.input_path),
         ];
@@ -2431,6 +4621,19 @@ mod tests {
         ]);
         if is_static_image(Path::new(&request.input_path)) {
             args.extend([OsString::from("-frames:v"), OsString::from("1")]);
+        } else {
+            args.extend([
+                OsString::from("-map"),
+                OsString::from("0:a?"),
+                OsString::from("-c:v"),
+                OsString::from("libx264"),
+                OsString::from("-pix_fmt"),
+                OsString::from("yuv420p"),
+                OsString::from("-movflags"),
+                OsString::from("+faststart"),
+                OsString::from("-c:a"),
+                OsString::from("aac"),
+            ]);
         }
         args.extend([
             OsString::from("-progress"),
@@ -2618,6 +4821,11 @@ mod tests {
                 density: None,
                 angle: None,
                 dark_mode: None,
+                offset_x: None,
+                offset_y: None,
+                spacing_x: None,
+                spacing_y: None,
+                phase_offset: None,
                 output_directory: tmp_dir.to_string_lossy().into_owned(),
             },
         }
@@ -2829,6 +5037,319 @@ mod tests {
         assert!(
             !filter.contains("overlay_w"),
             "text filter must not contain overlay_w"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn encoder_selection_maps_public_backends_without_qsv_or_amf() {
+        assert_eq!(
+            super::video_encoder_name("windows", super::EncoderBackend::Hardware),
+            "h264_nvenc"
+        );
+        assert_eq!(
+            super::video_encoder_name("macos", super::EncoderBackend::Hardware),
+            "h264_videotoolbox"
+        );
+        assert_eq!(
+            super::video_encoder_name("linux", super::EncoderBackend::Hardware),
+            "libx264"
+        );
+        assert_eq!(
+            super::video_encoder_name("windows", super::EncoderBackend::Cpu),
+            "libx264"
+        );
+        for (platform, backend) in [
+            ("windows", super::EncoderBackend::Hardware),
+            ("macos", super::EncoderBackend::Hardware),
+            ("linux", super::EncoderBackend::Hardware),
+        ] {
+            let args = super::video_encoder_args(platform, backend);
+            let joined = args
+                .iter()
+                .map(|a| a.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(!joined.contains("qsv"), "no QSV: {joined}");
+            assert!(!joined.contains("amf"), "no AMF: {joined}");
+        }
+    }
+
+    #[test]
+    fn hardware_fallback_classifier_uses_conservative_whitelist() {
+        assert!(super::is_hardware_fallback_error(
+            "Cannot load nvenc library"
+        ));
+        assert!(super::is_hardware_fallback_error(
+            "Failed to initialize videotoolbox encoder"
+        ));
+        assert!(super::is_hardware_fallback_error("device is not available"));
+        assert!(!super::is_hardware_fallback_error("Invalid argument"));
+        assert!(!super::is_hardware_fallback_error(
+            "No such file or directory"
+        ));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn session_hardware_probe_reports_macos_videotoolbox_availability() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        // Real probe; on CI without VideoToolbox this legitimately returns false.
+        let available = super::probe_hardware_encoder(&ffmpeg, &ffprobe, "macos");
+        // Probe must not leave any temp file behind.
+        let leftovers = std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|e| e.file_name().to_string_lossy().contains("bmw-hw-probe"));
+        assert!(!leftovers, "hardware probe left a temp file");
+        // Cache must be stable across repeated calls.
+        let cached = super::hardware_encoder_available(&ffmpeg, &ffprobe);
+        assert_eq!(cached, super::hardware_encoder_available(&ffmpeg, &ffprobe));
+        let _ = available;
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_falls_back_once_only_for_hardware_errors() {
+        let attempts = std::cell::RefCell::new(Vec::new());
+        let run = |backend: super::EncoderBackend| {
+            attempts.borrow_mut().push(backend);
+            match backend {
+                super::EncoderBackend::Hardware => (
+                    super::MediaTerminal::Failed {
+                        message: "nvenc init failed".into(),
+                    },
+                    "Cannot load nvenc library".to_string(),
+                ),
+                super::EncoderBackend::Cpu => (
+                    super::MediaTerminal::Completed {
+                        output_path: "out.mp4".into(),
+                        output_bytes: 1,
+                    },
+                    String::new(),
+                ),
+            }
+        };
+        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
+        assert_eq!(
+            *attempts.borrow(),
+            vec![super::EncoderBackend::Hardware, super::EncoderBackend::Cpu]
+        );
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_does_not_fallback_for_unknown_or_non_hardware_errors() {
+        for (stderr, expected_attempts) in [
+            ("Invalid argument".to_string(), 1),
+            ("Error opening output file denied.mp4".to_string(), 1),
+            ("No such file or directory".to_string(), 1),
+            ("Permission denied".to_string(), 1),
+            ("No such filter: 'drawtext'".to_string(), 1),
+            ("Cannot open font file".to_string(), 1),
+            ("Error validating output: codec mismatch".to_string(), 1),
+            ("Failed to finalize output".to_string(), 1),
+        ] {
+            let count = std::cell::RefCell::new(0);
+            let run = |backend: super::EncoderBackend| {
+                *count.borrow_mut() += 1;
+                let _ = backend;
+                (
+                    super::MediaTerminal::Failed {
+                        message: "failed".into(),
+                    },
+                    stderr.clone(),
+                )
+            };
+            let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+            assert!(matches!(outcome, super::MediaTerminal::Failed { .. }));
+            assert_eq!(*count.borrow(), expected_attempts, "stderr={stderr}");
+        }
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_cancelled_does_not_fallback() {
+        let count = std::cell::RefCell::new(0);
+        let run = |_: super::EncoderBackend| {
+            *count.borrow_mut() += 1;
+            (super::MediaTerminal::Cancelled, String::new())
+        };
+        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        assert_eq!(outcome, super::MediaTerminal::Cancelled);
+        assert_eq!(*count.borrow(), 1);
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_hardware_success_runs_once() {
+        let attempts = std::cell::RefCell::new(Vec::new());
+        let run = |backend: super::EncoderBackend| {
+            attempts.borrow_mut().push(backend);
+            (
+                super::MediaTerminal::Completed {
+                    output_path: "out.mp4".into(),
+                    output_bytes: 1,
+                },
+                String::new(),
+            )
+        };
+        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
+        assert_eq!(*attempts.borrow(), vec![super::EncoderBackend::Hardware]);
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_hardware_then_cpu_failure_runs_twice_and_fails_once() {
+        let attempts = std::cell::RefCell::new(Vec::new());
+        let run = |backend: super::EncoderBackend| {
+            attempts.borrow_mut().push(backend);
+            match backend {
+                super::EncoderBackend::Hardware => (
+                    super::MediaTerminal::Failed {
+                        message: "nvenc init failed".into(),
+                    },
+                    "Cannot load nvenc library".to_string(),
+                ),
+                super::EncoderBackend::Cpu => (
+                    super::MediaTerminal::Failed {
+                        message: "cpu failed".into(),
+                    },
+                    String::new(),
+                ),
+            }
+        };
+        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        assert!(matches!(outcome, super::MediaTerminal::Failed { .. }));
+        assert_eq!(
+            *attempts.borrow(),
+            vec![super::EncoderBackend::Hardware, super::EncoderBackend::Cpu]
+        );
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_device_loss_whitelist_falls_back() {
+        let attempts = std::cell::RefCell::new(Vec::new());
+        let run = |backend: super::EncoderBackend| {
+            attempts.borrow_mut().push(backend);
+            match backend {
+                super::EncoderBackend::Hardware => (
+                    super::MediaTerminal::Failed {
+                        message: "encoder lost".into(),
+                    },
+                    "device is not available".to_string(),
+                ),
+                super::EncoderBackend::Cpu => (
+                    super::MediaTerminal::Completed {
+                        output_path: "out.mp4".into(),
+                        output_bytes: 1,
+                    },
+                    String::new(),
+                ),
+            }
+        };
+        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
+        assert_eq!(
+            *attempts.borrow(),
+            vec![super::EncoderBackend::Hardware, super::EncoderBackend::Cpu]
+        );
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_cpu_backend_never_falls_back_even_with_device_stderr() {
+        let attempts = std::cell::RefCell::new(Vec::new());
+        let run = |backend: super::EncoderBackend| {
+            attempts.borrow_mut().push(backend);
+            (
+                super::MediaTerminal::Failed {
+                    message: "failed".into(),
+                },
+                "device is not available".to_string(),
+            )
+        };
+        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Cpu, run);
+        assert!(matches!(outcome, super::MediaTerminal::Failed { .. }));
+        assert_eq!(*attempts.borrow(), vec![super::EncoderBackend::Cpu]);
+    }
+
+    #[test]
+    fn session_probe_cache_runs_once_under_concurrency() {
+        let cache = std::sync::OnceLock::new();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for _ in 0..8 {
+                handles.push(scope.spawn(|| {
+                    super::cached_probe(&cache, || {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        true
+                    })
+                }));
+            }
+            for handle in handles {
+                assert!(handle.join().unwrap());
+            }
+        });
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // The cached value is stable and the probe is not re-run.
+        assert!(super::cached_probe(&cache, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            false
+        }));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn session_probe_cache_retains_false_without_rerunning() {
+        let cache = std::sync::OnceLock::new();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let first = super::cached_probe(&cache, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            false
+        });
+        assert!(!first);
+        let second = super::cached_probe(&cache, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            true
+        });
+        assert!(!second);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn video_watermark_args_lock_libx264_aac_yuv420p_faststart_and_optional_audio() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-video-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut req = watermark_request(
+            &tmp,
+            "text",
+            "视频水印",
+            None,
+            "bottom-right",
+            10,
+            0.5,
+            true,
+        );
+        let input = tmp.join("clip.mp4");
+        fs::write(&input, b"fake-video").unwrap();
+        req.input_path = input.to_string_lossy().into_owned();
+        let (args, _cleanup) =
+            test_watermark_args(&req, Path::new("/tmp/输出 文件夹/clip_watermarked.mp4"));
+        let values: Vec<String> = args
+            .iter()
+            .map(|v| v.to_string_lossy().into_owned())
+            .collect();
+        assert!(values.contains(&"-c:v".into()));
+        assert!(values.contains(&"libx264".into()));
+        assert!(values.contains(&"-c:a".into()));
+        assert!(values.contains(&"aac".into()));
+        assert!(values.contains(&"-pix_fmt".into()));
+        assert!(values.contains(&"yuv420p".into()));
+        assert!(values.contains(&"-movflags".into()));
+        assert!(values.contains(&"+faststart".into()));
+        assert!(values.contains(&"0:a?".into()));
+        assert!(
+            !values.contains(&"-frames:v".into()),
+            "video must not carry a static single-frame flag"
         );
         fs::remove_dir_all(&tmp).unwrap();
     }
@@ -3145,6 +5666,190 @@ mod tests {
     }
 
     #[cfg(target_os = "macos")]
+    #[cfg(target_os = "macos")]
+    fn create_mp4_fixture(ffmpeg: &Path, path: &Path, audio: bool) {
+        let mut cmd = std::process::Command::new(ffmpeg);
+        cmd.args([
+            "-hide_banner",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=15",
+        ]);
+        if audio {
+            cmd.args(["-f", "lavfi", "-i", "sine=frequency=440:duration=1"]);
+        }
+        cmd.args(["-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p"]);
+        if audio {
+            cmd.args(["-c:a", "aac", "-shortest"]);
+        }
+        cmd.args(["-y"]).arg(path);
+        let status = cmd
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(status.success(), "mp4 fixture creation failed");
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_mov_pcm_fixture(ffmpeg: &Path, path: &Path) {
+        let status = std::process::Command::new(ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=160x90:rate=15",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "pcm_s16le",
+                "-shortest",
+                "-y",
+            ])
+            .arg(path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(status.success(), "mov pcm fixture creation failed");
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_video_watermark_to_mp4(
+        ffmpeg: &Path,
+        ffprobe: &Path,
+        input: &Path,
+        output: &Path,
+        filter: &str,
+        has_audio: bool,
+    ) {
+        let temp = super::video_watermark_temp_path(output);
+        let mut args: Vec<OsString> = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-filter_complex"),
+            OsString::from(filter),
+            OsString::from("-map"),
+            OsString::from("[watermarked]"),
+            OsString::from("-map"),
+            OsString::from("0:a?"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-movflags"),
+            OsString::from("+faststart"),
+            OsString::from("-c:a"),
+            OsString::from("aac"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let result = std::process::Command::new(ffmpeg)
+            .args(&args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            result.status.success(),
+            "video watermark encode failed: {}",
+            &stderr[stderr.len().saturating_sub(400)..]
+        );
+        let finalize = super::MediaFinalize {
+            final_output: output.to_path_buf(),
+            input: input.to_path_buf(),
+            validate: true,
+        };
+        super::finalize_media_output(ffprobe, &temp, &finalize)
+            .expect("production finalize must pass");
+        assert!(!temp.exists(), "temp must be gone after rename");
+        assert_frame_differs(ffmpeg, input, output);
+        let probe = super::probe_video(ffprobe, output).unwrap();
+        assert_eq!(probe.has_audio, has_audio, "audio presence mismatch");
+    }
+
+    #[cfg(target_os = "macos")]
+    fn logo_overlay_filter(position: &str, size_percent: u32, tiled: bool) -> String {
+        let alpha = "0.6";
+        let mut graph = vec![
+            format!("[1:v]format=rgba,colorchannelmixer=aa={alpha}[wa]"),
+            format!("[wa][0:v]scale2ref=w=main_w*{size_percent}/100:h=-1[wm][base]"),
+        ];
+        if !tiled {
+            let (x, y) = overlay_coordinates(position);
+            graph.push(format!(
+                "[base][wm]overlay=x={x}:y={y}:format=auto[watermarked]"
+            ));
+        } else {
+            let positions = tiled_coordinates();
+            let labels: Vec<String> = (0..positions.len()).map(|i| format!("wm{i}")).collect();
+            graph.push(format!(
+                "[wm]split={}[{}]",
+                positions.len(),
+                labels.join("][")
+            ));
+            let mut previous = "base".to_string();
+            for (i, (x, y)) in positions.iter().enumerate() {
+                let next = if i + 1 == positions.len() {
+                    "watermarked".to_string()
+                } else {
+                    format!("t{i}")
+                };
+                graph.push(format!(
+                    "[{previous}][{}]overlay=x={x}:y={y}:format=auto[{next}]",
+                    labels[i]
+                ));
+                previous = next;
+            }
+        }
+        graph.join(";")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn assert_frame_differs(ffmpeg: &Path, baseline: &Path, watermarked: &Path) {
+        let run = std::process::Command::new(ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(baseline)
+            .args(["-i"])
+            .arg(watermarked)
+            .args([
+                "-lavfi",
+                "[0:v][1:v]psnr",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ])
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(run.status.success(), "psnr compare failed: {stderr}");
+        assert!(
+            stderr.contains("average:"),
+            "psnr did not report average: {stderr}"
+        );
+        assert!(
+            !stderr.contains("average:inf"),
+            "frames are identical; watermark missing: {stderr}"
+        );
+    }
+
     fn create_still_png_fixture(ffmpeg: &Path, path: &Path) {
         let status = std::process::Command::new(ffmpeg)
             .args([
@@ -3253,6 +5958,638 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "macos")]
+    fn bundled_video_watermark_cpu_output_validates_with_ffprobe() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌视频水印-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        let output = dir.join("source_watermarked.mp4");
+
+        // Generate a short 160x90 H.264 video with a sine audio track.
+        let fixture_status = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=160x90:rate=15",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=1",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+                "-y",
+            ])
+            .arg(&input)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(fixture_status.success(), "video fixture creation failed");
+
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let alpha = "0.5";
+        let font_val = escape_filter_value(&font.to_string_lossy());
+        let text_file =
+            std::env::temp_dir().join(format!("brand-media-video-wm-{}.txt", std::process::id()));
+        fs::write(&text_file, "视频水印").unwrap();
+        let text_file_val = escape_filter_value(&text_file.to_string_lossy());
+        let positions = drawtext_tiled_coordinates();
+        let mut previous = "0:v".to_string();
+        let mut graph = Vec::new();
+        for (index, (x, y)) in positions.iter().enumerate() {
+            let next = if index + 1 == positions.len() {
+                "watermarked".to_string()
+            } else {
+                format!("text{index}")
+            };
+            graph.push(format!("[{previous}]drawtext=fontfile='{font_val}':textfile='{text_file_val}':fontcolor=white@{alpha}:fontsize=h*10/100:x={x}:y={y}[{next}]"));
+            previous = next;
+        }
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-filter_complex"),
+            OsString::from(graph.join(";")),
+            OsString::from("-map"),
+            OsString::from("[watermarked]"),
+            OsString::from("-map"),
+            OsString::from("0:a?"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-movflags"),
+            OsString::from("+faststart"),
+            OsString::from("-c:a"),
+            OsString::from("aac"),
+            OsString::from("-y"),
+            output.as_os_str().to_owned(),
+        ];
+        let result = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            result.status.success(),
+            "video watermark encode failed: {}",
+            &stderr[stderr.len().saturating_sub(500)..]
+        );
+        assert!(output.is_file() && output.metadata().unwrap().len() > 0);
+
+        super::validate_watermark_video(&ffprobe, &input, &output)
+            .expect("ffprobe validation must pass for CPU watermark output");
+
+        // Audio must be present (AAC) for a sourced audio input.
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,codec_name",
+                "-of",
+                "json",
+            ])
+            .arg(&output)
+            .output()
+            .unwrap();
+        let raw = String::from_utf8_lossy(&probe.stdout);
+        assert!(
+            raw.contains("\"codec_type\": \"audio\"") && raw.contains("\"codec_name\": \"aac\""),
+            "audio track missing: {raw}"
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
+        let _ = fs::remove_file(&text_file);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundled_video_watermark_mov_pcm_transcodes_to_aac() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 MOV 水印 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("来源.mov");
+        let output = dir.join("来源_watermarked.mp4");
+        create_mov_pcm_fixture(&ffmpeg, &input);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let text_file =
+            std::env::temp_dir().join(format!("brand-mov-wm-{}.txt", std::process::id()));
+        fs::write(&text_file, "MOV 水印").unwrap();
+        let filter = format!(
+            "[0:v]drawtext=fontfile='{}':textfile='{}':fontcolor=white@0.5:fontsize=h*10/100:x={}:y={}[watermarked]",
+            escape_filter_value(&font.to_string_lossy()),
+            escape_filter_value(&text_file.to_string_lossy()),
+            drawtext_single_position("bottom-right").0,
+            drawtext_single_position("bottom-right").1,
+        );
+        run_video_watermark_to_mp4(&ffmpeg, &ffprobe, &input, &output, &filter, true);
+        // Output audio must be AAC (input was PCM).
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,codec_name",
+                "-of",
+                "json",
+            ])
+            .arg(&output)
+            .output()
+            .unwrap();
+        let raw = String::from_utf8_lossy(&probe.stdout);
+        assert!(
+            raw.contains("\"codec_name\": \"aac\""),
+            "MOV PCM must become AAC: {raw}"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+        let _ = fs::remove_file(&text_file);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundled_video_watermark_no_audio_succeeds_without_audio_stream() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 无声水印 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("silent.mp4");
+        let output = dir.join("silent_watermarked.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let text_file =
+            std::env::temp_dir().join(format!("brand-silent-wm-{}.txt", std::process::id()));
+        fs::write(&text_file, "无声水印").unwrap();
+        let positions = drawtext_tiled_coordinates();
+        let mut previous = "0:v".to_string();
+        let mut graph = Vec::new();
+        for (i, (x, y)) in positions.iter().enumerate() {
+            let next = if i + 1 == positions.len() {
+                "watermarked".to_string()
+            } else {
+                format!("t{i}")
+            };
+            graph.push(format!("[{previous}]drawtext=fontfile='{}':textfile='{}':fontcolor=white@0.5:fontsize=h*10/100:x={x}:y={y}[{next}]", escape_filter_value(&font.to_string_lossy()), escape_filter_value(&text_file.to_string_lossy())));
+            previous = next;
+        }
+        run_video_watermark_to_mp4(&ffmpeg, &ffprobe, &input, &output, &graph.join(";"), false);
+        fs::remove_dir_all(&dir).unwrap();
+        let _ = fs::remove_file(&text_file);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn run_logo_watermark(
+        ffmpeg: &Path,
+        ffprobe: &Path,
+        input: &Path,
+        logo: &Path,
+        output: &Path,
+        filter: &str,
+    ) {
+        let temp = super::video_watermark_temp_path(output);
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-i"),
+            logo.as_os_str().to_owned(),
+            OsString::from("-filter_complex"),
+            OsString::from(filter),
+            OsString::from("-map"),
+            OsString::from("[watermarked]"),
+            OsString::from("-map"),
+            OsString::from("0:a?"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-movflags"),
+            OsString::from("+faststart"),
+            OsString::from("-c:a"),
+            OsString::from("aac"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let result = std::process::Command::new(ffmpeg)
+            .args(&args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(
+            result.status.success(),
+            "logo watermark encode failed: {}",
+            &stderr[stderr.len().saturating_sub(400)..]
+        );
+        let finalize = super::MediaFinalize {
+            final_output: output.to_path_buf(),
+            input: input.to_path_buf(),
+            validate: true,
+        };
+        super::finalize_media_output(ffprobe, &temp, &finalize).expect("logo finalize");
+        assert_frame_differs(ffmpeg, input, output);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundled_video_watermark_logo_single_and_tiled_overlay() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 Logo 水印 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        let logo = dir.join("logo.png");
+        create_mp4_fixture(&ffmpeg, &input, true);
+        create_still_png_fixture(&ffmpeg, &logo);
+        let single_out = dir.join("single.mp4");
+        let tiled_out = dir.join("tiled.mp4");
+        run_logo_watermark(
+            &ffmpeg,
+            &ffprobe,
+            &input,
+            &logo,
+            &single_out,
+            &logo_overlay_filter("bottom-right", 25, false),
+        );
+        run_logo_watermark(
+            &ffmpeg,
+            &ffprobe,
+            &input,
+            &logo,
+            &tiled_out,
+            &logo_overlay_filter("bottom-right", 25, true),
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundled_video_watermark_text_single_keeps_dimensions_and_duration() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 单水印 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        let output = dir.join("source_watermarked.mp4");
+        create_mp4_fixture(&ffmpeg, &input, true);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let text_file =
+            std::env::temp_dir().join(format!("brand-single-wm-{}.txt", std::process::id()));
+        fs::write(&text_file, "单水印").unwrap();
+        let filter = format!(
+            "[0:v]drawtext=fontfile='{}':textfile='{}':fontcolor=white@0.5:fontsize=h*10/100:x={}:y={}[watermarked]",
+            escape_filter_value(&font.to_string_lossy()),
+            escape_filter_value(&text_file.to_string_lossy()),
+            drawtext_single_position("center").0,
+            drawtext_single_position("center").1,
+        );
+        run_video_watermark_to_mp4(&ffmpeg, &ffprobe, &input, &output, &filter, true);
+        fs::remove_dir_all(&dir).unwrap();
+        let _ = fs::remove_file(&text_file);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn watermark_process_bad_input_fails_once_without_residue() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 坏输入 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("missing.mp4");
+        let final_out = dir.join("final.mp4");
+        let temp = super::video_watermark_temp_path(&final_out);
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-map"),
+            OsString::from("0:v"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let finalize = super::MediaFinalize {
+            final_output: final_out.clone(),
+            input: input.clone(),
+            validate: false,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let outcome = (super::run_watermark_process(
+            &ffmpeg,
+            &ffprobe,
+            &args,
+            &temp,
+            Some(&finalize),
+            &cancel,
+        ))
+        .0;
+        assert!(
+            matches!(outcome, super::MediaTerminal::Failed { .. }),
+            "expected Failed, got {outcome:?}"
+        );
+        assert!(!temp.exists(), "temp must be removed");
+        assert!(!final_out.exists(), "final must not exist");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn watermark_process_rename_conflict_fails_once_and_preserves_target() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 冲突 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, true);
+        let final_out = dir.join("final.mp4");
+        fs::write(&final_out, b"existing-target").unwrap();
+        let temp = super::video_watermark_temp_path(&final_out);
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-map"),
+            OsString::from("0:v"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let finalize = super::MediaFinalize {
+            final_output: final_out.clone(),
+            input: input.clone(),
+            validate: true,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let outcome = (super::run_watermark_process(
+            &ffmpeg,
+            &ffprobe,
+            &args,
+            &temp,
+            Some(&finalize),
+            &cancel,
+        ))
+        .0;
+        assert!(
+            matches!(outcome, super::MediaTerminal::Failed { .. }),
+            "expected Failed, got {outcome:?}"
+        );
+        assert!(!temp.exists(), "temp must be removed");
+        assert_eq!(
+            fs::read(&final_out).unwrap(),
+            b"existing-target",
+            "target must not be overwritten"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn watermark_process_mid_run_cancel_returns_cancelled_once() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 取消 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let final_out = dir.join("final.mp4");
+        let temp = super::video_watermark_temp_path(&final_out);
+        // Long-running real FFmpeg child.
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-f"),
+            OsString::from("lavfi"),
+            OsString::from("-re"),
+            OsString::from("-i"),
+            OsString::from("testsrc2=size=160x90:rate=15"),
+            OsString::from("-t"),
+            OsString::from("30"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let finalize = super::MediaFinalize {
+            final_output: final_out.clone(),
+            input: dir.join("unused.mp4"),
+            validate: false,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let child_cancel = std::sync::Arc::new(cancel);
+        let handle = {
+            let ffmpeg = ffmpeg.clone();
+            let ffprobe = ffprobe.clone();
+            let args = args.clone();
+            let temp = temp.clone();
+            let finalize = finalize;
+            let cancel = child_cancel.clone();
+            std::thread::spawn(move || {
+                super::run_watermark_process(
+                    &ffmpeg,
+                    &ffprobe,
+                    &args,
+                    &temp,
+                    Some(&finalize),
+                    &cancel,
+                )
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        child_cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        let (outcome, _stderr) = handle.join().unwrap();
+        assert_eq!(
+            outcome,
+            super::MediaTerminal::Cancelled,
+            "expected Cancelled once"
+        );
+        assert!(!temp.exists(), "temp must be removed after cancel");
+        assert!(!final_out.exists(), "final must not exist after cancel");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn watermark_process_invalid_target_fails_once_without_residue() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 无效目标 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        // Make the parent of the final output a regular file, so linking fails.
+        let blocker = dir.join("blocker");
+        fs::write(&blocker, b"file-not-dir").unwrap();
+        let final_out = blocker.join("final.mp4");
+        let temp = super::video_watermark_temp_path(&dir.join("final.mp4"));
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-map"),
+            OsString::from("0:v"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let finalize = super::MediaFinalize {
+            final_output: final_out.clone(),
+            input: input.clone(),
+            validate: false,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let outcome = (super::run_watermark_process(
+            &ffmpeg,
+            &ffprobe,
+            &args,
+            &temp,
+            Some(&finalize),
+            &cancel,
+        ))
+        .0;
+        assert!(
+            matches!(outcome, super::MediaTerminal::Failed { .. }),
+            "expected Failed, got {outcome:?}"
+        );
+        assert!(!temp.exists(), "temp must be removed");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn watermark_process_validator_failure_fails_once_without_final() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 校验失败 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        let final_out = dir.join("final.mp4");
+        let temp = super::video_watermark_temp_path(&final_out);
+        // Encode with mpeg4 (not h264) so validation must reject the output.
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-c:v"),
+            OsString::from("mpeg4"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let finalize = super::MediaFinalize {
+            final_output: final_out.clone(),
+            input: input.clone(),
+            validate: true,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let outcome = (super::run_watermark_process(
+            &ffmpeg,
+            &ffprobe,
+            &args,
+            &temp,
+            Some(&finalize),
+            &cancel,
+        ))
+        .0;
+        assert!(
+            matches!(outcome, super::MediaTerminal::Failed { .. }),
+            "expected Failed, got {outcome:?}"
+        );
+        assert!(
+            !temp.exists(),
+            "temp must be removed after validation failure"
+        );
+        assert!(
+            !final_out.exists(),
+            "final must not exist after validation failure"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn watermark_process_hard_link_success_removes_temp_and_keeps_final() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌 硬链接 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        let final_out = dir.join("final.mp4");
+        let temp = super::video_watermark_temp_path(&final_out);
+        let args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-i"),
+            input.as_os_str().to_owned(),
+            OsString::from("-map"),
+            OsString::from("0:v"),
+            OsString::from("-c:v"),
+            OsString::from("libx264"),
+            OsString::from("-pix_fmt"),
+            OsString::from("yuv420p"),
+            OsString::from("-y"),
+            temp.as_os_str().to_owned(),
+        ];
+        let finalize = super::MediaFinalize {
+            final_output: final_out.clone(),
+            input: input.clone(),
+            validate: true,
+        };
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let outcome = (super::run_watermark_process(
+            &ffmpeg,
+            &ffprobe,
+            &args,
+            &temp,
+            Some(&finalize),
+            &cancel,
+        ))
+        .0;
+        assert!(
+            matches!(outcome, super::MediaTerminal::Completed { .. }),
+            "expected Completed, got {outcome:?}"
+        );
+        assert!(!temp.exists(), "temp must be gone after hard_link success");
+        assert!(
+            final_out.exists() && final_out.metadata().unwrap().len() > 0,
+            "final must exist with content"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
     fn bundled_ffmpeg_image_overlay_smoke_succeeds() {
         let ffmpeg = bundled_test_sidecar("ffmpeg");
         let dir = std::env::temp_dir().join(format!("品牌水印 图片logo-{}", std::process::id()));
@@ -3316,6 +6653,1187 @@ mod tests {
             String::from_utf8_lossy(&result.stderr)
         );
         assert!(output.metadata().unwrap().len() > 0);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ---- 2C-1 watermark FIFO core tests ----
+
+    fn queue_sink() -> (
+        Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+        mpsc::Receiver<WatermarkQueueEvent>,
+    ) {
+        let (tx, rx) = mpsc::channel();
+        let sink: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync> = Arc::new(move |event| {
+            let _ = tx.send(event);
+        });
+        (sink, rx)
+    }
+
+    fn recording_sink() -> (
+        Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>,
+        Arc<Mutex<Vec<WatermarkQueueEvent>>>,
+        mpsc::Receiver<WatermarkQueueEvent>,
+    ) {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let (tx, rx) = mpsc::channel();
+        let sink = {
+            let events = events.clone();
+            Arc::new(move |event: WatermarkQueueEvent| {
+                events.lock().unwrap().push(event.clone());
+                let _ = tx.send(event);
+            }) as Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>
+        };
+        (sink, events, rx)
+    }
+
+    fn drain_until_terminal<F>(rx: &mpsc::Receiver<WatermarkQueueEvent>, predicate: F)
+    where
+        F: Fn(&WatermarkTerminal) -> bool,
+    {
+        loop {
+            match rx.recv().expect("sink channel closed") {
+                WatermarkQueueEvent::Terminal { terminal: got, .. } if predicate(&got) => return,
+                _ => {}
+            }
+        }
+    }
+
+    fn terminal_completed(terminal: &WatermarkTerminal) -> bool {
+        matches!(terminal, WatermarkTerminal::Completed { .. })
+    }
+
+    fn terminal_cancelled(terminal: &WatermarkTerminal) -> bool {
+        matches!(terminal, WatermarkTerminal::Cancelled)
+    }
+
+    fn terminal_failed(terminal: &WatermarkTerminal) -> bool {
+        matches!(terminal, WatermarkTerminal::Failed { .. })
+    }
+
+    fn preview_request(dir: &Path, task_id: &str) -> WatermarkPreviewRequest {
+        WatermarkPreviewRequest {
+            task_id: task_id.into(),
+            input_path: dir.join("input.mp4").to_string_lossy().into_owned(),
+            temp_directory: dir.to_string_lossy().into_owned(),
+            kind: "text".into(),
+            text: task_id.into(),
+            image_path: None,
+            position: "bottom-right".into(),
+            size_percent: 10,
+            opacity: 0.7,
+            pattern: Some("single".into()),
+            angle: None,
+            offset_x: None,
+            offset_y: None,
+            spacing_x: None,
+            spacing_y: None,
+            phase_offset: None,
+            timestamp_seconds: Some(0.2),
+            width: Some(160),
+            duration: Some(1.0),
+            ffmpeg_path: None,
+            ffprobe_path: None,
+            font_path: None,
+        }
+    }
+
+    fn preview_sink() -> (
+        Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>,
+        Arc<Mutex<Vec<WatermarkPreviewStatusEvent>>>,
+        mpsc::Receiver<WatermarkPreviewStatusEvent>,
+    ) {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let (tx, rx) = mpsc::channel();
+        let sink = {
+            let events = events.clone();
+            Arc::new(move |event: WatermarkPreviewStatusEvent| {
+                events.lock().unwrap().push(event.clone());
+                let _ = tx.send(event);
+            }) as Arc<dyn Fn(WatermarkPreviewStatusEvent) + Send + Sync>
+        };
+        (sink, events, rx)
+    }
+
+    fn wait_preview_status(
+        rx: &mpsc::Receiver<WatermarkPreviewStatusEvent>,
+        task_id: &str,
+        expected: WatermarkPreviewStatus,
+    ) -> WatermarkPreviewStatusEvent {
+        loop {
+            let event = rx.recv().expect("preview sink channel closed");
+            if event.task_id == task_id && event.status == expected {
+                return event;
+            }
+        }
+    }
+
+    #[test]
+    fn watermark_preview_busy_rejects_without_running_runner() {
+        let dir = std::env::temp_dir().join(format!("preview-busy-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (sink, events, _rx) = preview_sink();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let runner_calls = calls.clone();
+        let runner: Arc<
+            dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync,
+        > = Arc::new(move |_| {
+            runner_calls.fetch_add(1, Ordering::SeqCst);
+            WatermarkPreviewTerminal::Failed {
+                message: "unexpected".into(),
+            }
+        });
+        let formal_busy = Arc::new(AtomicBool::new(true));
+        let queue = start_watermark_preview_queue_with_runner(sink, runner, formal_busy);
+        assert_eq!(
+            queue.start(preview_request(&dir, "busy")).unwrap_err(),
+            super::WatermarkPreviewStartError::RejectedBusy
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.status == WatermarkPreviewStatus::RejectedBusy));
+        queue.shutdown();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn watermark_preview_running_replacement_waits_for_cleanup_before_new_start() {
+        let dir = std::env::temp_dir().join(format!("preview-replace-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (sink, _events, rx) = preview_sink();
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let order_for_runner = order.clone();
+        let runner: Arc<
+            dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync,
+        > = Arc::new(move |job| {
+            order_for_runner
+                .lock()
+                .unwrap()
+                .push(format!("start:{}", job.task_id));
+            if job.task_id == "old" {
+                while !job.cancel.load(Ordering::SeqCst) {
+                    thread::yield_now();
+                }
+                order_for_runner.lock().unwrap().push("end:old".into());
+                WatermarkPreviewTerminal::Cancelled
+            } else {
+                order_for_runner.lock().unwrap().push("end:new".into());
+                fs::write(&job.output_path, b"png").unwrap();
+                WatermarkPreviewTerminal::Completed {
+                    output_path: job.output_path,
+                }
+            }
+        });
+        let queue = start_watermark_preview_queue_with_runner(
+            sink,
+            runner,
+            Arc::new(AtomicBool::new(false)),
+        );
+        queue.start(preview_request(&dir, "old")).unwrap();
+        wait_preview_status(&rx, "old", WatermarkPreviewStatus::Processing);
+        let new_started = queue.start(preview_request(&dir, "new")).unwrap();
+        wait_preview_status(&rx, "old", WatermarkPreviewStatus::Cancelled);
+        let completed = wait_preview_status(&rx, "new", WatermarkPreviewStatus::Completed);
+        assert_eq!(completed.output_path, Some(new_started.output_path.clone()));
+        assert_eq!(
+            *order.lock().unwrap(),
+            vec!["start:old", "end:old", "start:new", "end:new"]
+        );
+        queue.shutdown();
+        assert!(!Path::new(&new_started.output_path).exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn watermark_preview_cancel_is_idempotent_and_payload_is_frozen() {
+        let dir = std::env::temp_dir().join(format!("preview-cancel-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (sink, events, rx) = preview_sink();
+        let observed_text = Arc::new(Mutex::new(String::new()));
+        let observed_for_runner = observed_text.clone();
+        let runner: Arc<
+            dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync,
+        > = Arc::new(move |job| {
+            *observed_for_runner.lock().unwrap() = job.payload.text.clone();
+            while !job.cancel.load(Ordering::SeqCst) {
+                thread::yield_now();
+            }
+            WatermarkPreviewTerminal::Cancelled
+        });
+        let queue = start_watermark_preview_queue_with_runner(
+            sink,
+            runner,
+            Arc::new(AtomicBool::new(false)),
+        );
+        let mut request = preview_request(&dir, "cancel");
+        request.text = "frozen text".into();
+        queue.start(request.clone()).unwrap();
+        request.text = "mutated after enqueue".into();
+        wait_preview_status(&rx, "cancel", WatermarkPreviewStatus::Processing);
+        queue.cancel("cancel").unwrap();
+        queue.cancel("cancel").unwrap();
+        wait_preview_status(&rx, "cancel", WatermarkPreviewStatus::Cancelled);
+        assert_eq!(&*observed_text.lock().unwrap(), "frozen text");
+        assert_eq!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| event.task_id == "cancel"
+                    && event.status == WatermarkPreviewStatus::Cancelled)
+                .count(),
+            1
+        );
+        queue.shutdown();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn watermark_preview_shutdown_removes_completed_result() {
+        let dir = std::env::temp_dir().join(format!("preview-shutdown-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (sink, _events, rx) = preview_sink();
+        let runner: Arc<
+            dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync,
+        > = Arc::new(|job| {
+            fs::write(&job.output_path, b"png").unwrap();
+            WatermarkPreviewTerminal::Completed {
+                output_path: job.output_path,
+            }
+        });
+        let queue = start_watermark_preview_queue_with_runner(
+            sink,
+            runner,
+            Arc::new(AtomicBool::new(false)),
+        );
+        let started = queue.start(preview_request(&dir, "shutdown")).unwrap();
+        wait_preview_status(&rx, "shutdown", WatermarkPreviewStatus::Completed);
+        assert!(Path::new(&started.output_path).is_file());
+        queue.shutdown();
+        assert!(!Path::new(&started.output_path).exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn watermark_preview_success_replaces_and_removes_previous_result() {
+        let dir =
+            std::env::temp_dir().join(format!("preview-replace-result-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (sink, _events, rx) = preview_sink();
+        let runner: Arc<
+            dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync,
+        > = Arc::new(|job| {
+            fs::write(&job.output_path, job.task_id.as_bytes()).unwrap();
+            WatermarkPreviewTerminal::Completed {
+                output_path: job.output_path,
+            }
+        });
+        let queue = start_watermark_preview_queue_with_runner(
+            sink,
+            runner,
+            Arc::new(AtomicBool::new(false)),
+        );
+        let first = queue.start(preview_request(&dir, "first")).unwrap();
+        wait_preview_status(&rx, "first", WatermarkPreviewStatus::Completed);
+        assert!(Path::new(&first.output_path).is_file());
+        let second = queue.start(preview_request(&dir, "second")).unwrap();
+        wait_preview_status(&rx, "second", WatermarkPreviewStatus::Completed);
+        assert!(!Path::new(&first.output_path).exists());
+        assert!(Path::new(&second.output_path).is_file());
+        queue.shutdown();
+        assert!(!Path::new(&second.output_path).exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn watermark_preview_is_cancelled_before_formal_queue_starts_next_job() {
+        let dir = std::env::temp_dir().join(format!("preview-formal-coord-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (preview_sink, _preview_events, preview_rx) = preview_sink();
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let preview_order = order.clone();
+        let preview_runner: Arc<
+            dyn Fn(FrozenWatermarkPreviewJob) -> WatermarkPreviewTerminal + Send + Sync,
+        > = Arc::new(move |job| {
+            preview_order.lock().unwrap().push("preview-start".into());
+            while !job.cancel.load(Ordering::SeqCst) {
+                thread::yield_now();
+            }
+            preview_order.lock().unwrap().push("preview-cleanup".into());
+            WatermarkPreviewTerminal::Cancelled
+        });
+        let preview = start_watermark_preview_queue_with_runner(
+            preview_sink,
+            preview_runner,
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        let formal_sink: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync> = Arc::new(|_| {});
+        let formal_order = order.clone();
+        let formal = start_watermark_video_queue::<String, _>(formal_sink, move |job, _| {
+            formal_order.lock().unwrap().push("formal-start".into());
+            assert_eq!(job.payload, "frozen".to_string());
+            WatermarkTerminal::Completed {
+                output_path: job.reserved_final.to_string_lossy().into_owned(),
+                output_bytes: 0,
+            }
+        });
+        let preview_control = Arc::new(preview.control());
+        formal.set_before_start_hook(Arc::new(move || preview_control.cancel_and_wait()));
+
+        preview
+            .start(preview_request(&dir, "preview-running"))
+            .unwrap();
+        wait_preview_status(
+            &preview_rx,
+            "preview-running",
+            WatermarkPreviewStatus::Processing,
+        );
+        formal
+            .enqueue("formal-job".into(), "frozen".into(), dir.join("formal.mp4"))
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while order.lock().unwrap().last().map(String::as_str) != Some("formal-start") {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "formal queue did not start"
+            );
+            thread::yield_now();
+        }
+        wait_preview_status(
+            &preview_rx,
+            "preview-running",
+            WatermarkPreviewStatus::Cancelled,
+        );
+        assert_eq!(
+            *order.lock().unwrap(),
+            vec!["preview-start", "preview-cleanup", "formal-start"]
+        );
+        formal.shutdown();
+        preview.shutdown();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bundled_watermark_preview_text_and_logo_produce_real_pngs_with_frame_diff() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir =
+            std::env::temp_dir().join(format!("品牌 preview 中文 空格 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("输入 video.mp4");
+        let logo = dir.join("logo.png");
+        let baseline = dir.join("baseline.png");
+        create_fixture(&ffmpeg, &input);
+        create_still_png_fixture(&ffmpeg, &logo);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let (sink, _events, rx) = preview_sink();
+        let queue = start_watermark_preview_queue_with_runner(
+            sink,
+            Arc::new(run_watermark_preview_job),
+            Arc::new(AtomicBool::new(false)),
+        );
+
+        let mut text_request = preview_request(&dir, "text-real");
+        text_request.input_path = input.to_string_lossy().into_owned();
+        text_request.temp_directory = dir.to_string_lossy().into_owned();
+        text_request.ffmpeg_path = Some(ffmpeg.clone());
+        text_request.ffprobe_path = Some(ffprobe.clone());
+        text_request.font_path = Some(font);
+        text_request.text = "真实预览".into();
+        let text_started = queue.start(text_request).unwrap();
+        let text_completed =
+            wait_preview_status(&rx, "text-real", WatermarkPreviewStatus::Completed);
+        assert_eq!(
+            text_completed.output_path,
+            Some(text_started.output_path.clone())
+        );
+
+        let baseline_status = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-ss", "0.2", "-i"])
+            .arg(&input)
+            .args(["-frames:v", "1", "-y"])
+            .arg(&baseline)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(baseline_status.success());
+        assert_frame_differs(&ffmpeg, &baseline, Path::new(&text_started.output_path));
+        let text_probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name,width,height",
+                "-of",
+                "json",
+            ])
+            .arg(&text_started.output_path)
+            .output()
+            .unwrap();
+        let text_probe_text = String::from_utf8_lossy(&text_probe.stdout);
+        assert!(
+            text_probe.status.success(),
+            "text ffprobe failed: {text_probe_text}"
+        );
+        assert!(
+            text_probe_text.contains("png"),
+            "text preview is not PNG: {text_probe_text}"
+        );
+        assert!(
+            text_probe_text.contains("160"),
+            "text preview width missing: {text_probe_text}"
+        );
+
+        let mut logo_request = preview_request(&dir, "logo-real");
+        logo_request.input_path = input.to_string_lossy().into_owned();
+        logo_request.temp_directory = dir.to_string_lossy().into_owned();
+        logo_request.kind = "image".into();
+        logo_request.image_path = Some(logo.to_string_lossy().into_owned());
+        logo_request.pattern = Some("tiled".into());
+        logo_request.ffmpeg_path = Some(ffmpeg.clone());
+        logo_request.ffprobe_path = Some(ffprobe.clone());
+        let logo_started = queue.start(logo_request).unwrap();
+        let logo_completed =
+            wait_preview_status(&rx, "logo-real", WatermarkPreviewStatus::Completed);
+        assert_eq!(
+            logo_completed.output_path,
+            Some(logo_started.output_path.clone())
+        );
+
+        assert_frame_differs(&ffmpeg, &baseline, Path::new(&logo_started.output_path));
+
+        let logo_probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name,width,height",
+                "-of",
+                "json",
+            ])
+            .arg(&logo_started.output_path)
+            .output()
+            .unwrap();
+        let logo_probe_text = String::from_utf8_lossy(&logo_probe.stdout);
+        assert!(
+            logo_probe.status.success(),
+            "logo ffprobe failed: {logo_probe_text}"
+        );
+        assert!(
+            logo_probe_text.contains("png"),
+            "logo preview is not PNG: {logo_probe_text}"
+        );
+        assert!(
+            logo_probe_text.contains("160"),
+            "logo preview width missing: {logo_probe_text}"
+        );
+        queue.shutdown();
+        assert!(!Path::new(&text_started.output_path).exists());
+        assert!(!Path::new(&logo_started.output_path).exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn watermark_queue_fifo_runs_one_at_a_time_and_respects_order() {
+        let (sink, rx) = queue_sink();
+        let start_order = Arc::new(Mutex::new(Vec::new()));
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let runner = {
+            let start_order = start_order.clone();
+            let active = active.clone();
+            let max_active = max_active.clone();
+            let first_started = first_started.clone();
+            let release = release.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                start_order.lock().unwrap().push(job.task_id.clone());
+                let now = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                max_active.fetch_max(now, std::sync::atomic::Ordering::SeqCst);
+                if job.task_id == "first" {
+                    first_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    // Block deterministically until the main thread allows the
+                    // first job to finish, proving the second does not start early.
+                    while !release.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                }
+                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                WatermarkTerminal::Completed {
+                    output_path: "/tmp/out.mp4".into(),
+                    output_bytes: 1,
+                }
+            }
+        };
+
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("first".into(), "one".into(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        queue
+            .enqueue("second".into(), "two".into(), PathBuf::from("/tmp/b.mp4"))
+            .unwrap();
+
+        // Wait until the first job has started.
+        while !first_started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        assert_eq!(*start_order.lock().unwrap(), vec!["first".to_string()]);
+        // While first is blocked, second must not have started.
+        assert_eq!(max_active.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        release.store(true, std::sync::atomic::Ordering::SeqCst);
+        drain_until_terminal(&rx, terminal_completed);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+
+        assert_eq!(
+            *start_order.lock().unwrap(),
+            vec!["first".to_string(), "second".to_string()]
+        );
+        assert_eq!(max_active.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn watermark_queue_continues_after_a_failed_job() {
+        let (sink, rx) = queue_sink();
+        let ran = Arc::new(Mutex::new(Vec::new()));
+        let runner = {
+            let ran = ran.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                ran.lock().unwrap().push(job.task_id.clone());
+                if job.task_id == "first" {
+                    WatermarkTerminal::Failed {
+                        message: "boom".into(),
+                    }
+                } else {
+                    WatermarkTerminal::Completed {
+                        output_path: "/tmp/out.mp4".into(),
+                        output_bytes: 1,
+                    }
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("first".into(), "a".into(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        queue
+            .enqueue("second".into(), "b".into(), PathBuf::from("/tmp/b.mp4"))
+            .unwrap();
+        drain_until_terminal(&rx, terminal_failed);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+        assert_eq!(
+            *ran.lock().unwrap(),
+            vec!["first".to_string(), "second".to_string()]
+        );
+    }
+
+    #[test]
+    fn watermark_queue_waiting_cancel_never_runs_and_commits_cancelled_once() {
+        let (sink, rx) = queue_sink();
+        let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runner = {
+            let first_started = first_started.clone();
+            let release = release.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                if job.task_id == "first" {
+                    first_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    while !release.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                    WatermarkTerminal::Completed {
+                        output_path: "/tmp/out.mp4".into(),
+                        output_bytes: 1,
+                    }
+                } else {
+                    panic!("waiting job must not run");
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("first".into(), "a".into(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        queue
+            .enqueue("second".into(), "b".into(), PathBuf::from("/tmp/b.mp4"))
+            .unwrap();
+        while !first_started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        queue.cancel("second").unwrap();
+        drain_until_terminal(&rx, terminal_cancelled);
+        // Idempotent repeated cancel must not emit a second terminal.
+        queue.cancel("second").unwrap();
+        release.store(true, std::sync::atomic::Ordering::SeqCst);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+    }
+
+    #[test]
+    fn watermark_queue_running_cancel_is_observed_before_next_starts() {
+        let (sink, rx) = queue_sink();
+        let second_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let first_cleanup_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let allow_first_return = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runner = {
+            let second_started = second_started.clone();
+            let first_cleanup_done = first_cleanup_done.clone();
+            let first_started = first_started.clone();
+            let allow_first_return = allow_first_return.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                if job.task_id == "first" {
+                    first_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    // Observe the cancel flag, then simulate cleanup before returning.
+                    while !job.cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                    first_cleanup_done.store(true, std::sync::atomic::Ordering::SeqCst);
+                    // Hold the worker here so we can deterministically assert the
+                    // second job has not started before this runner returns.
+                    while !allow_first_return.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                    WatermarkTerminal::Cancelled
+                } else {
+                    second_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    WatermarkTerminal::Completed {
+                        output_path: "/tmp/out.mp4".into(),
+                        output_bytes: 1,
+                    }
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("first".into(), "a".into(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        queue
+            .enqueue("second".into(), "b".into(), PathBuf::from("/tmp/b.mp4"))
+            .unwrap();
+        // Wait until the first job is actually running, then cancel it.
+        while !first_started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        queue.cancel("first").unwrap();
+        while !first_cleanup_done.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        // Cleanup completed before the worker started the second job.
+        assert!(!second_started.load(std::sync::atomic::Ordering::SeqCst));
+        allow_first_return.store(true, std::sync::atomic::Ordering::SeqCst);
+        drain_until_terminal(&rx, terminal_cancelled);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+    }
+
+    #[test]
+    fn watermark_queue_frozen_payload_is_a_clone_snapshot() {
+        let (sink, rx) = queue_sink();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let runner = {
+            let seen = seen.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                seen.lock().unwrap().push(job.payload.clone());
+                WatermarkTerminal::Completed {
+                    output_path: "/tmp/out.mp4".into(),
+                    output_bytes: 1,
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        let mut payload = String::from("original");
+        queue
+            .enqueue("t".into(), payload.clone(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        payload.push_str("-mutated-after-enqueue");
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+        assert_eq!(*seen.lock().unwrap(), vec!["original".to_string()]);
+    }
+
+    #[test]
+    fn watermark_queue_rejects_duplicate_reserved_path() {
+        let (sink, rx) = queue_sink();
+        let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runner = {
+            let first_started = first_started.clone();
+            let release = release.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                if job.task_id == "a" {
+                    first_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    while !release.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                }
+                WatermarkTerminal::Completed {
+                    output_path: "/tmp/out.mp4".into(),
+                    output_bytes: 1,
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("a".into(), "a".into(), PathBuf::from("/tmp/same.mp4"))
+            .unwrap();
+        while !first_started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            queue.enqueue("b".into(), "b".into(), PathBuf::from("/tmp/same.mp4")),
+            Err(WatermarkQueueError::ReservedPathConflict {
+                path: PathBuf::from("/tmp/same.mp4")
+            })
+        );
+        release.store(true, std::sync::atomic::Ordering::SeqCst);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+    }
+
+    #[test]
+    fn watermark_queue_shutdown_cancels_waiting_and_joins_worker() {
+        let (sink, rx) = queue_sink();
+        let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runner = {
+            let first_started = first_started.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                if job.task_id == "first" {
+                    first_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    while !job.cancel.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                    WatermarkTerminal::Cancelled
+                } else {
+                    WatermarkTerminal::Completed {
+                        output_path: "/tmp/out.mp4".into(),
+                        output_bytes: 1,
+                    }
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("first".into(), "a".into(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        queue
+            .enqueue("waiting".into(), "b".into(), PathBuf::from("/tmp/b.mp4"))
+            .unwrap();
+        while !first_started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        queue.shutdown();
+        // shutdown must not deadlock: running job observes cancel and exits,
+        // waiting jobs are cancelled, worker joins.
+        let mut terminals = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let WatermarkQueueEvent::Terminal { task_id, terminal } = event {
+                terminals.push((task_id, terminal));
+            }
+        }
+        let cancelled = terminals
+            .iter()
+            .filter(|(_, t)| *t == WatermarkTerminal::Cancelled)
+            .count();
+        assert_eq!(cancelled, 2, "first and waiting both cancel: {terminals:?}");
+    }
+
+    #[test]
+    fn watermark_queue_concurrent_same_basename_reserves_distinct_names() {
+        let (sink, _rx) = queue_sink();
+        let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let release = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let runner = {
+            let first_started = first_started.clone();
+            let release = release.clone();
+            move |job: FrozenWatermarkJob<String>, _emit| {
+                if job.task_id == "a" {
+                    first_started.store(true, std::sync::atomic::Ordering::SeqCst);
+                    while !release.load(std::sync::atomic::Ordering::SeqCst) {
+                        std::thread::yield_now();
+                    }
+                }
+                WatermarkTerminal::Completed {
+                    output_path: "/tmp/out.mp4".into(),
+                    output_bytes: 1,
+                }
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        let dir = PathBuf::from("/tmp/品牌 并发");
+        let a = queue
+            .enqueue_with_reservation("a".into(), "a".into(), &dir, "同名单.mp4")
+            .unwrap();
+        let b = queue
+            .enqueue_with_reservation("b".into(), "b".into(), &dir, "同名单.mp4")
+            .unwrap();
+        assert_ne!(a, b, "same basename must reserve two distinct names");
+        // Explicit enqueue with an already-reserved path still conflicts.
+        assert_eq!(
+            queue.enqueue("c".into(), "c".into(), a.clone()),
+            Err(WatermarkQueueError::ReservedPathConflict { path: a.clone() })
+        );
+        while !first_started.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        release.store(true, std::sync::atomic::Ordering::SeqCst);
+        queue.shutdown();
+    }
+
+    #[test]
+    fn is_video_media_distinguishes_video_from_static_and_gif() {
+        assert!(is_video_media(Path::new("a.mp4")));
+        assert!(is_video_media(Path::new("b.MOV")));
+        assert!(!is_video_media(Path::new("c.png")));
+        assert!(!is_video_media(Path::new("d.jpg")));
+        assert!(!is_video_media(Path::new("e.webp")));
+        assert!(!is_video_media(Path::new("f.gif")));
+    }
+
+    #[test]
+    fn watermark_production_runner_emits_lifecycle_and_maps_terminal() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync> = {
+            let events = events.clone();
+            Arc::new(move |event| events.lock().unwrap().push(event))
+        };
+        let payload = WatermarkEncodePayload {
+            request: WatermarkMediaTaskRequest {
+                task_id: "job".into(),
+                input_path: "/tmp/nope.mp4".into(),
+                options: WatermarkOptions {
+                    kind: "text".into(),
+                    text: "水印".into(),
+                    image_path: None,
+                    position: "bottom-right".into(),
+                    size_percent: 10,
+                    opacity: 0.5,
+                    pattern: None,
+                    density: None,
+                    angle: None,
+                    dark_mode: None,
+                    offset_x: None,
+                    offset_y: None,
+                    spacing_x: None,
+                    spacing_y: None,
+                    phase_offset: None,
+                    output_directory: "/tmp".into(),
+                },
+            },
+            backend: EncoderBackend::Cpu,
+            font_path: Some(PathBuf::from("/nonexistent/font.otf")),
+            ffmpeg: PathBuf::from("/nonexistent/ffmpeg"),
+            ffprobe: PathBuf::from("/nonexistent/ffprobe"),
+            progress_window: None,
+            input_path: PathBuf::from("/tmp/nope.mp4"),
+        };
+        let job = FrozenWatermarkJob {
+            task_id: "job".into(),
+            payload,
+            reserved_final: PathBuf::from("/tmp/out.mp4"),
+            cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        };
+        let terminal = run_watermark_production_job(job, emit.clone());
+        assert!(matches!(terminal, WatermarkTerminal::Failed { .. }));
+        let events = events.lock().unwrap().clone();
+        // Probing and Processing always come first (non-fallback, args building
+        // fails before any FFmpeg child runs here).
+        assert!(events.iter().any(|e| matches!(
+            e,
+            WatermarkQueueEvent::Status {
+                status: WatermarkJobStatus::Probing,
+                ..
+            }
+        )));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            WatermarkQueueEvent::Status {
+                status: WatermarkJobStatus::Processing,
+                ..
+            }
+        )));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn watermark_production_queue_runs_two_real_video_jobs_serially() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌生产队列-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input_a = dir.join("a.mp4");
+        let input_b = dir.join("b.mp4");
+        create_mp4_fixture(&ffmpeg, &input_a, false);
+        create_mp4_fixture(&ffmpeg, &input_b, false);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+
+        let (sink, events, rx) = recording_sink();
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let runner = {
+            let active = active.clone();
+            let max_active = max_active.clone();
+            let order = order.clone();
+            move |job: FrozenWatermarkJob<WatermarkEncodePayload>,
+                  emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>| {
+                order.lock().unwrap().push(job.task_id.clone());
+                let now = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                max_active.fetch_max(now, std::sync::atomic::Ordering::SeqCst);
+                let terminal = run_watermark_production_job(job, emit);
+                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                terminal
+            }
+        };
+        let queue = start_watermark_video_queue::<WatermarkEncodePayload, _>(sink, runner);
+
+        let payload_a = WatermarkEncodePayload {
+            request: WatermarkMediaTaskRequest {
+                task_id: "a".into(),
+                input_path: input_a.to_string_lossy().into_owned(),
+                options: WatermarkOptions {
+                    kind: "text".into(),
+                    text: "水印A".into(),
+                    image_path: None,
+                    position: "bottom-right".into(),
+                    size_percent: 10,
+                    opacity: 0.5,
+                    pattern: None,
+                    density: None,
+                    angle: None,
+                    dark_mode: None,
+                    offset_x: None,
+                    offset_y: None,
+                    spacing_x: None,
+                    spacing_y: None,
+                    phase_offset: None,
+                    output_directory: dir.to_string_lossy().into_owned(),
+                },
+            },
+            backend: EncoderBackend::Cpu,
+            font_path: Some(font.clone()),
+            ffmpeg: ffmpeg.clone(),
+            ffprobe: ffprobe.clone(),
+            progress_window: Some((0.0, 1.0)),
+            input_path: input_a.clone(),
+        };
+        let payload_b = WatermarkEncodePayload {
+            request: WatermarkMediaTaskRequest {
+                task_id: "b".into(),
+                input_path: input_b.to_string_lossy().into_owned(),
+                options: WatermarkOptions {
+                    kind: "text".into(),
+                    text: "水印B".into(),
+                    image_path: None,
+                    position: "bottom-right".into(),
+                    size_percent: 10,
+                    opacity: 0.5,
+                    pattern: None,
+                    density: None,
+                    angle: None,
+                    dark_mode: None,
+                    offset_x: None,
+                    offset_y: None,
+                    spacing_x: None,
+                    spacing_y: None,
+                    phase_offset: None,
+                    output_directory: dir.to_string_lossy().into_owned(),
+                },
+            },
+            backend: EncoderBackend::Cpu,
+            font_path: Some(font.clone()),
+            ffmpeg: ffmpeg.clone(),
+            ffprobe: ffprobe.clone(),
+            progress_window: Some((0.0, 1.0)),
+            input_path: input_b.clone(),
+        };
+        queue
+            .enqueue_with_reservation("a".into(), payload_a, &dir, "a_watermarked.mp4")
+            .unwrap();
+        queue
+            .enqueue_with_reservation("b".into(), payload_b, &dir, "b_watermarked.mp4")
+            .unwrap();
+
+        drain_until_terminal(&rx, terminal_completed);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+
+        assert_eq!(
+            *order.lock().unwrap(),
+            vec!["a".to_string(), "b".to_string()]
+        );
+        assert_eq!(max_active.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // Verify lifecycle status order and monotonic progress for both jobs.
+        let events = events.lock().unwrap().clone();
+        for task_id in ["a", "b"] {
+            let mut last_progress = 0.0f64;
+            let mut phase = 0u8;
+            let mut terminal_count = 0;
+            for event in events.iter().filter(|e| {
+                let t = match e {
+                    WatermarkQueueEvent::Status { task_id, .. }
+                    | WatermarkQueueEvent::Progress { task_id, .. }
+                    | WatermarkQueueEvent::Terminal { task_id, .. } => task_id,
+                };
+                t == task_id
+            }) {
+                match event {
+                    WatermarkQueueEvent::Progress { progress, .. } => {
+                        assert!(*progress >= last_progress, "progress not monotonic");
+                        assert!((0.0..=1.0).contains(progress), "progress out of range");
+                        last_progress = *progress;
+                    }
+                    WatermarkQueueEvent::Status { status, .. } => match status {
+                        WatermarkJobStatus::Probing => {
+                            assert!(phase == 0, "probing out of order");
+                            phase = 1;
+                        }
+                        WatermarkJobStatus::Processing => {
+                            assert!(phase >= 1, "processing before probing");
+                            phase = 2;
+                        }
+                        WatermarkJobStatus::Finalizing => {
+                            assert!(phase >= 2, "finalizing before processing");
+                            phase = 3;
+                        }
+                        _ => {}
+                    },
+                    WatermarkQueueEvent::Terminal { .. } => terminal_count += 1,
+                }
+            }
+            assert!(phase >= 3, "missing lifecycle status for {task_id}");
+            assert_eq!(terminal_count, 1, "terminal once for {task_id}");
+        }
+        // Both outputs are valid H.264 MP4.
+        for name in ["a_watermarked.mp4", "b_watermarked.mp4"] {
+            let output = dir.join(name);
+            let probe = std::process::Command::new(&ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_name,pix_fmt",
+                    "-of",
+                    "json",
+                ])
+                .arg(&output)
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&probe.stdout);
+            assert!(text.contains("\"codec_name\": \"h264\""), "h264: {text}");
+            assert!(text.contains("\"pix_fmt\": \"yuv420p\""), "yuv420p: {text}");
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn watermark_production_queue_failed_first_job_does_not_block_second() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌生产队列失败-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bad_input = dir.join("broken.mp4");
+        fs::write(&bad_input, b"this is not a video").unwrap();
+        let good_input = dir.join("good.mp4");
+        create_mp4_fixture(&ffmpeg, &good_input, false);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+
+        let (sink, rx) = queue_sink();
+        let ran = Arc::new(Mutex::new(Vec::new()));
+        let runner = {
+            let ran = ran.clone();
+            move |job: FrozenWatermarkJob<WatermarkEncodePayload>,
+                  emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>| {
+                ran.lock().unwrap().push(job.task_id.clone());
+                run_watermark_production_job(job, emit)
+            }
+        };
+        let queue = start_watermark_video_queue::<WatermarkEncodePayload, _>(sink, runner);
+
+        let make_payload = |task_id: &str, input: &Path| WatermarkEncodePayload {
+            request: WatermarkMediaTaskRequest {
+                task_id: task_id.into(),
+                input_path: input.to_string_lossy().into_owned(),
+                options: WatermarkOptions {
+                    kind: "text".into(),
+                    text: "水印".into(),
+                    image_path: None,
+                    position: "bottom-right".into(),
+                    size_percent: 10,
+                    opacity: 0.5,
+                    pattern: None,
+                    density: None,
+                    angle: None,
+                    dark_mode: None,
+                    offset_x: None,
+                    offset_y: None,
+                    spacing_x: None,
+                    spacing_y: None,
+                    phase_offset: None,
+                    output_directory: dir.to_string_lossy().into_owned(),
+                },
+            },
+            backend: EncoderBackend::Cpu,
+            font_path: Some(font.clone()),
+            ffmpeg: ffmpeg.clone(),
+            ffprobe: ffprobe.clone(),
+            progress_window: Some((0.0, 1.0)),
+            input_path: input.to_path_buf(),
+        };
+        queue
+            .enqueue_with_reservation(
+                "bad".into(),
+                make_payload("bad", &bad_input),
+                &dir,
+                "bad_watermarked.mp4",
+            )
+            .unwrap();
+        queue
+            .enqueue_with_reservation(
+                "good".into(),
+                make_payload("good", &good_input),
+                &dir,
+                "good_watermarked.mp4",
+            )
+            .unwrap();
+
+        drain_until_terminal(&rx, terminal_failed);
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+
+        assert_eq!(
+            *ran.lock().unwrap(),
+            vec!["bad".to_string(), "good".to_string()]
+        );
+        let output = dir.join("good_watermarked.mp4");
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name,pix_fmt",
+                "-of",
+                "json",
+            ])
+            .arg(&output)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&probe.stdout);
+        assert!(text.contains("\"codec_name\": \"h264\""), "h264: {text}");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -14,7 +14,7 @@ import {
 import { AppActivityContext, IDLE_APP_ACTIVITY, type AppActivity } from './appActivity';
 import { loadAppPreferences, resolveStartupTool, saveAppPreferences, type AppPreferencesV1 } from './appPreferences';
 
-export type AppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark-trace';
+export type AppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark';
 export type AppNavigationTarget = WorkbenchModule | 'toolbox';
 
 

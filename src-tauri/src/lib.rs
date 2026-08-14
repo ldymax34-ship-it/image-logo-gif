@@ -2,6 +2,7 @@ mod diagnostics;
 mod media;
 
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use tauri::Manager;
 
 fn is_safe_file_name(file_name: &str) -> bool {
@@ -99,6 +100,17 @@ pub fn run() {
                 .build();
             let logger_initialized = app.handle().plugin(log_plugin).is_ok();
             app.manage(diagnostics::initialize(&app.handle(), logger_initialized));
+            let production_queue = media::start_watermark_production_queue(app.handle().clone());
+            let preview_queue = media::start_watermark_preview_queue(
+                app.handle().clone(),
+                production_queue.busy_handle(),
+            );
+            let preview_control = Arc::new(preview_queue.control());
+            production_queue.set_before_start_hook(Arc::new(move || {
+                preview_control.cancel_and_wait();
+            }));
+            app.manage(preview_queue);
+            app.manage(production_queue);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -116,6 +128,8 @@ pub fn run() {
             media::load_batch_job_json,
             media::preview_template_frame,
             media::preview_watermark_frame,
+            media::start_watermark_preview,
+            media::cancel_watermark_preview,
             diagnostics::diagnostics_info,
             diagnostics::diagnostics_recent_errors,
             diagnostics::diagnostics_open_log_dir,
@@ -126,6 +140,15 @@ pub fn run() {
         .expect("error while building tauri application");
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
+            if let Some(preview_queue) = app_handle.try_state::<media::WatermarkPreviewQueueCore>()
+            {
+                preview_queue.shutdown();
+            }
+            if let Some(queue) = app_handle
+                .try_state::<media::WatermarkVideoQueueCore<media::WatermarkEncodePayload>>()
+            {
+                queue.shutdown();
+            }
             diagnostics::mark_clean_shutdown(app_handle);
         }
     });

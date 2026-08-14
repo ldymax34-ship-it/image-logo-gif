@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { renderToStaticMarkup } from 'react-dom/server';
 import React, { useState, type Dispatch, type SetStateAction } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardBrandStateMap, BoardPreviewState, MaterialAsset, MaterialSpec, PresetTemplate } from '../core';
 import type { BoardBrandAction } from '../modules/media-workbench/boardBrandReducer';
 import type { FocusSession } from '../modules/media-workbench/focusSession';
 import type { PendingConfirmation, PresetApplyMode, MediaWorkbenchState } from '../modules/media-workbench/useMediaWorkbenchState';
+import { buildWatermarkRenderInput } from './watermarkExport';
 import {
   WatermarkWorkbench,
   buildWatermarkExportItems,
@@ -18,6 +18,21 @@ import {
 } from './WatermarkWorkbench';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+class TestResizeObserver {
+  observe = () => {};
+  unobserve = () => {};
+  disconnect = () => {};
+}
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  (globalThis as Record<string, unknown>).ResizeObserver = TestResizeObserver;
+}
+if (typeof (globalThis as Record<string, unknown>).PointerEvent === 'undefined') {
+  (globalThis as Record<string, unknown>).PointerEvent = (globalThis as Record<string, unknown>).MouseEvent;
+}
+if (typeof (globalThis as unknown as { Element?: unknown }).Element !== 'undefined' && typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
 
 const exportHarness = vi.hoisted(() => ({ exportBoardImage: vi.fn().mockResolvedValue(new Blob(['ok'], { type: 'image/png' })) }));
 const fileSystemHarness = vi.hoisted(() => ({
@@ -73,6 +88,15 @@ function StatefulHarness() {
   return <WatermarkWorkbench onReturn={() => undefined} sharedState={state} />;
 }
 
+function sliderThumb(label: string): Element | null {
+  return document.querySelector(`[role="slider"][aria-label="${label}"]`);
+}
+function pressSliderKey(label: string, key: 'ArrowRight' | 'ArrowLeft' | 'ArrowUp' | 'ArrowDown') {
+  const thumb = sliderThumb(label);
+  if (!thumb) throw new Error(`slider not found: ${label}`);
+  thumb.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+}
+
 function changeInput(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setterForValue = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
@@ -88,23 +112,9 @@ describe('WatermarkWorkbench', () => {
     fileSystemHarness.saveBlobToOutputTarget.mockClear();
   });
 
-  it('renders shared assets with the existing asset list contract', () => {
-    const markup = renderToStaticMarkup(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets })} />);
-    expect(markup).toContain('asset-list');
-    expect(markup).toContain('asset-row');
-    expect(markup).toContain('workspace wm-workspace');
-    expect(markup).toContain('tool-page-icon');
-    expect(markup).toContain('preview-panel');
-    expect(markup).toContain('spec-panel');
-    expect(markup).toContain('导入图片');
-    expect(markup).toContain('删除素材 photo.png');
-    expect(markup).toContain('photo.png');
-    expect(markup).toContain('banner.jpg');
-  });
-
   it('uses the configured scale in the render config', () => {
-    const config: WatermarkBusinessConfig = { text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, spacingX: 220, spacingY: 160, repeat: false };
-    const result = createWorkbenchWatermarkConfig({ width: 1000, height: 500 }, config, { offsetX: 11, scale: 2 });
+    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, spacingX: 220, spacingY: 160, pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
+    const result = createWorkbenchWatermarkConfig({ width: 1000, height: 500 }, config, { offsetX: 11, scale: 2 })!;
     if (result.kind !== 'text') throw new Error('expected text watermark config');
     expect(result.fontSize).toBe(50);
     expect(result.offsetX).toBe(11);
@@ -112,12 +122,12 @@ describe('WatermarkWorkbench', () => {
   });
 
   it('keeps watermark font size proportional for smaller output presets', () => {
-    const config: WatermarkBusinessConfig = { text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, spacingX: 220, spacingY: 160, repeat: false };
-    const original = createWorkbenchWatermarkConfig({ width: 1200, height: 800 }, config);
-    const small = createWorkbenchWatermarkConfig({ width: 300, height: 200 }, config);
+    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 10, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, spacingX: 220, spacingY: 160, pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
+    const original = createWorkbenchWatermarkConfig({ width: 1200, height: 800 }, config)!;
+    const small = createWorkbenchWatermarkConfig({ width: 300, height: 200 }, config)!;
     if (original.kind !== 'text' || small.kind !== 'text') throw new Error('expected text watermark config');
-    expect(original.fontSize).toBe(40);
-    expect(small.fontSize).toBe(10);
+    expect(original.fontSize).toBe(80);
+    expect(small.fontSize).toBe(20);
   });
 
   it('uses the same source-name and dimension naming rule as the media workbench', () => {
@@ -147,56 +157,28 @@ describe('WatermarkWorkbench', () => {
     ]);
   });
 
-  it('falls back to the first shared asset when no selection is stored', () => {
-    const markup = renderToStaticMarkup(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets })} />);
-    expect(markup).toContain('asset-row active');
-  });
-
   it('keeps overrides isolated by shared asset selection', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
     await act(async () => { root.render(<StatefulHarness />); });
-    const horizontal = container.querySelector<HTMLInputElement>('[aria-label="水平位置偏移"]');
-    const vertical = container.querySelector<HTMLInputElement>('[aria-label="垂直位置偏移"]');
-    const scale = container.querySelector<HTMLInputElement>('[aria-label="水印缩放"]');
-    expect(horizontal).not.toBeNull();
-    expect(vertical).not.toBeNull();
-    expect(scale).not.toBeNull();
-    await act(async () => { changeInput(horizontal!, '37'); changeInput(vertical!, '-12'); changeInput(scale!, '80'); });
-    expect(horizontal!.value).toBe('37');
-    expect(vertical!.value).toBe('-12');
-    expect(scale!.value).toBe('80');
+    await act(async () => { container.querySelector<HTMLButtonElement>('.wm-collapsible-trigger')?.click(); });
+    const thumb = (label: string) => container.querySelector<HTMLElement>(`[role="slider"][aria-label="${label}"]`);
+    const valueOf = (label: string) => thumb(label)?.getAttribute('aria-valuenow');
+    expect(thumb('X')).not.toBeNull();
+    expect(thumb('Y')).not.toBeNull();
+    expect(thumb('缩放')).not.toBeNull();
+    // Advance X by one step on asset A (photo.png, selected by default).
+    await act(async () => { pressSliderKey('X', 'ArrowRight'); });
+    expect(valueOf('X')).toBe('1');
+    // Switch to asset B and confirm the override does not leak.
     const secondAsset = container.querySelector<HTMLButtonElement>('img[alt="banner.jpg"]')?.closest('button');
     await act(async () => { secondAsset?.click(); });
-    expect(horizontal!.value).toBe('0');
-    expect(vertical!.value).toBe('0');
-    expect(scale!.value).toBe('100');
+    expect(valueOf('X')).toBe('0');
+    // Switch back to asset A and confirm the override is preserved.
     const firstAsset = container.querySelector<HTMLButtonElement>('img[alt="photo.png"]')?.closest('button');
     await act(async () => { firstAsset?.click(); });
-    expect(horizontal!.value).toBe('37');
-    expect(vertical!.value).toBe('-12');
-    expect(scale!.value).toBe('80');
-    await act(async () => { root.unmount(); });
-    container.remove();
-  });
-
-  it('applies the current per-image adjustment proportionally to other images', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    await act(async () => { root.render(<StatefulHarness />); });
-    const horizontal = container.querySelector<HTMLInputElement>('[aria-label="水平位置偏移"]')!;
-    const vertical = container.querySelector<HTMLInputElement>('[aria-label="垂直位置偏移"]')!;
-    const scale = container.querySelector<HTMLInputElement>('[aria-label="水印缩放"]')!;
-    await act(async () => { changeInput(horizontal, '20'); changeInput(vertical, '10'); changeInput(scale, '80'); });
-    const applyButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === '其他图片');
-    await act(async () => { applyButton?.click(); });
-    const secondAsset = container.querySelector<HTMLButtonElement>('img[alt="banner.jpg"]')?.closest('button');
-    await act(async () => { secondAsset?.click(); });
-    expect(horizontal.value).toBe('40');
-    expect(vertical.value).toBe('16');
-    expect(scale.value).toBe('80');
+    expect(valueOf('X')).toBe('1');
     await act(async () => { root.unmount(); });
     container.remove();
   });
@@ -216,19 +198,6 @@ describe('WatermarkWorkbench', () => {
     container.remove();
   });
 
-  it('uses one shared preview-panel export entry and shared task status', () => {
-    const markup = renderToStaticMarkup(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets, message: '正在处理' })} />);
-    expect((markup.match(/aria-label="导出水印图片"/g) ?? [])).toHaveLength(1);
-    expect(markup).not.toContain('选择文件夹');
-    expect(markup).toContain('status-line');
-    expect(markup).toContain('正在处理');
-    expect(markup).toContain('原尺寸');
-    expect(markup).toContain('大尺寸（75%）');
-    expect(markup).toContain('中尺寸（50%）');
-    expect(markup).toContain('小尺寸（25%）');
-    expect(markup).toContain('其他图片');
-  });
-
   it('exports every shared image sequentially through the common naming and save pipeline', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -238,6 +207,11 @@ describe('WatermarkWorkbench', () => {
     await act(async () => { exportButton?.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(fileSystemHarness.chooseOutputTarget).toHaveBeenCalledTimes(1);
     expect(exportHarness.exportBoardImage).toHaveBeenCalledTimes(2);
+    const exportedInput = exportHarness.exportBoardImage.mock.calls[0][0] as { watermarkConfig?: unknown; asset: MaterialAsset; spec: MaterialSpec };
+    expect(exportedInput.watermarkConfig).toBeDefined();
+    const defaultConfig: WatermarkBusinessConfig = { contentKind: 'text', text: '\u00a9KURO GAMES ALL RIGHTS RESERVED', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, spacingX: 220, spacingY: 160, pattern: 'tiled', phaseOffset: 0.5, anchor: 'center' };
+    const previewInput = buildWatermarkRenderInput({ asset: exportedInput.asset, spec: exportedInput.spec }, defaultConfig, undefined, undefined, {});
+    expect(exportedInput.watermarkConfig).toEqual(previewInput.watermarkConfig);
     expect(fileSystemHarness.saveBlobToOutputTarget.mock.calls.map((call) => call[1])).toEqual([
       'photo_100x50.png',
       'banner_200x80.jpg',

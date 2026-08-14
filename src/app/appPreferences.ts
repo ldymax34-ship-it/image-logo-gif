@@ -1,4 +1,4 @@
-export type StartupTool = 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark-trace' | 'gif-compress' | 'batch-template-gif' | 'last';
+export type StartupTool = 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark' | 'gif-compress' | 'batch-template-gif' | 'last';
 export type LastTool = Exclude<StartupTool, 'last'>;
 
 export type AppPreferencesV1 = {
@@ -7,7 +7,7 @@ export type AppPreferencesV1 = {
   lastTool: LastTool;
 };
 
-export type AvailableAppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark-trace';
+export type AvailableAppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark';
 
 export const APP_PREFERENCES_STORAGE_KEY = 'brand-material-workbench.app-preferences.v1';
 export const DEFAULT_APP_PREFERENCES: AppPreferencesV1 = {
@@ -16,15 +16,24 @@ export const DEFAULT_APP_PREFERENCES: AppPreferencesV1 = {
   lastTool: 'toolbox'
 };
 
-const STARTUP_TOOLS: StartupTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark-trace', 'gif-compress', 'batch-template-gif', 'last'];
-const LAST_TOOLS: LastTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark-trace', 'gif-compress', 'batch-template-gif'];
+const STARTUP_TOOLS: StartupTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark', 'gif-compress', 'batch-template-gif', 'last'];
+const LAST_TOOLS: LastTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark', 'gif-compress', 'batch-template-gif'];
+
+// Legacy route name retained for reading old saved preferences only.
+const LEGACY_TOOL_MIGRATIONS: Record<string, StartupTool> = {
+  'watermark-trace': 'watermark',
+};
+
+function migrateTool(value: string): string {
+  return LEGACY_TOOL_MIGRATIONS[value] ?? value;
+}
 
 function isStartupTool(value: unknown): value is StartupTool {
-  return typeof value === 'string' && STARTUP_TOOLS.includes(value as StartupTool);
+  return typeof value === 'string' && STARTUP_TOOLS.includes(migrateTool(value) as StartupTool);
 }
 
 function isLastTool(value: unknown): value is LastTool {
-  return typeof value === 'string' && LAST_TOOLS.includes(value as LastTool);
+  return typeof value === 'string' && LAST_TOOLS.includes(migrateTool(value) as LastTool);
 }
 
 export function parseAppPreferences(raw: string | null): AppPreferencesV1 {
@@ -34,7 +43,11 @@ export function parseAppPreferences(raw: string | null): AppPreferencesV1 {
     if (!candidate || candidate.version !== 1 || !isStartupTool(candidate.startupTool) || !isLastTool(candidate.lastTool)) {
       return DEFAULT_APP_PREFERENCES;
     }
-    return { version: 1, startupTool: candidate.startupTool, lastTool: candidate.lastTool };
+    return {
+      version: 1,
+      startupTool: migrateTool(candidate.startupTool as string) as StartupTool,
+      lastTool: migrateTool(candidate.lastTool as string) as LastTool,
+    };
   } catch {
     return DEFAULT_APP_PREFERENCES;
   }
@@ -53,7 +66,7 @@ export function saveAppPreferences(preferences: AppPreferencesV1): void {
 
 export function resolveStartupTool(preferences: AppPreferencesV1): AvailableAppTool {
   const selected = preferences.startupTool === 'last' ? preferences.lastTool : preferences.startupTool;
-  return selected === 'logo-layout' ? 'logo-layout' : 'toolbox';
+  return selected === 'logo-layout' || selected === 'watermark' ? selected : 'toolbox';
 }
 
 export function shouldLaunchGifMediaOnStartup(preferences: AppPreferencesV1): boolean {

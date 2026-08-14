@@ -12,7 +12,8 @@ import {
 
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
-  onOpenWatermarkTrace: () => void;
+  onOpenWatermark: () => void;
+  onOpenVideoWatermark?: () => void;
   onOpenSettings: () => void;
 };
 
@@ -24,9 +25,11 @@ type ToolEntry = {
   icon: LucideIcon;
   action?: () => void;
   enabled: boolean;
+  hidden?: boolean;
 };
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenWatermarkTrace, onOpenSettings }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenWatermark, onOpenVideoWatermark, onOpenSettings }: ToolboxHomeProps) {
+
   const tools: ToolEntry[] = [
     {
       id: 'logo-layout',
@@ -38,12 +41,12 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenWatermarkTrace, onOpenSett
       enabled: true
     },
     {
-      id: 'watermark-trace',
-      label: '水印与追溯',
-      description: '复用图片素材与画布预览，调整文字水印参数后导出静态图片。',
+      id: 'watermark',
+      label: '水印工具',
+      description: '在同一工作台中处理图片与视频，统一配置文字或 Logo 水印。',
       eyebrow: '内容保护',
       icon: ShieldCheck,
-      action: onOpenWatermarkTrace,
+      action: onOpenWatermark,
       enabled: true
     },
     {
@@ -52,15 +55,17 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenWatermarkTrace, onOpenSett
       description: '用于更隐蔽的内容追踪与像素级来源识别。',
       eyebrow: '隐形追溯',
       icon: Fingerprint,
-      enabled: false
+      enabled: false,
+      hidden: true
     },
     {
       id: 'video-watermark',
-      label: '视频水印（实验）',
-      description: '面向视频与动态媒体的水印处理能力。',
+      label: '视频水印',
+      description: '直接进入水印工具的视频模式，生成预览并按序输出 MP4。',
       eyebrow: '视频保护',
       icon: Video,
-      enabled: false
+      action: onOpenVideoWatermark,
+      enabled: Boolean(onOpenVideoWatermark)
     }
   ];
 
@@ -92,7 +97,7 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenWatermarkTrace, onOpenSett
       </section>
 
       <nav className="toolbox-launcher" aria-label="工具入口">
-        {tools.map((tool) => {
+        {tools.filter((tool) => !tool.hidden).map((tool) => {
           const ToolIcon = tool.icon;
           return (
             <button
@@ -117,6 +122,7 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenWatermarkTrace, onOpenSett
           );
         })}
       </nav>
+
 
       <footer className="toolbox-home-footer">
         <span>4 个生产工具</span>

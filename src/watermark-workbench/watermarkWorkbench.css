@@ -39,3 +39,70 @@
 .wm-snap-btns { display:flex; gap:var(--space-1); margin-top:2px; }
 .wm-snap-btns button { font-size:10px; color:var(--color-primary); background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); cursor:pointer; padding:2px var(--space-2); }
 .wm-snap-btns button:hover { background:var(--color-panel-raised); }
+
+.wm-view-original { align-self: center; margin-top: var(--space-2); }
+
+.wm-mode-tabs-wrap { display:flex; justify-content:center; padding:var(--space-2) var(--space-4) 0; }
+.wm-mode-tabs { display:flex; gap:2px; padding:2px; background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); }
+.wm-mode-tab { min-width:88px; height:var(--control-height-compact); border:0; border-radius:3px; background:transparent; color:var(--color-text-muted); font-size:var(--font-size-caption); cursor:pointer; }
+.wm-mode-tab[data-state="active"] { background:var(--color-primary); color:#fff; }
+.wm-mode-tab:focus-visible, .wm-collapsible-trigger:focus-visible, .wm-view-original:focus-visible { outline:2px solid var(--color-primary); outline-offset:2px; }
+
+.wm-anchor-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 96px; margin-bottom: var(--space-2); }
+.wm-anchor-grid button { aspect-ratio: 1; background: var(--color-field); border: 1px solid var(--color-border); border-radius: var(--radius-sm); cursor: pointer; padding: 0; }
+.wm-anchor-grid button.active { background: var(--color-primary); border-color: var(--color-primary); }
+
+.wm-select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-height: var(--control-height-compact); padding: 0 8px; background: var(--color-field); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); font-size: var(--font-size-caption); cursor: pointer; }
+.wm-select-content { z-index: 50; min-width: 160px; background: var(--color-panel); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 4px; box-shadow: 0 6px 16px rgba(0,0,0,.25); }
+.wm-select-content [data-radix-select-item] { padding: 6px 8px; border-radius: 4px; cursor: pointer; outline: none; }
+.wm-select-content [data-highlighted] { background: var(--color-primary); color: #fff; }
+
+.wm-tabs-list { display: flex; gap: 0; }
+.wm-tabs-trigger { flex: 1; height: var(--control-height-compact); background: var(--color-field); border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--font-size-caption); cursor: pointer; }
+.wm-tabs-trigger[data-state="active"] { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+
+.wm-slider-field .wm-prop { display: grid; gap: 4px; }
+.wm-slider-root { position: relative; display: flex; align-items: center; height: 20px; width: 100%; touch-action: none; user-select: none; }
+.wm-slider-track { position: relative; flex: 1; height: 4px; background: var(--color-field); border-radius: 9999px; }
+.wm-slider-range { position: absolute; height: 100%; background: var(--color-primary); border-radius: 9999px; }
+.wm-slider-thumb { display: block; width: 16px; height: 16px; background: #fff; border: 1px solid var(--color-primary); border-radius: 50%; }
+.wm-slider-thumb:focus { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.wm-collapsible-trigger { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 8px; background: var(--color-field); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); font-size: var(--font-size-caption); cursor: pointer; }
+.wm-collapsible-content { margin-top: var(--space-2); display: grid; gap: var(--space-2); }
+.wm-tooltip-content { z-index: 60; background: var(--color-text); color: var(--color-canvas-deep); padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+.wm-select-content, .wm-tooltip-content { transition: opacity 180ms ease, transform 180ms ease; }
+.wm-select-content[data-state="open"], .wm-tooltip-content[data-state="open"] { animation: wm-content-in 180ms ease both; }
+.wm-collapsible-content[data-state="open"] { animation: wm-collapsible-open 220ms ease both; }
+.wm-collapsible-content[data-state="closed"] { animation: wm-collapsible-close 120ms ease both; }
+.wm-video-file-icon { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; color:var(--color-primary); background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); flex:none; }
+.wm-video-anchor-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; width:96px; }
+.wm-video-anchor-grid button { aspect-ratio:1; padding:0; background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); cursor:pointer; }
+.wm-video-anchor-grid button.active { background:var(--color-primary); border-color:var(--color-primary); }
+.wm-video-output-picker { display:flex; flex-direction:column; gap:4px; padding-top:var(--space-2); }
+.wm-video-output-picker span { color:var(--color-text-muted); font-size:var(--font-size-caption); }
+.wm-video-output-picker button { min-height:var(--control-height-compact); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); color:var(--color-text); padding:0 8px; cursor:pointer; }
+.wm-video-preview-frame { position:relative; min-height:260px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--color-canvas-deep); border:1px solid var(--color-border); border-radius:var(--radius-md); }
+.wm-video-preview-frame img { display:block; max-width:100%; max-height:100%; object-fit:contain; }
+.wm-video-preview-placeholder { display:flex; flex-direction:column; align-items:center; gap:var(--space-2); color:var(--color-text-faint); }
+.wm-video-preview-badge { position:absolute; top:var(--space-2); right:var(--space-2); display:inline-flex; align-items:center; gap:4px; padding:4px 7px; border:1px solid var(--color-border); border-radius:var(--radius-sm); background:var(--color-panel); color:var(--color-text-muted); font-size:var(--font-size-caption); }
+.wm-video-task-list { display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; }
+.wm-video-task-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; padding:7px; background:var(--color-field); border:1px solid var(--color-border); border-radius:var(--radius-sm); }
+.wm-video-task-row > div:first-child { display:flex; min-width:0; flex-direction:column; gap:3px; }
+.wm-video-task-row strong, .wm-output-path { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wm-video-task-row small { color:var(--color-text-muted); font-size:10px; }
+.wm-video-task-actions { display:flex; align-items:center; flex:none; }
+.wm-video-task-actions button { width:26px; height:26px; display:grid; place-items:center; background:transparent; border:1px solid var(--color-border); border-radius:var(--radius-sm); color:var(--color-text-muted); cursor:pointer; }
+.wm-video-status { display:inline-flex; align-self:flex-start; width:max-content; padding:1px 5px; border-radius:3px; font-size:10px; color:var(--color-text-muted); background:var(--color-panel-raised); }
+.wm-video-status-completed { color:var(--color-success); }
+.wm-video-status-failed { color:var(--color-danger); }
+.wm-video-status-fallback { color:var(--color-warning); }
+.wm-error-dot { color:var(--color-danger); font-weight:700; }
+.wm-spin { animation:wm-spin 800ms linear infinite; }
+@keyframes wm-content-in { from { opacity:0; transform:scale(.98); } to { opacity:1; transform:scale(1); } }
+@keyframes wm-collapsible-open { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+@keyframes wm-collapsible-close { from { opacity:1; } to { opacity:0; } }
+@keyframes wm-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .wm-select-content, .wm-tooltip-content, .wm-collapsible-content, .wm-video-preview-badge, .wm-video-status, .wm-spin { transition: none !important; animation: none !important; }
+}

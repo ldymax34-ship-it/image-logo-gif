@@ -1,5 +1,14 @@
 # 更新日志
 
+## Unreleased
+
+- 阶段一完成图片水印收口：统一产品名「水印工具」、旧 `watermark-trace` 偏好迁移、文字/Logo 共用配置与 Render Plan、single/规则平铺/错位平铺、原图按住查看、输出格式与非覆盖命名保持一致。
+- 阶段二完成同一「水印工具」的图片/视频模式：支持 MP4/MOV 选择、metadata 展示、文字/Logo 的 single/规则平铺、静帧预览、正式 FIFO 任务状态与真实进度。
+- 视频后端继续复用随包 FFmpeg/FFprobe 与 CPU drawtext/overlay 滤镜；Windows 默认优先尝试 `h264_nvenc`，macOS 优先尝试 `h264_videotoolbox`，失败时兼容模式回退到 `libx264`。当前未验证 Windows 性能收益。
+- 本阶段仅新增 5 个 Radix 直接依赖（Collapsible、Select、Slider、Tabs、Tooltip），锁文件包条目约由 283 增至 328（约 +45 个传递条目）；视频 UI 未新增更多依赖。
+- 本次提交快照构建实测：复用现有 `node_modules` 约 227 MB，`dist` 约 1.5 MB，最大 JavaScript chunk gzip 162.21 KB（`dist/assets` gzip 合计 323,225 bytes）。本轮未打包桌面安装包。
+- 未开放剪辑/时间轴/QSV/AMF/硬件解码/拖入/持久队列或阶段三暗水印。
+
 ## 2026-07-28｜0.9.0 品宣工具箱第一个可用生产版本
 
 - 功能冻结：Logo 与版式保留图片导入、素材列表、Logo/CPR 配置、Render Plan、Canvas 预览和图片导出完整链路。

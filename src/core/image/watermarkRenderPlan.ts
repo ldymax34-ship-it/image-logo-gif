@@ -2,7 +2,7 @@ import type { MaterialAsset } from './imageMeta';
 
 /* ── Watermark config: parameterized production rule, not an editor ── */
 
-export type WatermarkPattern = 'single' | 'tiled';
+export type WatermarkPattern = 'single' | 'tiled' | 'staggered';
 
 export type WatermarkTextContent = {
   kind: 'text';
@@ -28,6 +28,7 @@ export type WatermarkConfig = (WatermarkTextContent | WatermarkImageContent) & {
   offsetY: number;
   spacingX: number;
   spacingY: number;
+  phaseOffset?: number;
 };
 
 /* ── Expanded instance (deterministic, no persisted state) ── */
@@ -93,8 +94,9 @@ export function buildWatermarkRenderLayers(
 
   const rawSpacingX = clampSpacing(config.spacingX);
   const rawSpacingY = clampSpacing(config.spacingY);
-  const cx0 = cw / 2 + (config.pattern === 'tiled' ? normalizeOffset(config.offsetX, rawSpacingX) : finiteOr(config.offsetX, 0));
-  const cy0 = ch / 2 + (config.pattern === 'tiled' ? normalizeOffset(config.offsetY, rawSpacingY) : finiteOr(config.offsetY, 0));
+  const isTiled = config.pattern === 'tiled' || config.pattern === 'staggered';
+  const cx0 = cw / 2 + (isTiled ? normalizeOffset(config.offsetX, rawSpacingX) : finiteOr(config.offsetX, 0));
+  const cy0 = ch / 2 + (isTiled ? normalizeOffset(config.offsetY, rawSpacingY) : finiteOr(config.offsetY, 0));
   const rotation = finiteOr(config.rotation, 0);
   const opacity = clampOpacity(config.opacity);
 
@@ -187,11 +189,14 @@ export function buildWatermarkRenderLayers(
   // Center the grid so coverage is symmetric around (cx0, cy0).
   const startX = cx0 - ((cols - 1) * spacingX) / 2;
   const startY = cy0 - ((rows - 1) * spacingY) / 2;
+  // Staggered: odd rows are shifted by a fraction of horizontal spacing.
+  const phase = config.pattern === 'staggered' ? finiteOr(config.phaseOffset ?? 0.5, 0.5) * spacingX : 0;
 
   const instances: WatermarkLayerInstance[] = [];
   for (let r = 0; r < rows; r++) {
+    const rowShift = config.pattern === 'staggered' && r % 2 === 1 ? phase : 0;
     for (let c = 0; c < cols; c++) {
-      const sub = makeInstance(`wm:${r}:${c}`, startX + c * spacingX, startY + r * spacingY);
+      const sub = makeInstance(`wm:${r}:${c}`, startX + c * spacingX + rowShift, startY + r * spacingY);
       const remaining = MAX_INSTANCES - instances.length;
       if (remaining <= 0) return instances;
       if (Array.isArray(sub)) instances.push(...sub.slice(0, remaining));
