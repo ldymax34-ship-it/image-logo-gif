@@ -1,28 +1,40 @@
 :root {
   color-scheme: dark;
-  --color-app: #17181a;
-  --color-panel: #202226;
-  --color-panel-muted: #26292e;
-  --color-panel-raised: #2d3036;
-  --color-field: #292c31;
-  --color-field-hover: #30343a;
-  --color-canvas: #121416;
-  --color-canvas-deep: #0c0e10;
-  --color-border: #34373d;
-  --color-border-strong: #4a4f58;
-  --color-text: #eef0f3;
-  --color-text-muted: #aeb3bc;
-  --color-text-faint: #818791;
-  --color-primary: #3d83d5;
-  --color-primary-hover: #4d91e0;
-  --color-primary-active: #2e6fbf;
-  --color-primary-soft: #203750;
-  --color-focus-ring: #69a7ea;
-  --color-danger: #ee7777;
-  --color-danger-soft: #432727;
-  --color-danger-border: #8b4e4e;
-  --color-warning: #e1b66c;
-  --color-warning-soft: #3c3323;
-  --color-warning-border: #765f35;
-  --color-overlay: rgb(0 0 0 / 66%);
+  /* ── 深色 dashboard 近黑中性层：低对比、细边框、近白正文 ── */
+  --color-canvas-deep: #111113;
+  --color-canvas: #151517;           /* 工作区 */
+  --color-app: #1a1a1d;              /* 窗口背景 */
+  --color-panel: #202024;            /* 主面板 */
+  --color-panel-muted: #25252a;      /* 次级区域 */
+  --color-panel-raised: #2b2b31;     /* 次级区域 / hover 抬升 */
+  --color-field: #1d1d21;            /* 输入控件 */
+  --color-field-hover: #27272d;
+  --color-border: #34343b;           /* 边界 */
+  --color-border-strong: #474750;    /* hover/selected 边界 */
+  --color-text: #f4f4f5;             /* 主文字 */
+  --color-text-muted: #b0b0b8;
+  --color-text-faint: #777780;
+  /* ── 主交互：克制紫罗兰，仅用于选中 / 焦点 / 主操作 ── */
+  --color-primary: #e6e1d8;
+  --color-primary-hover: #f0ece4;
+  --color-primary-active: #cfc9be;
+  --color-primary-soft: rgb(230 225 216 / 12%);
+  --color-primary-contrast: #151513;
+  --color-accent: #d9d4ca;
+  --color-accent-strong: #e6e1d8;
+  --color-accent-border: #5c5852;
+  --color-accent-soft: rgb(230 225 216 / 8%);
+  --color-focus-ring: #a39d93;
+  --color-focus-ring-soft: rgb(217 212 202 / 16%);
+  /* ── 语义色：mint 成功 / pink 失败 / amber 警告（低饱和，只用于边缘、图标、弱光晕） ── */
+  --color-success: #49d7a8;
+  --color-success-soft: rgb(73 215 168 / 12%);
+  --color-success-border: #2f7d67;
+  --color-danger: #ff708f;
+  --color-danger-soft: rgb(255 112 143 / 12%);
+  --color-danger-border: #8f4a5c;
+  --color-warning: #f2b966;
+  --color-warning-soft: rgb(242 185 102 / 12%);
+  --color-warning-border: #8a6a3a;
+  --color-overlay: rgb(0 0 0 / 60%);
 }

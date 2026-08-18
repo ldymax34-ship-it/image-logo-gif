@@ -13,9 +13,10 @@ import {
 } from '../core';
 import { AppActivityContext, IDLE_APP_ACTIVITY, type AppActivity } from './appActivity';
 import { loadAppPreferences, resolveStartupTool, saveAppPreferences, type AppPreferencesV1 } from './appPreferences';
+import { loadRecentTools, pushRecentTool, saveRecentTools, type RecentToolEntry } from './appHistory';
 
-export type AppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark';
-export type AppNavigationTarget = WorkbenchModule | 'toolbox';
+export type AppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark' | 'video-watermark';
+export type AppNavigationTarget = WorkbenchModule | AppTool;
 
 
 export type MediaHeaderState = {
@@ -34,7 +35,8 @@ type AppRuntime = {
   activeModule: WorkbenchModule;
   setActiveModule: Dispatch<SetStateAction<WorkbenchModule>>;
   requestModuleChange: (module: WorkbenchModule) => void;
-  registerMediaModuleChangeGuard: (guard: (target: AppNavigationTarget) => boolean) => () => void;
+  navigateToTool: (tool: AppTool) => void;
+  registerNavigationGuard: (guard: (target: AppNavigationTarget) => boolean) => () => void;
   brandAssets: BrandAsset[];
   setBrandAssets: Dispatch<SetStateAction<BrandAsset[]>>;
   brandLayer: BrandLayerState;
@@ -56,7 +58,12 @@ type AppRuntime = {
   registerGlobalBrandResourceHandlers: (handlers: GlobalBrandResourceHandlers) => () => void;
   mediaHeader: MediaHeaderState;
   setMediaHeader: Dispatch<SetStateAction<MediaHeaderState>>;
+  recentTools: RecentToolEntry[];
 };
+
+export function useOptionalAppRuntime(): AppRuntime | undefined {
+  return useContext(AppRuntimeContext);
+}
 
 export type GlobalBrandResourceHandlers = {
   onCompanyLogoReplacement?: (assetId: string) => void;
@@ -93,8 +100,9 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const [settingsSelectedCompanyLogoId, setSettingsSelectedCompanyLogoId] = useState<string>();
   const [activity, setActivity] = useState<AppActivity>(IDLE_APP_ACTIVITY);
   const [mediaHeader, setMediaHeader] = useState<MediaHeaderState>(INITIAL_MEDIA_HEADER);
+  const [recentTools, setRecentTools] = useState<RecentToolEntry[]>(() => loadRecentTools());
   const globalBrandResourceHandlersRef = useRef<GlobalBrandResourceHandlers>({});
-  const mediaModuleChangeGuardRef = useRef<((target: AppNavigationTarget) => boolean) | undefined>();
+  const navigationGuardsRef = useRef<Set<(target: AppNavigationTarget) => boolean>>(new Set());
 
   useEffect(() => {
     saveBrandSettings(brandSettings);
@@ -105,22 +113,42 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAppPreferences((previous) => previous.lastTool === activeTool ? previous : { ...previous, lastTool: activeTool });
   }, [activeTool]);
+  useEffect(() => {
+    saveRecentTools(recentTools);
+  }, [recentTools]);
+
+  const canNavigateTo = useCallback((target: AppNavigationTarget) => {
+    for (const guard of navigationGuardsRef.current) {
+      if (!guard(target)) return false;
+    }
+    return true;
+  }, []);
 
   const requestModuleChange = useCallback((module: WorkbenchModule) => {
     if (module === activeModule) return;
-    if (mediaModuleChangeGuardRef.current && !mediaModuleChangeGuardRef.current(module)) return;
+    if (!canNavigateTo(module)) return;
     setActiveModule(module);
-  }, [activeModule]);
+  }, [activeModule, canNavigateTo]);
   const requestToolbox = useCallback(() => {
-    if (mediaModuleChangeGuardRef.current && !mediaModuleChangeGuardRef.current('toolbox')) return;
+    if (!canNavigateTo('toolbox')) return;
     setActiveTool('toolbox');
-  }, []);
+  }, [canNavigateTo]);
+  const navigateToTool = useCallback((tool: AppTool) => {
+    if (tool === activeTool) return;
+    if (!canNavigateTo(tool)) return;
+    setActiveTool(tool);
+    if (tool !== 'toolbox') {
+      setRecentTools((previous) => pushRecentTool(previous, tool));
+    }
+  }, [activeTool, canNavigateTo]);
   const setActiveAppTool = useCallback((tool: AppTool) => {
     setActiveTool(tool);
   }, []);
-  const registerMediaModuleChangeGuard = useCallback((guard: (target: AppNavigationTarget) => boolean) => {
-    mediaModuleChangeGuardRef.current = guard;
-    return () => { if (mediaModuleChangeGuardRef.current === guard) mediaModuleChangeGuardRef.current = undefined; };
+  const registerNavigationGuard = useCallback((guard: (target: AppNavigationTarget) => boolean) => {
+    navigationGuardsRef.current.add(guard);
+    return () => {
+      navigationGuardsRef.current.delete(guard);
+    };
   }, []);
   const updateActivity = useCallback((patch: Partial<AppActivity>) => {
     setActivity((previous) => ({ ...previous, ...patch }));
@@ -153,7 +181,8 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     activeModule,
     setActiveModule,
     requestModuleChange,
-    registerMediaModuleChangeGuard,
+    navigateToTool,
+    registerNavigationGuard,
     brandAssets,
     setBrandAssets,
     brandLayer,
@@ -174,8 +203,9 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     notifyBrandResourceMessage,
     registerGlobalBrandResourceHandlers,
     mediaHeader,
-    setMediaHeader
-  }), [activeTool, setActiveAppTool, requestToolbox, appPreferences, activeModule, requestModuleChange, registerMediaModuleChangeGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, applicationSettingsOpen, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader]);
+    setMediaHeader,
+    recentTools
+  }), [activeTool, setActiveAppTool, requestToolbox, navigateToTool, appPreferences, activeModule, requestModuleChange, registerNavigationGuard, brandAssets, brandLayer, brandSettings, settingsDialogOpen, settingsDirty, applicationSettingsOpen, settingsSelectedCompanyLogoId, resolvedActivity, updateActivity, notifyCompanyLogoReplacement, notifyBrandResourceMessage, registerGlobalBrandResourceHandlers, mediaHeader, recentTools]);
 
   return <AppRuntimeContext.Provider value={value}><AppActivityContext.Provider value={resolvedActivity}>{children}</AppActivityContext.Provider></AppRuntimeContext.Provider>;
 }

@@ -9,7 +9,7 @@ export function useMediaAssetActions(input: {
   setAssets: Dispatch<SetStateAction<MaterialAsset[]>>; setSelectedAssetId: Dispatch<SetStateAction<string | undefined>>;
   setSelectedSpecId: Dispatch<SetStateAction<string | undefined>>; setPreviewStates: Dispatch<SetStateAction<Record<string, BoardPreviewState>>>;
   setFocusAssetId: Dispatch<SetStateAction<string | undefined>>; setFocusSpecId: Dispatch<SetStateAction<string | undefined>>;
-  setImportFailures: Dispatch<SetStateAction<string[]>>; setMessage: Dispatch<SetStateAction<string>>;
+  setImportFailures: Dispatch<SetStateAction<string[]>>; setMessage: (message: string) => void;
   setPendingConfirmation: Dispatch<SetStateAction<PendingConfirmation | undefined>>; dispatchBoardBrand: Dispatch<BoardBrandAction>;
 }) {
   async function handleImageFiles(fileList: FileList | null) {

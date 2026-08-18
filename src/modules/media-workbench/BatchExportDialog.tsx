@@ -113,8 +113,6 @@ export function BatchExportDialog({
   const controller = useBatchExportController();
   const { exporting, progress, errorMessage, result: batchResult } = controller;
 
-  useEffect(() => { onExportingChange?.(exporting); }, [exporting, onExportingChange]);
-
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -157,7 +155,7 @@ export function BatchExportDialog({
 
   async function exportSelectedFiles() {
     if (!selectedJobs.length || exporting) return;
-    const completed = await controller.run({
+    const started = await controller.run({
       jobs: selectedJobs,
       boardBrandStates,
       brandAssets,
@@ -166,8 +164,9 @@ export function BatchExportDialog({
       format,
       quality,
       autoCompressJpeg
-    });
-    if (completed && !completed.failures.length) onComplete(`已导出 ${completed.completed} 个文件`);
+    }, { onExportingChange, onComplete });
+    // 目标已接受、任务已注册后立即关闭弹窗，后台进度交给全局导出中心。
+    if (started) onClose();
   }
 
   const previewScale = activeSpec
@@ -255,16 +254,14 @@ export function BatchExportDialog({
             <div className="export-column-heading">
               <span>导出设置</span>
             </div>
-            <label className="export-field">
-              <span>命名模式</span>
-              <select value={namingMode} onChange={(event) => setNamingMode(event.target.value as ExportNamingMode)}>
-                <option value="source-name">源图片名</option>
-                <option value="custom-name">自定义名称</option>
-              </select>
-            </label>
-            {namingMode === 'custom-name' ? (
-              <div className="export-field">
-                <span>自定义名</span>
+
+            <section className="export-section-card">
+              <h3 className="export-section-card-title">文件命名</h3>
+              <div className="export-segmented" role="group" aria-label="命名模式">
+                <button type="button" className={namingMode === 'source-name' ? 'active' : ''} onClick={() => setNamingMode('source-name')} aria-pressed={namingMode === 'source-name'}>源文件名</button>
+                <button type="button" className={namingMode === 'custom-name' ? 'active' : ''} onClick={() => setNamingMode('custom-name')} aria-pressed={namingMode === 'custom-name'}>自定义名</button>
+              </div>
+              {namingMode === 'custom-name' ? (
                 <div className="custom-name-list">
                   {assets.map((asset) => (
                     <label key={asset.id} className="custom-name-row">
@@ -277,56 +274,98 @@ export function BatchExportDialog({
                     </label>
                   ))}
                 </div>
-              </div>
-            ) : null}
-            <label className="export-field">
-              <span>批次名（可选）</span>
-              <input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="不输则不加入文件名" />
-            </label>
-            <div className="export-field">
-              <span>格式</span>
-              <div className="segmented-control export-format-control">
-                <button type="button" className={format === 'png' ? 'active' : ''} onClick={() => setFormat('png')}>PNG</button>
-                <button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => setFormat('jpg')}>JPG</button>
-              </div>
-            </div>
-            {format === 'jpg' ? (
+              ) : null}
               <label className="export-field">
-                <span>JPG 质量 {Math.round(quality * 100)}%</span>
-                <input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} />
+                <span>批次名（可选）</span>
+                <input value={batchName} onChange={(event) => setBatchName(event.target.value)} placeholder="不输则不加入文件名" />
               </label>
-            ) : null}
-            <label className="export-field"><span>体积策略</span><select value={sizePolicy.mode} onChange={(event) => setSizePolicy(event.target.value === 'unlimited' ? { mode: 'unlimited' } : event.target.value === 'custom' ? { mode: 'custom', maxSizeKb: DEFAULT_MAX_SIZE_KB } : { mode: 'default-limit', maxSizeKb: DEFAULT_MAX_SIZE_KB })}><option value="default-limit">规格 / 默认 8MB</option><option value="custom">自定义上限</option><option value="unlimited">不限制</option></select></label>
-            {sizePolicy.mode === 'custom' ? <label className="export-field"><span>指定</span><div className="export-limit-input"><input aria-label="指定 MB" type="number" min="0.1" max="100" step="0.1" value={sizePolicy.maxSizeKb / 1024} onChange={(event) => setSizePolicy({ mode: 'custom', maxSizeKb: Math.round(Math.min(100, Math.max(0.1, Number(event.target.value) || 8)) * 1024) })} /><small>MB</small></div></label> : null}
-            {format === 'jpg' ? <label className="toggle"><input type="checkbox" checked={autoCompressJpeg} onChange={(event) => setAutoCompressJpeg(event.target.checked)} />JPG 超限时自动压缩</label> : null}
+            </section>
 
-            <div className="export-language-section">
-              <span className="control-label">语种导出</span>
-              <label className="radio"><input type="radio" name="language-mode" value="default" checked={languageMode === 'default'} onChange={() => setLanguageMode('default')} />每画板使用自身已保存语种</label>
-              <label className="radio"><input type="radio" name="language-mode" value="append" checked={languageMode === 'append'} onChange={() => setLanguageMode('append')} />追加其他语种</label>
-              <label className="radio"><input type="radio" name="language-mode" value="all" checked={languageMode === 'all'} onChange={() => setLanguageMode('all')} />全部语种分别导出</label>
-            </div>
-            {languageMode === 'append' ? (
-              <div className="export-language-list">
-                <div className="export-language-heading"><span>追加语种</span><span><button type="button" onClick={() => setAdditionalLanguages([...EXPORT_LANGUAGES])}>全选</button><button type="button" onClick={() => setAdditionalLanguages([])}>清空</button></span></div>
-                {EXPORT_LANGUAGES.map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...new Set([...previous, language])] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}
+            <section className="export-section-card">
+              <h3 className="export-section-card-title">格式与体积</h3>
+              <div className="export-segmented" role="group" aria-label="输出格式">
+                <button type="button" className={format === 'png' ? 'active' : ''} onClick={() => setFormat('png')} aria-pressed={format === 'png'}>PNG</button>
+                <button type="button" className={format === 'jpg' ? 'active' : ''} onClick={() => setFormat('jpg')} aria-pressed={format === 'jpg'}>JPG</button>
               </div>
-            ) : null}
+              {format === 'jpg' ? (
+                <label className="export-field">
+                  <span>JPG 质量 {Math.round(quality * 100)}%</span>
+                  <input type="range" min="0.4" max="1" step="0.01" value={quality} onChange={(event) => setQuality(Number(event.target.value))} />
+                </label>
+              ) : null}
+              <div className="export-field">
+                <span>体积策略</span>
+                <div className="export-radio-cards" role="radiogroup" aria-label="体积策略">
+                  <label className={`export-radio-card${sizePolicy.mode === 'default-limit' ? ' is-selected' : ''}`}>
+                    <input type="radio" name="size-policy" value="default-limit" checked={sizePolicy.mode === 'default-limit'} onChange={() => setSizePolicy({ mode: 'default-limit', maxSizeKb: DEFAULT_MAX_SIZE_KB })} />
+                    <span className="export-radio-card-copy"><span className="export-radio-card-title">规格 / 默认 8MB</span></span>
+                  </label>
+                  <label className={`export-radio-card${sizePolicy.mode === 'custom' ? ' is-selected' : ''}`}>
+                    <input type="radio" name="size-policy" value="custom" checked={sizePolicy.mode === 'custom'} onChange={() => setSizePolicy({ mode: 'custom', maxSizeKb: sizePolicy.mode === 'custom' ? sizePolicy.maxSizeKb : DEFAULT_MAX_SIZE_KB })} />
+                    <span className="export-radio-card-copy"><span className="export-radio-card-title">自定义上限</span></span>
+                  </label>
+                  <label className={`export-radio-card${sizePolicy.mode === 'unlimited' ? ' is-selected' : ''}`}>
+                    <input type="radio" name="size-policy" value="unlimited" checked={sizePolicy.mode === 'unlimited'} onChange={() => setSizePolicy({ mode: 'unlimited' })} />
+                    <span className="export-radio-card-copy"><span className="export-radio-card-title">不限制</span></span>
+                  </label>
+                </div>
+              </div>
+              {sizePolicy.mode === 'custom' ? <label className="export-field"><span>指定</span><div className="export-limit-input"><input aria-label="指定 MB" type="number" min="0.1" max="100" step="0.1" value={sizePolicy.maxSizeKb / 1024} onChange={(event) => setSizePolicy({ mode: 'custom', maxSizeKb: Math.round(Math.min(100, Math.max(0.1, Number(event.target.value) || 8)) * 1024) })} /><small>MB</small></div></label> : null}
+              {format === 'jpg' ? <label className="toggle"><input type="checkbox" checked={autoCompressJpeg} onChange={(event) => setAutoCompressJpeg(event.target.checked)} />JPG 超限时自动压缩</label> : null}
+            </section>
 
-            <div className="export-summary-box">
+            <section className="export-section-card">
+              <h3 className="export-section-card-title">语种</h3>
+              <div className="export-radio-cards export-language-cards" role="radiogroup" aria-label="语种导出">
+                <label className={`export-radio-card${languageMode === 'default' ? ' is-selected' : ''}`}>
+                  <input type="radio" name="language-mode" value="default" checked={languageMode === 'default'} onChange={() => setLanguageMode('default')} />
+                  <span className="export-radio-card-copy"><span className="export-radio-card-title">自身语种</span><span className="export-radio-card-sub">各画板使用已保存语种</span></span>
+                </label>
+                <label className={`export-radio-card${languageMode === 'append' ? ' is-selected' : ''}`}>
+                  <input type="radio" name="language-mode" value="append" checked={languageMode === 'append'} onChange={() => setLanguageMode('append')} />
+                  <span className="export-radio-card-copy"><span className="export-radio-card-title">追加语种</span><span className="export-radio-card-sub">叠加其他语种</span></span>
+                </label>
+                <label className={`export-radio-card${languageMode === 'all' ? ' is-selected' : ''}`}>
+                  <input type="radio" name="language-mode" value="all" checked={languageMode === 'all'} onChange={() => setLanguageMode('all')} />
+                  <span className="export-radio-card-copy"><span className="export-radio-card-title">全部语种</span><span className="export-radio-card-sub">全部语种分别导出</span></span>
+                </label>
+              </div>
+              {languageMode === 'append' ? (
+                <div className="export-language-list">
+                  <div className="export-language-heading"><span>追加语种</span><span><button type="button" onClick={() => setAdditionalLanguages([...EXPORT_LANGUAGES])}>全选</button><button type="button" onClick={() => setAdditionalLanguages([])}>清空</button></span></div>
+                  {EXPORT_LANGUAGES.map((language) => <label key={language} className="toggle"><input type="checkbox" checked={additionalLanguages.includes(language)} onChange={(event) => setAdditionalLanguages((previous) => event.target.checked ? [...new Set([...previous, language])] : previous.filter((item) => item !== language))} />{getBrandLanguageLabel(language)}</label>)}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="export-section-card export-result-card">
+              <h3 className="export-section-card-title">结果摘要</h3>
               <span>已选 {selectedJobs.length} 个文件</span>
               {batchResult ? <div className="export-result-list" aria-live="polite">{batchResult.outcomes.map(({ item, outcome }) => {
               const job = item;
                 const fileName = outcome.result === 'failed' ? job.plannedFileName : outcome.actualFileName ?? job.plannedFileName;
                 return <span key={job.id} className={`export-result is-${outcome.result}`}>{fileName} · {outcome.result === 'failed' ? `失败：${outcome.reason}` : outcome.result === 'compressed' ? `已压缩 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB` : `完成 ${(outcome.outputBytes / (1024 * 1024)).toFixed(2)} MB`}</span>;
               })}</div> : null}
-            </div>
+            </section>
+
             <p className="dialog-help">导出时优先选择文件夹直接写入；不支持时会改为浏览器逐个下载。</p>
           </aside>
         </div>
 
         <div className="dialog-footer export-footer">
           <div className="export-status" aria-live="polite">
+            {exporting ? (
+              <div
+                className="export-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={progress.total}
+                aria-valuenow={progress.current}
+                aria-label="导出进度"
+              >
+                <div className="export-progress-bar" style={{ width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` }} />
+              </div>
+            ) : null}
             <span>{exporting ? `正在导出 ${progress.current} / ${progress.total}` : '每张图独立输出'}</span>
             <strong className="export-error" title={errorMessage}>{errorMessage || ' '}</strong>
           </div>

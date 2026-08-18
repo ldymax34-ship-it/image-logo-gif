@@ -17,7 +17,7 @@ export function useMediaSpecActions(input: {
   setDraftText: Dispatch<SetStateAction<string>>; setAppliedText: Dispatch<SetStateAction<string>>;
   setSpecs: Dispatch<SetStateAction<MaterialSpec[]>>; setBrandLayer: Dispatch<SetStateAction<BrandLayerState>>;
   setCustomPresets: Dispatch<SetStateAction<PresetTemplate[]>>; setNewPresetName: Dispatch<SetStateAction<string>>;
-  setPendingConfirmation: Dispatch<SetStateAction<PendingConfirmation | undefined>>; setMessage: Dispatch<SetStateAction<string>>;
+  setPendingConfirmation: Dispatch<SetStateAction<PendingConfirmation | undefined>>; setMessage: (message: string) => void;
   createLogoDefaults: (spec?: MaterialSpec) => LogoGroupState; deleteAsset: (assetId: string) => void;
 }) {
   function commitParsedSpecs() {

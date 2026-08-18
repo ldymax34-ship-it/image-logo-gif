@@ -79,15 +79,15 @@
 | 正文 | 13px / 1.45 |
 | 属性标签、辅助说明 | 12px；辅助说明使用 muted，不低于可读对比 |
 | 数值 | 12px，`tabular-nums` |
-| 默认控件 | 32px 高 |
-| 紧凑控件、图标按钮 | 28px；可点击区域不得小于 28×28px |
+| 默认控件 | 36px 高 |
+| 紧凑控件、图标按钮 | 32px；可点击区域不得小于 32×32px |
 | 属性行 | 最小 32px；标签列 52px；8px 列间距 |
 | 间距 | 4 / 6 / 8 / 12 / 16 / 24px |
-| 圆角 | 控件 4px，分组 4px，弹窗 8px，状态 pill 才使用全圆角 |
+| 圆角 | 默认控件 8px，紧凑控件 6px，上传区 12px，状态 pill 才使用全圆角 |
 | 边框 | 默认透明或低对比 1px；hover 加深；selected/focus 使用 1px 主色，不改变布局 |
 | 背景 | app < canvas < panel < field/hover，保持明确但低强度的深色层级 |
 | selected | 1px 主色边框 + 轻微主色背景 + 文字变化；不能只依赖颜色点 |
-| focus | 1px 主色 ring/outline + 1px offset；键盘可见，鼠标点击不常驻 |
+| focus | 3px 半透明主色 ring；键盘可见，鼠标点击不常驻 |
 | disabled | 降低文字/边框/背景对比并保持 `not-allowed`，不只使用透明度 |
 | warning/error | 独立边框、轻背景和文字；字段 invalid 不使用 glow |
 | 选框 | 主色 1px；控制点 10px 方形、浅色填充和主色边框；无辉光 |

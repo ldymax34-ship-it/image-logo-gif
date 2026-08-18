@@ -120,4 +120,13 @@ describe('User-visible text unification', () => {
     expect(html).toContain('固定 SVG 图层');
     expect(html).not.toContain('品牌组件');
   });
+
+  it('keeps Logo and CPR as separate light sections with stable spacing hooks', () => {
+    const html = renderToStaticMarkup(<BrandControlsPanel {...defaultProps()} />);
+
+    expect(html).toContain('brand-logo-group');
+    expect(html).toContain('brand-cpr-group');
+    expect(html).toMatch(/brand-logo-group[\s\S]*logo-group-section/);
+    expect(html).toMatch(/brand-cpr-group[\s\S]*cpr-controls-title/);
+  });
 });

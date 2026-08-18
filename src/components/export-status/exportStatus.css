@@ -1,0 +1,327 @@
+/* 导出中心 —— 420px dashboard 任务中心。
+   共享近黑底、细边框、紧凑 stat cards；状态只靠图标/细色带/弱光晕区分，
+   不含循环装饰动效（导出中的 loader 为功能性进度提示）。 */
+
+.export-status-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 260;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(620px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 14px;
+  background: var(--color-panel);
+  color: var(--color-text);
+  box-shadow: var(--shadow-dialog);
+}
+
+.export-status-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 260;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-panel-raised);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-dialog);
+}
+.export-status-toggle:hover { background: var(--color-field-hover); }
+.export-status-toggle svg { color: var(--color-text-muted); }
+.export-status-toggle-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-text-muted);
+  color: var(--color-canvas-deep);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.export-status-toggle-count.is-failed {
+  background: var(--color-danger);
+  color: #1c1c1f;
+}
+
+/* 头部 */
+.export-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.export-status-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.export-status-head-icon { color: var(--color-accent); flex: 0 0 auto; }
+.export-status-live {
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+.export-status-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
+}
+.export-status-close:hover { border-color: var(--color-border-strong); background: var(--color-panel-raised); color: var(--color-text); }
+
+/* 汇总 stat cards */
+.export-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.export-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-field);
+}
+.export-summary-label {
+  color: var(--color-text-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.export-summary-value {
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+.export-summary-stat.is-completed { border-color: var(--color-success-border); }
+.export-summary-stat.is-completed .export-summary-value { color: var(--color-success); }
+.export-summary-stat.is-failed { border-color: var(--color-danger-border); }
+.export-summary-stat.is-failed .export-summary-value { color: var(--color-danger); }
+
+/* 任务列表 */
+.export-task-list {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.export-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.export-task:last-child { border-bottom: 0; }
+.export-task-main { flex: 1 1 auto; min-width: 0; }
+.export-task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.export-task-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.export-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--color-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.export-task-pct { color: var(--color-text-muted); }
+.export-task-reveal {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
+}
+.export-task-reveal:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-panel-raised);
+  color: var(--color-text);
+}
+
+.export-task-empty {
+  padding: 22px 12px;
+  color: var(--color-text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* 状态图标槽 */
+.export-center-status-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 7px;
+}
+.export-center-status-icon.is-queued { color: var(--color-text-faint); background: var(--color-panel-muted); }
+.export-center-status-icon.is-exporting { color: var(--color-primary); background: var(--color-primary-soft); }
+.export-center-status-icon.is-completed { color: var(--color-success); background: var(--color-success-soft); }
+.export-center-status-icon.is-failed { color: var(--color-danger); background: var(--color-danger-soft); }
+.export-center-status-icon.is-cancelled { color: var(--color-text-faint); background: var(--color-panel-muted); }
+.export-center-spin { animation: export-center-spin 900ms linear infinite; }
+
+/* 状态徽标 */
+.export-center-task-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 17px;
+  padding: 0 7px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.export-center-task-status.is-queued { color: var(--color-text-muted); background: var(--color-panel-muted); }
+.export-center-task-status.is-exporting { color: var(--color-primary); border-color: var(--color-accent-border); background: var(--color-primary-soft); }
+.export-center-task-status.is-completed { color: var(--color-success); border-color: var(--color-success-border); background: var(--color-success-soft); }
+.export-center-task-status.is-failed { color: var(--color-danger); border-color: var(--color-danger-border); background: var(--color-danger-soft); }
+.export-center-task-status.is-cancelled { color: var(--color-text-muted); border-color: var(--color-border-strong); background: var(--color-panel-muted); }
+
+/* 进度条 */
+.export-center-progress {
+  position: relative;
+  height: 4px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-field);
+}
+.export-center-progress-fill {
+  position: relative;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-text-muted);
+  transition: width 120ms linear;
+}
+.export-center-progress-fill.is-exporting { background: var(--color-primary); }
+.export-center-progress-fill.is-completed { background: var(--color-success); }
+.export-center-progress-fill.is-failed { background: var(--color-danger); }
+.export-center-progress-fill.is-cancelled { background: var(--color-text-faint); }
+
+/* 错误 */
+.export-center-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--color-danger);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.export-center-error-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  color: #1c1c1f;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* 底部 */
+.export-status-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--color-border);
+}
+.export-status-hint { color: var(--color-text-faint); font-size: 11px; }
+.export-status-clear {
+  min-height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.export-status-clear:hover:not(:disabled) { border-color: var(--color-text-faint); color: var(--color-text); }
+.export-status-clear:disabled { opacity: 0.45; cursor: default; }
+
+/* 键盘焦点 */
+.export-status-toggle:focus-visible,
+.export-status-close:focus-visible,
+.export-status-clear:focus-visible,
+.export-task-reveal:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+@keyframes export-center-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .export-center-spin { animation: none; }
+}

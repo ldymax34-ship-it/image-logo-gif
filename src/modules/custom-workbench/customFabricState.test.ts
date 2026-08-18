@@ -22,9 +22,9 @@ describe('Fabric interaction domain writes', () => {
 
   it('uses a crisp primary outline with stable square corner controls', () => {
     expect(CUSTOM_FABRIC_SELECTION_STYLE).toEqual({
-      cornerColor: '#f5f8ff',
-      cornerStrokeColor: '#3d83d5',
-      borderColor: '#3d83d5',
+      cornerColor: '#E0E0E0',
+      cornerStrokeColor: '#5b86c2',
+      borderColor: '#5b86c2',
       cornerSize: 10,
       cornerStyle: 'rect',
       padding: 1

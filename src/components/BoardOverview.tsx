@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Button, Panel, Toolbar } from './ui';
+import { Panel, Toolbar } from './ui';
 
 export function BoardOverview({
   disabled,
@@ -25,7 +25,7 @@ export function BoardOverview({
   return <Panel className="preview-panel" aria-label={ariaLabel}>
     <div className="panel-heading">
       <div><h2>{title}</h2><small>{subtitle}</small></div>
-      <Toolbar className="panel-actions"><Button tone="primary" onClick={onExport} disabled={disabled} aria-label={exportAriaLabel}>{exportLabel}</Button></Toolbar>
+      <Toolbar className="panel-actions"><button type="button" className="primary-button" onClick={onExport} disabled={disabled} aria-label={exportAriaLabel}>{exportLabel}</button></Toolbar>
     </div>
     {children}
     {message ? <p className="status-line">{message}</p> : null}

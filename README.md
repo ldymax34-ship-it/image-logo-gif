@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-当前稳定功能版本为 `0.9.0`，定位为“品宣工具箱第一个可用生产版本”。本版本冻结现有业务逻辑与 Render Plan；后续 `v1.0` 将在独立 `ui-refresh/v1.0` 分支升级基础交互体验，不回写或改动 v0.9 稳定功能链路。
+当前稳定功能版本为 `0.9.0`，定位为“品宣工具箱第一个可用生产版本”。本版本冻结现有业务逻辑与 Render Plan；`0.92` 已开始 UI Phase 1 视觉收口：全应用切换为暖石墨灰 + 淡紫 accent 的桌面生产工具配色，统一 Token 与基础控件、模块导航与工具箱首页（含桌面端「GIF 压缩」与网页版「轻量 GIF 工具」两个规划中占位入口），不改变任何功能、Render Plan 或导出链路。`v1.0` 继续作为后续独立 UI/交互升级分支。
 
 首次启动默认进入“品宣工具箱”：Logo 与版式可用，GIF / 媒体工具提供内部实验性 MP4/MOV → GIF 队列，水印工具提供图片与视频模式；设置可选择下次启动打开工具箱首页、Logo 与版式、GIF / 媒体工具、水印工具或上次使用的工具。进入 Logo 与版式后，原有设媒与自定义构图工作流、模块导航与导出行为保持不变，并可随时返回工具箱。
 
@@ -90,6 +90,20 @@ npm stop
 首次启动如果缺少依赖，启动脚本会自动执行本地安装。服务固定运行在 `http://127.0.0.1:5173/`。
 
 `start-windows-preview.bat` 需要 Windows 电脑预先安装 Node.js LTS。它不会直接使用共享盘里可能由 macOS 产生的 `node_modules`，而是将源码同步到 `%LOCALAPPDATA%\BrandMaterialWorkbench\preview` 后再启动。
+
+## Docker 部署（Web Lite）
+
+Web Lite 只分发静态前端产物，图片裁切、Logo / CPR / 水印叠加与 PNG/JPG 导出全部在访问者自己的浏览器内完成，素材不会上传到服务器。视频转 GIF、视频水印、原生目录写入与自动更新仅在 Tauri 桌面版可用。
+
+```bash
+docker build -t brand-material-web .
+docker run -d --name brand-material-web -p 8080:8080 brand-material-web
+```
+
+- 本机访问：`http://localhost:8080`
+- 内网同事访问：`http://<内网地址>:8080`（本机若为 `10.100.41.9`，即 `http://10.100.41.9:8080`）
+
+若内网访问不到，请创建 Windows 防火墙入站规则，只开放 TCP `8080` 并限定公司内网网段，不要直接暴露到公网。镜像内不内置 FFmpeg，也不接收任何上传素材。
 
 ## 核心文件与边界
 
@@ -433,7 +447,7 @@ npm run build
 - **前端**: React 18 + TypeScript + Fabric.js 7 + Vue 3 (GIF工具嵌入)
 - **后端**: Tauri 2 + Rust
 - **媒体**: FFmpeg/FFprobe sidecar (arm64 macOS / x64 Windows)
-- **测试**: Vitest (368 tests) + Cargo test (79 tests)
+- **测试**: Vitest (380 tests) + Cargo test (86 tests)
 
 ### 构建
 

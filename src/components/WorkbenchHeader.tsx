@@ -1,10 +1,13 @@
-export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendingSpecChanges, onOpenSettings, onCheckUpdate }: {
+import { GlobalTopActions } from '../app/GlobalTopActions';
+
+export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendingSpecChanges, onOpenSettings, onCheckUpdate, onOpenChangelog }: {
   assetCount: number;
   boardCount: number;
   previewCount: number;
   hasPendingSpecChanges: boolean;
   onOpenSettings?: () => void;
   onCheckUpdate?: () => void;
+  onOpenChangelog?: () => void;
 }) {
   return <header className="topbar">
     <div className="tool-page-heading">
@@ -18,6 +21,7 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
       </span>
       {hasPendingSpecChanges ? <span className="workbench-pending">尺寸待应用</span> : null}
       {onCheckUpdate ? <button type="button" className="settings-button" onClick={onCheckUpdate} title="检查更新">检查更新</button> : null}{onOpenSettings ? <button type="button" className="settings-button" onClick={onOpenSettings} title="打开 Logo 设置与关于信息">设置</button> : null}
+      <GlobalTopActions onOpenChangelog={onOpenChangelog} />
     </div>
   </header>;
 }

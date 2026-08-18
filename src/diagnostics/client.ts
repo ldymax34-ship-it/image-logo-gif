@@ -40,10 +40,12 @@ export async function getDiagnosticsInfo(): Promise<DiagnosticsInfo | undefined>
 }
 
 export async function openLogDirectory(): Promise<void> {
+  if (!isDesktopBridgeAvailable()) return;
   await invoke('diagnostics_open_log_dir');
 }
 
 export async function clearOldLogs(): Promise<number> {
+  if (!isDesktopBridgeAvailable()) return 0;
   return invoke<number>('diagnostics_clear_old');
 }
 

@@ -15,9 +15,12 @@ export type WatermarkVideoOptions = {
   darkMode: boolean;
   offsetX: number;
   offsetY: number;
-  spacingX: number;
-  spacingY: number;
-  phaseOffset: number;
+  columns?: number;
+  rows?: number;
+  placements?: Array<{ xPercent: number; yPercent: number }>;
+  quality: 'high' | 'balanced' | 'compact';
+  preferHardware: boolean;
+  reservedOutputPath?: string;
   outputDirectory: string;
 };
 
@@ -32,12 +35,14 @@ export type WatermarkPreviewRequest = {
   sizePercent: number;
   opacity: number;
   pattern: 'single' | 'tiled';
+  density: 'low' | 'medium' | 'high';
   angle?: number;
   offsetX?: number;
   offsetY?: number;
-  spacingX?: number;
-  spacingY?: number;
-  phaseOffset?: number;
+  columns?: number;
+  rows?: number;
+  placements?: Array<{ xPercent: number; yPercent: number }>;
+  cleanFrame?: boolean;
   timestampSeconds?: number;
   width?: number;
   duration?: number;
@@ -56,8 +61,36 @@ export type WatermarkQueueStatusEvent = {
   reason?: string;
 };
 
+export type WatermarkEncoderCapability = {
+  hardwareAvailable: boolean;
+  backendName: 'NVENC' | 'VideoToolbox' | 'CPU';
+  reason: string;
+};
+
+export type VideoWatermarkRecommendationRequest = {
+  inputPath: string;
+  kind: 'text' | 'image';
+  text: string;
+  imagePath?: string;
+};
+
+export type VideoWatermarkRecommendation = {
+  sizePercent: number;
+  density: 'low' | 'medium' | 'high';
+  columns: number;
+  rows: number;
+  spacingX: number;
+  spacingY: number;
+  opacity: number;
+  angle: number;
+  gutterPercent: number;
+  reason: string;
+};
+
 export type MediaDesktopApi = {
   getEngineStatus: () => Promise<MediaEngineStatus>;
+  getWatermarkEncoderCapability: () => Promise<WatermarkEncoderCapability>;
+  getVideoWatermarkRecommendation: (request: VideoWatermarkRecommendationRequest) => Promise<VideoWatermarkRecommendation>;
   pickMediaFiles: () => Promise<string[]>;
   pickVideoFiles: () => Promise<string[]>;
   pickWatermarkFiles: () => Promise<string[]>;
@@ -71,6 +104,8 @@ export type MediaDesktopApi = {
   cancelPreviewTask: (taskId: string) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
   listenTaskEvents: (listener: (event: MediaTaskEvent) => void) => Promise<() => void>;
+  openOutputDirectory: (directory: string) => Promise<void>;
+  revealOutputFile: (path: string) => Promise<void>;
   startWatermarkPreview: (request: WatermarkPreviewRequest) => Promise<{ taskId: string; outputPath: string }>;
   cancelWatermarkPreview: (taskId: string) => Promise<void>;
   listenWatermarkQueueEvents: (listener: (event: WatermarkQueueStatusEvent) => void) => Promise<() => void>;
@@ -82,15 +117,37 @@ export function isMediaDesktopAvailable(): boolean {
   return isDesktopBridgeAvailable();
 }
 
+export type DesktopOpenerAdapter = {
+  openPath: (path: string) => Promise<void>;
+  revealItemInDir: (path: string) => Promise<void>;
+};
+
+export function openOutputDirectoryWithAdapter(
+  opener: DesktopOpenerAdapter,
+  directory: string,
+): Promise<void> {
+  return opener.openPath(directory);
+}
+
+export function revealOutputFileWithAdapter(
+  opener: DesktopOpenerAdapter,
+  path: string,
+): Promise<void> {
+  return opener.revealItemInDir(path);
+}
+
 export async function loadMediaDesktopApi(): Promise<MediaDesktopApi> {
-  const [{ invoke }, { listen }, { open }] = await Promise.all([
+  const [{ invoke }, { listen }, { open }, opener] = await Promise.all([
     import('@tauri-apps/api/core'),
     import('@tauri-apps/api/event'),
-    import('@tauri-apps/plugin-dialog')
+    import('@tauri-apps/plugin-dialog'),
+    import('@tauri-apps/plugin-opener')
   ]);
 
   return {
     getEngineStatus: () => invoke<MediaEngineStatus>('media_engine_status'),
+    getWatermarkEncoderCapability: () => invoke<WatermarkEncoderCapability>('watermark_encoder_capability'),
+    getVideoWatermarkRecommendation: (request) => invoke<VideoWatermarkRecommendation>('video_watermark_recommendation', { request }),
     async pickMediaFiles() {
       const result = await open({
         title: '选择 MP4 或 MOV 文件',
@@ -145,6 +202,8 @@ export async function loadMediaDesktopApi(): Promise<MediaDesktopApi> {
     previewGifFrame: (request) => invoke('preview_gif_frame', { request }),
     cancelPreviewTask: (taskId) => invoke('cancel_preview_task', { taskId }),
     cancelTask: (taskId) => invoke('cancel_gif_media_task', { taskId }),
+    openOutputDirectory: (directory) => openOutputDirectoryWithAdapter(opener, directory),
+    revealOutputFile: (path) => revealOutputFileWithAdapter(opener, path),
     startWatermarkPreview: (request) => invoke('start_watermark_preview', { request }),
     cancelWatermarkPreview: (taskId) => invoke('cancel_watermark_preview', { taskId }),
     async listenTaskEvents(listener) {

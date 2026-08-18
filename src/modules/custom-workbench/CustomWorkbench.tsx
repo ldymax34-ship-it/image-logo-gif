@@ -6,6 +6,7 @@ import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileS
 import { BoardCanvas } from '../../components/canvas';
 import { CustomFabricOverlay, type CustomFabricObjectId } from './CustomFabricOverlay';
 import { resolveCustomFabricItems, type CustomFabricOverlayItem } from './customFabricItems';
+import { createExportBatchId, exportStatusStore, formatExportSize } from '../../components/export-status/exportStatusStore';
 import { constrainCustomTransform, getCustomObjectScaleLimits, getCustomTransformBounds, type CustomObjectTransform } from './customFabricCoords';
 import { constrainCustomCanvasObjectTransform, toCustomFabricTransformPatch } from './customFabricState';
 import { CUSTOM_CANVAS_OPTION, CUSTOM_MANUAL_CANVAS_PRESETS, MAX_CUSTOM_CANVAS_EDGE, createCustomCanvasSelection, getCustomCanvasOptionValue, resolveCustomCanvasSelection, resolveCustomCanvasSpec, selectCustomCanvasPreset, type CustomCanvasSelection } from './customCanvasSpec';
@@ -254,6 +255,22 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     if (!asset || !previewState) return;
     const target = await chooseOutputTarget();
     if (target.kind === 'cancelled') return;
+    const batchId = createExportBatchId('custom');
+    const taskId = `${batchId}:single`;
+    const baseName = `custom_${asset.fileName.replace(/\.[^.]+$/, '')}`;
+    const name = `${baseName}.${format}`;
+    exportStatusStore.upsert({
+      id: taskId,
+      batchId,
+      source: 'custom-export',
+      name: baseName,
+      extension: format,
+      width: canvas.width,
+      height: canvas.height,
+      progress: 0,
+      status: 'queued'
+    });
+    exportStatusStore.patch(taskId, { status: 'exporting' });
     try {
       const result = await exportBoardImageWithinLimit({
         asset,
@@ -291,11 +308,13 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
           result.blob = compressed.blob;
         }
       }
-      const name = `custom_${asset.fileName.replace(/\.[^.]+$/, '')}.${format}`;
       const saved = await saveBlobToOutputTarget(target, name, result.blob);
       setStatus(`已导出 ${saved}`);
+      exportStatusStore.patch(taskId, { status: 'completed', progress: 100, size: formatExportSize(result.blob.size), outputPath: saved });
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '导出失败');
+      const message = error instanceof Error ? error.message : '导出失败';
+      setStatus(message);
+      exportStatusStore.patch(taskId, { status: 'failed', error: message });
     }
   }
 

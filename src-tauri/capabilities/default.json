@@ -16,9 +16,14 @@
     "fs:allow-stat",
     "fs:allow-read",
     "fs:allow-read-file",
+    "opener:allow-open-path",
+    "opener:allow-reveal-item-in-dir",
     {
       "identifier": "fs:scope",
       "allow": [
+        {
+          "path": "$APPCACHE/watermark-preview/**"
+        },
         {
           "path": "$HOME/**"
         },

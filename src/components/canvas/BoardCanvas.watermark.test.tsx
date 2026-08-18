@@ -10,7 +10,7 @@ import { BoardCanvas } from './BoardCanvas';
 const asset: MaterialAsset = { id: 'background', fileName: 'background.png', objectUrl: 'blob:background', width: 100, height: 50, fileSize: 1, mimeType: 'image/png' };
 const spec: MaterialSpec = { id: 'spec', name: 'spec', width: 100, height: 50, format: 'png' };
 const previewState = { assetId: asset.id, specId: spec.id, fitMode: 'contain' as const, crop: createInitialCropState(asset, spec, 'contain') };
-const config: WatermarkConfig = { kind: 'text', text: '水印', fontFamily: 'Arial', color: '#fff', fontSize: 16, pattern: 'tiled', rotation: 45, opacity: .35, offsetX: 0, offsetY: 0, spacingX: 50, spacingY: 40 };
+const config: WatermarkConfig = { kind: 'text', text: '水印', fontFamily: 'Arial', color: '#fff', fontSize: 16, pattern: 'brick', rotation: 45, opacity: .35, offsetX: 0, offsetY: 0, density: 'dense', phaseOffset: 0.5 };
 
 function render(configValue?: WatermarkConfig) {
   return renderToStaticMarkup(<BoardCanvas

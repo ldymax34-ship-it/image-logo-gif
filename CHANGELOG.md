@@ -1,13 +1,90 @@
 # 更新日志
 
+## 0.92.1
+
+- 发布 UI 收口与正式工具页减层版本：统一页头/工作区层级、Logo 设置区间距与轻量 section，同时保留导航保护、导出队列及自动更新链路。
+
+## 2026-08-18
+
+- Logo 与版式工作台收薄 UI 层级：移除重复的“返回工具箱”页内按钮，将“设媒 / 自定义”改为页头下紧凑二级 tab，去掉模块 glyph、状态点、tooltip 和多余卡片边框；保留 `requestModuleChange` 与未保存内容 navigation guard。
+- 正式水印页与 Logo 左栏继续收薄：图片/视频水印页移除重复返回胶囊并改用平面页头，保留标题、状态、描述、更新日志及导航 guard；Logo/CPR 控制区补齐轻量 section 层级与 8/12/16px 间距节奏，未改导出、队列或业务逻辑。
+
 ## Unreleased
 
+- 2026-08-18 全局侧栏与首页收尾：侧栏默认折叠但提供独立箭头展开入口，展开后按「工具箱首页 / 生产工具 / 设置」建立层级；左侧与首页均只展示三个正式工具，隐藏 GIF 压缩、批量模板 GIF 等未上线入口，旧历史缓存也会过滤未开放项。首页三个正式工具恢复仅作用于图标和悬停边缘的低饱和身份色，不对整卡着色；侧栏当前项取消强描边，仅保留轻背景与文字变化。视频水印移除局部黑白灰 token 和导出中心二次配色，统一继承应用全局交互色及成功/失败语义色。保留侧栏跳转的未保存/未输出保护、最近使用缓存、CNB 占位按钮与更新日志弹窗。
+
+- 2026-08-18 Origin/shadcn 风格控件统一与点击反馈恢复：共享原生输入框、下拉菜单、滑块、复选框、焦点环、禁用/错误状态及上传拖放区统一为 36px/8px 默认控件与 32px/6px 紧凑控件；视频打水印输出位置、格式、质量、GPU 字段及队列操作基线同步对齐。恢复零依赖 2D Canvas `ClickSpark`，主按钮用纯 CSS 提供扫光、辉光与按压反馈并尊重 `prefers-reduced-motion`；不恢复 WebGL、`ogl` 或其他运行时依赖。React/Vue 上传空状态同步统一，原生 Tauri 最终视觉仍需手动验收。
+
+- 2026-08-18 Logo 与版式批量导出收口到全局导出中心：(1) 点击最终导出、OS 输出目标选定且任务注册后立即关闭批量导出弹窗，并显式 `exportStatusStore.requestOpen()` 展开聚焦全局导出中心，后台进度无缝可见；(2) 批处理改为在弹窗卸载后继续异步运行，完成/失败通知与最终 `onExportingChange(false)` 由 `useBatchExportController` 兜底发出，不再依赖弹窗挂载，避免 MediaWorkbench 的 exporting 状态被搁置；(3) 仅 `desktop-directory` 目标把实际输出名（含空格/非 ASCII/碰撞重命名后的真实文件名）与目录拼成完整原生路径写入 `outputPath`，浏览器 File System Access 与 downloads 目标不再写入可定位路径；(4) 全局导出中心完成项新增「在文件夹中显示」操作，仅当任务为 completed 且 `outputPath` 为真实原生路径（含路径分隔符）时出现，点击用该任务自身 `outputPath` 调桌面 opener，绝不回退当前/全局目录。新增/更新聚焦测试：`fileSystem`（路径拼接/可定位判定）、`useBatchExportController`（关闭信号+显式展开先于批处理完成、后台生命周期、完整路径、downloads 无路径）、`ExportStatusPanel`（reveal 按钮仅 completed+原生路径出现且精确传路径、非原生无按钮）。未改 Rust、导出服务层 `saveBlobToOutputTarget` 返回语义、依赖或发布链路。
+
+- 2026-08-18 工具箱首页视觉跟进与视频素材窄栏页头修复：(1) 「Logo 与版式 / 水印工具 / 视频水印」三个启用工具增加克制的低饱和身份色（`data-tone` 只作用于图标前景/背景/边框与悬停边缘，不整卡着色、不给规划中工具着色）；恢复中性白指针跟随高光（卡片内、CSS 变量跟随指针、仅启用卡片）、悬停边框/背景抬升、箭头位移、按下 `scale(0.98)`，动效 120–180ms 且 `prefers-reduced-motion` 禁用 transform/transition/高光；首页本地提高卡片表面亮度与背景分离（仅 `.toolbox-home` 作用域，不改全局 token/其他页面），保持 1280×720 / 1440×900 / 760 / 420 响应式，禁用卡片不再像启用卡片响应。(2) 视频水印窄素材栏页头改为「视频素材」标题独占一行、「选择 MP4 / MOV」按钮整行铺满并图标文字居中、`min-width:0`，不再溢出到预览栏；不改选择行为、缩略图、视频逻辑或其他面板页头。(3) 新增/更新测试：ToolboxHome 身份色与指针跟随结构、`components.css`/`watermarkWorkbench.css` 样式契约回归。未改媒体/Rust/导出生命周期文件、依赖或发布链路。
+- 2026-08-18 视频水印预览/导出字号与导出中心收口：视频预览/placements/FFmpeg 共用同一 1% 短边字号契约（`videoWatermarkConfigForCanvas` 去掉 16px 下限，960×540 下 1% = 5.4px，与 FFmpeg `h*sizePercent/100` 一致）；视频页合并「输出配置 + 导出队列」为单一内嵌导出中心（输出位置/格式/预设 + 添加/启动/清除 + 任务进度 + 完成操作同面板），主操作「添加当前到队列」移出右侧可滚动设置区、始终可见；图片水印批量导出在 OS 输出选择器返回并注册任务后显式 `exportStatusStore.requestOpen()` 展开并聚焦全局导出中心，不再只依赖新批次隐式展开；保留输出目录打开、完成项定位/复制路径，以及视频页激活时全局面板隐藏视频任务、离开后恢复。新增/调整聚焦测试（1% 字号契约、单一导出中心、可见主操作、复制路径、显式展开、隐藏视频投影）。未改 Rust/FFmpeg、依赖或发布链路。
+- 2026-08-18 视频水印页跟进修复：(1) 素材栏为每个已加载视频显示真实静帧缩略图（复用已抽取的无水印预览帧 object URL，按素材持有/替换/卸载安全回收，未抽取前保留 Film 占位），文件名干净截断、元信息可读换行；(2) 「启动队列」移入「输出与队列」标题栏右上、与队列计数并列，为独立 level-1 主 CTA（就绪时克制辉光/呼吸，尊重 `prefers-reduced-motion`），添加当前/全部添加/清除已完成降为下方次要控件，按钮补齐 aria-label/title 与图标文字居中；(3) 队列反馈复用全局导出中心语义色（进行中蓝 + spinner、完成绿、失败红、排队中性），进度条与任务行按 tone 平滑过渡；(4) 定位「任务卡在 99%」根因：`applyVideoMediaEvent` 在 reducer 内改写共享 `terminalIds` Set 使其非纯，React StrictMode 对 `setTasks` updater 的双重调用让 completed 迁移被第二次调用回退为 finalizing/99%；改为纯函数、终态只由任务自身状态判定，并新增 99/finalizing→completed 与终态单调性回归测试，另补 Rust 队列「finalizing→单次 completed 终态」回归测试；(5) 输出目录打开按钮目录选定后始终可见，完成行继续暴露「在文件夹中显示」与「复制输出路径」（title 保留完整路径、reveal 不依赖当前 outputDirectory）；(6) 修正图标/百分比/计数/复选框/按钮文字的横竖居中与 `tabular-nums` 数字对齐（含 99/100 与队列计数）。保留 1% 字号契约与单一内嵌导出中心架构，未改 Rust/FFmpeg 生产逻辑、依赖或发布链路。验证：`npm test`（60 files / 435 tests）、`npm run build`、`npm run verify:core`、`cargo test watermark`（新增队列终态回归通过）、`git diff --check` 通过；FFmpeg 像素对比类 Rust 测试（角度旋转/文字像素/预览正式契约）在脏工作树中为既有失败，与本次 UI/生命周期改动无关。
+- 2026-08-17 dashboard 导出交互复盘收尾：全局主题切换为近黑 dashboard 层级与克制紫蓝主交互，成功/失败分别使用 mint/pink 语义色；全局导出中心调整为 420px 任务卡、统计卡与真实任务层级，并修复用户主动收起后同批次进度更新反复自动展开的问题（仅新批次或新失败重新展开）。
+- 批量导出设置拆分为「文件命名 / 格式与体积 / 语种」三段卡片，命名与格式使用分段选择，体积策略和语种使用可访问 radio card；视频页底部拆分为「1 输出配置 / 2 导出队列」，输出目录置前并显示队列计数。通知由顶部胶囊改为右上角通知卡，包含状态图标、标题、正文与明确关闭按钮。
+- 桌面 QA 修复批量导出弹窗与全局导出中心的层级冲突：导出弹窗现在位于任务中心之上，避免遮挡语种和结果摘要；通知卡仍保持在最上层。未改导出 store、Render Plan、路径分配、FFmpeg、质量参数或媒体处理逻辑，未新增依赖。
+- 导出中心显示收口（最终独立复核落地）：(1) 全局 `ExportStatusPanel` 默认标题由「导出队列」改为「导出中心」，收起按钮 `aria-label` 改为「收起导出中心」；视频页本地「导出队列」标题与 `aria-label` 保持不变；(2) 视频任务镜像到共享导出中心时，`outputPath` 存在则用真实输出文件名（含真实扩展名）作为 `name`/`extension`，不再显示源文件名；`outputPath` 本身原样保留，`outputPath` 缺失时安全回退源文件名 + MP4。未改本地队列、路径、store API、导出逻辑、FFmpeg 或 CSS。新增/更新聚焦测试：`ExportStatusPanel`（默认标题「导出中心」与收起 `aria-label`「收起导出中心」）、`VideoWatermarkWorkspace`（输出路径以 `clip_watermarked.mp4` 结尾时，共享导出任务显示为 `clip_watermarked.mp4` 且不出现源文件名 `clip.mp4`）。
+- 聚焦回归：`ExportStatusPanel.test.tsx`（12 tests）与 `VideoWatermarkWorkspace.test.tsx`（24 tests）共 36 tests / 2 files 全部通过。
+- 修复 `ExportStatusPanel` 两处显示层边界：(1) `hiddenSources` 仍为显示层过滤——面板已打开时若 prop 变更导致全部任务被隐藏，不再渲染空浮层（`visibleTasks.length === 0` 时直接返回 null），来源恢复可见后任务重新出现并保留自动展开；(2) 页脚「清除已结束」改为只移除当前可见的终态任务（逐个 `remove` `completed/failed/cancelled`），不会删除 `hiddenSources` 中的终态任务。新增两条回归测试：先渲染可见再 rerender 为全隐藏、隐藏视频完成 + 可见媒体完成点击清除仅删可见项。未改 store 语义、任务更新、CSS 或其他文件。
+- 2026-08-17 视频导出交互审查落地（`docs/VIDEO_EXPORT_UE_REVIEW_2026-08-17.md`）：视频页建立局部黑白灰 token（深工作区/面板/输入框、细低对比边界、近白正文；中性白/灰承担选中、进度与主操作，绿/红仅承担结果语义），全部作用域限定在 `.wm-video-workspace`，不改全局 `theme.css`/`tokens.css`/`components.css`/`styles.css`。
+- 压缩视频页页头与面板 padding、收紧预览时间轴与队列区，网格改为「窄素材栏 + 宽预览 + 适中设置栏」；设置栏辅助文案收敛为单行短句并去掉胶囊套壳；视频页内滚动条缩窄并降低对比度（`scrollbar-width: thin` + 中性 thumb），维持 1180px/760px 响应式布局。
+- 本地队列统一更名「导出队列」（`aria-label` 与标题），删除重复的「启动后才调用 FFmpeg」辅助文案（仅队列标题保留一处）；任务行重构为「输出文件名 + 状态 + 操作 / 进度 / 参数摘要」，行内只显示输出文件名，完整路径保留在 `title` 与「定位/复制」操作中（复制仍写完整路径）。
+- `ExportStatusPanel` 新增 `hiddenSources?: ExportTaskSource[]` 显示层过滤：被隐藏来源不渲染、不计入胶囊与汇总，但不从 store 移除；`App` 在 `activeTool === 'video-watermark'` 时对全局导出中心隐藏 `video-watermark`，其他模块任务仍显示，离开视频页后视频任务恢复可见并继续更新（工作台保活）。
+- 全局导出中心收起态胶囊由「导出队列」改为「导出中心」，避免与视频页本地「导出队列」同名。
+- 新增/更新聚焦测试：`ExportStatusPanel`（来源过滤只影响显示、其他来源可见并计数、全隐藏时渲染空）、`VideoWatermarkWorkspace`（任务行只显示输出文件名、完整路径在 title/定位/复制）、`App`（视频工具激活时全局面板隐藏视频任务、返回后恢复）；未改 store 归属、导出逻辑、队列控制、FFmpeg、Render Plan、质量设置、路径或依赖。
+- 验证：`npm run verify:core`、`npm test`、`npm run build` 通过（数字见交付说明）。未新增依赖与资源，预期包体无实质增量。
+
+- 2026-08-17 导出中心评审落地（`docs/EXPORT_CENTER_UX_REVIEW_2026-08-17.md`）：`exportStatusStore` 收敛为按 `batchId/source` 归属的通用任务 API——移除全局 `replace/clear`，生产流程只使用 `upsert/patch/remove/syncBatch/clearBatch/clearFinished`（全局清理仅保留显式测试方法 `resetForTests()`）；`ExportTask` 增加 `batchId/source` 字段，状态收窄为 `queued | exporting | completed | failed | cancelled`（删除无真实暂停能力的 `paused`），并加入终态与进度保护（终态不会被后续旧事件改写，进度不倒退）。
+- 服务层 `exportSequentially` 增加逐项生命周期回调 `onItemStart/onItemResult`，页面不再各自拼装循环；四条真实链路全部接入全局导出中心——图片水印批量（`WatermarkWorkbench`）、Logo/版式媒体批量（`useBatchExportController`）、自定义构图单张（`CustomWorkbench`）、视频水印队列（`VideoWatermarkWorkspace`，仅镜像到 store、控制仍在本地队列）。
+- 面板改为紧凑黑白灰静态导出中心：`ExportSummary` 移除数字滚动、`ExportProgress` 移除进度扫光与不确定循环动效，仅成功/失败使用低饱和语义色；状态/进度/错误类名使用 `export-center-*` 前缀，避免污染既有批量导出弹窗；补充来源标签、失败胶囊和 `:focus-visible` 键盘焦点。
+- 视频水印工作台首次打开后保活：切回工具箱或其他模块时只隐藏、不卸载，后端任务/队列监听继续更新全局导出中心；队列控制仍只存在于视频页。
+- 删除纯装饰动效依赖：移除 `ClickSpark`、`SpecularButton` 及 `ogl` 直接依赖，四处导出主按钮（图片水印、Logo/版式、批量导出弹窗、自定义构图、视频队列）恢复项目既有 `.primary-button` 标准按钮。
+- 新增/更新聚焦测试：`exportStatusStore`（终态保护、批次隔离、`syncBatch` 对账）、`exportSequentially` 生命周期事件、`useBatchExportController` 批量写库、视频队列镜像；`CustomExportControls` 断言恢复标准按钮。
+- 验证：`npm run verify:core`、`npm test`、`npm run build` 通过（数字见交付说明）。未改 Render Plan、压缩、FFmpeg/Rust、全局主题与发布链路。
+
+- 2026-08-17 导出状态面板改绑真实状态（本轮收尾）：移除 demo 模拟器（`advanceTasks`/`seedDemoTasks`/`initialTasks`/`demo` prop 全部删除），新增模块级单例 `components/export-status/exportStatusStore.ts`（`upsert/patch/remove/clear/replace/clearFinished/subscribe` + `formatExportSize`，与 `toastBus` 同款事件模式）；`ExportStatusPanel` 只订阅 store、有新任务自动展开、收起后右下角胶囊计数、清除已完成由 store 兜底；`ExportProgress` 为「导出中且 0%」增加不确定进度条扫光（供按文件粒度的批量导出使用）；`ExportTaskItem` 去掉暂停/继续按钮（真实链路暂不支持暂停）。App 常挂载 `<ExportStatusPanel />`（空任务渲染 null）。
+- 配色退回 PS 蓝主按钮：4 处 `SpecularButton` 导出按钮由透明灰改为 `tint="#3572b0" tintOpacity={1}`（`--color-primary` 蓝底 + 白扫边高光），恢复 Photoshop 中性灰 + 蓝主色语言。
+- ⚠️ 未完成：四个导出流程（图片水印批量 / 媒体批量 / 自定义构图单张 / 视频水印队列）尚未写入 store——面板当前不会显示真实任务，需后续在各流程进度回调处接线（`exportStatusStore.replace` 注册 + `patch` 更新状态/进度/大小/错误）。
+- 回归：`npm run build`、`npm test`（58 files / 401 tests）通过；测试 `ExportStatusPanel.test.tsx` 改为 store 生命周期 + 面板渲染（需 `@vitest-environment jsdom`）。
+
+- 2026-08-17 导出状态面板（原创，非 React Bits Pro）：新增 `components/export-status/` 组件族——`ExportStatusPanel`（容器 + 状态管理 + demo 模拟器）、`ExportSummary`（总数/处理中/已完成/失败 四项，数字变更时交叉滚动）、`ExportTaskItem`（文件 → 状态 → 进度 → 异常 信息层级）、`ExportProgress`（导出中进度条做微弱流动高光）、`ExportStatus`（状态徽标）、`ExportError`（失败详情）。任务状态 `queued | exporting | paused | completed | failed`，支持暂停/继续、清除已完成。
+- 设计遵循「桌面生产工具的任务监视器」而非 SaaS Dashboard：面板沿用中性灰主题（`--color-panel` 底 / `--color-border` 边 / 8px 圆角 / 12px 正文 / 小间距），状态色走语义 token（排队灰、导出蓝 `--state-active`、暂停琥珀 `--state-warning`、完成绿 `--state-success`、失败红 `--state-danger`），动画小而克制。
+- demo 模拟器仅开发模式启用：`App.tsx` 中 `import.meta.env.DEV` 才挂载 `<ExportStatusPanel demo />`；串行推进——每 500–900ms 随机 +1–4%，100% 后 `exporting → completed` 并自动把下一个 `queued → exporting`，`setTimeout` 链式调度、卸载即清理；正式接 API 后关掉 `demo` 改用 `initialTasks` 即可。未接入真实导出逻辑。
+- 新增测试 `ExportStatusPanel.test.tsx`（`advanceTasks` 纯函数 + 面板渲染，共 4 条），无新增运行时依赖（`lucide-react` 已存在）。回归：`npm run build`、`npm test`（58 files / 403 tests）通过；CDP 冒烟确认面板渲染、模拟器持续推进（5%→17%）、进度条流动高光、状态徽标色正确、无横向溢出。视觉动效精细验收交由人工/codex 复核。
+
+- 2026-08-17 导出按钮动效（React Bits 组件接入）：(1) 引入 `<SpecularButton>`（React Bits JS-CSS 版，WebGL 高光扫边按钮）并接线到全部导出/产出主按钮——图片水印「导出水印 / 批量导出 N 张」、Logo 与版式「批量导出」、批量导出弹窗「导出 N 个文件」、自定义构图「导出当前画板」、视频水印「启动队列」；统一 `size="sm" radius=8 baseColor #525252 / textColor #f5f5f5 / lineColor #ffffff`，保留 `disabled/onClick/aria-label` 语义；(2) 引入 `<ClickSpark>`（React Bits JS-CSS 版，零依赖点击火花）包裹整个应用内容区（`sparkColor #fff / sparkSize 10 / sparkRadius 15 / sparkCount 8 / duration 400`）。
+- 唯一新增依赖 `ogl@^1.0.11`（SpecularButton 的 WebGL 库，源码 708KB、Rollup 树摇后增量极小）。两组件均做了测试环境降级守卫：无 WebGL / 无 ResizeObserver / 无 2d canvas context（jsdom / headless）时退化为普通样式按钮或被动透明层，不影响现有 399 个测试。放宽 `customWorkbenchUi.test.tsx` 一处 `>导出当前画板<` 精确匹配为 `导出当前画板`。
+- `@reactbits-pro/integrations-6`（导出队列/状态一览）经探测确认属 React Bits Pro 付费组件，公开端点仅返回营销页、无法取源码；本轮按用户决定跳过。
+- 回归：`npm run build`、`npm test`（57 files / 399 tests）通过；Chrome headless CDP 冒烟确认应用启动正常、ClickSpark 铺满视口无横向溢出、SpecularButton 渲染 WebGL canvas 且禁用态正确。视觉精细验收（高光/火花动效观感、密度）交由人工/codex 复核。
+
+- 2026-08-17 UI 修复轮（六项）：(1) 删除首页页脚「3 个生产工具 · 2 个规划中 · 统一深色工作区 · 本地 FFmpeg 引擎」等计数废话，仅保留浏览器端的「视频 / GIF 仅支持桌面版」引导与顶部信任说明；(2) 修复视频水印文字/Logo 透明度导出：FFmpeg 精灵与多位置文字路径原先把 `drawtext` 的 `alpha` 直接叠加到已含视频像素的 `text-base` 上、再整体 overlay，导致有效不透明度 ≈ α²（0.5→0.25）；现改为字形全不透明绘制后，用 `colorchannelmixer=aa=α` 对整层 alpha 通道单次缩放，正式输出透明度严格等于用户配置值，新增/更新对应 Rust 断言；(3) 全应用配色切换为 Adobe Photoshop 2026 深色主题：无色相中性灰层级（工作区 `#282828`、主面板 `#545454`、次级 `#494949`/`#424242`/`#393939`、边界 `#696969`、主文字 `#E0E0E0`），仅以轻微明度差分层，accent 改为克制蓝 `#3572b0`/`#4b83c7` 且只用于选中、焦点、开关、进度与主按钮；(4) 视频水印交互重排：预览标题「源 / 输出预览」更正为「水印预览」，「添加当前到队列」主操作下沉到「水印设置」面板底部，队列头部仅保留「全部添加 / 启动队列 / 清除已完成」，空队列增加引导文案，任务行内新增每任务进度条，常驻提示精简合并；(5) 批量导出弹窗新增可视进度条（`role="progressbar"` + 百分比填充）；(6) 新增顶部居中胶囊通知系统 `ToastHost`/`toastBus`（success/error/info，自动消退、可点击关闭），图片/视频水印、批量导出的成功与失败结果改走顶部胶囊，不再显示在左下角。
+- 通知改动范围：`MediaWorkbench` 通过 `publishMessage` 把操作结果同时推送到顶部胶囊；`useMediaAssetActions`/`useMediaSpecActions`/`useMediaBrandActions` 的 `setMessage` 形参由 `Dispatch<SetStateAction<string>>` 收窄为 `(message: string) => void`；`BatchExportDialog` 失败路径补 toast。`VideoWatermarkWorkspace` 移除页面底部 `wm-hint` 消息态，全部路由到通知。
+- 回归：`npm run verify:core`、`npm test`（57 files / 399 tests）、`npm run build` 通过；Rust 透明度单测（`render_plan_text_placements_rotate_once_without_double_rotating`、`watermark_text_opacity_ignores_legacy_dark_mode_override`）通过；Chrome headless CDP 实测首页无横向溢出、无页脚、中性灰层级与胶囊样式符合新 Token。未新增依赖。视觉精细验收交由人工/codex 复核。
+- 版本号维持 `0.92.0`（未提交、未打 tag、未触发发布链路）。
+
+- 2026-08-17 UI Phase 1｜视觉基础收口（0.92 准备，已被本轮中性灰方案取代）：按用户确认的参考方案（Origin/Linear 式暖石墨灰 + 淡紫 accent）执行第一轮 UI 改造。全应用色温由冷蓝黑切换为暖石墨灰（`--color-app:#141413` 等），主按钮改为暖白底深色文字（`--color-primary:#e6e1d8` + `--color-primary-contrast`），accent 淡紫灰 `#c9bfd8` 仅用于焦点/选中/开关/进度等关键状态。
+- `styles.css` 旧冷蓝调色板（#0d131b / #202a37 / #5b9bd5 等约 100 处硬编码）机械化迁移为暖调语义色；`components.css` 移除模块导航蓝色竖条与蓝色辉光、工具箱首页径向蓝光与网格装饰、卡片渐变与 glow；外壳/面板圆角统一回 8px Token。
+- 选中态语义拆分：`.asset-row/.board-card/.section-header` 等选中由 `--color-primary` 迁移到 `--color-accent-border / --color-accent-soft`；ModuleNav active 改为中性微亮背景 + 弱边框，不再出现彩色竖条；胶囊返回按钮改中性胶囊。
+- 水印工具、批量模板 GIF、GIF 媒体时间轴的填充态与 accent 文本全部迁移到 accent 语义（背景 accent + 深色文字），避免暖白主色导致白字不可见；Fabric 选框颜色同步为暖色 accent。功能链路、Render Plan、FFmpeg、导出与队列代码零改动。
+- 工具箱首页重排：新增「生产工具 / 规划中」两组标题，3 个生产工具 + 2 个 disabled 占位卡（桌面端「GIF 压缩」、网页版「轻量 GIF 工具」），页脚计数改为「3 个生产工具 · 2 个规划中」；移除英文 eyebrow 与暗水印隐藏入口。
+- 回归：`npm run verify:core`、`npm test`（57 files / 399 tests）、`npm run build` 通过；Chrome headless CDP 实测 1440×900 / 1280×720 / 1100×720 首页无横向溢出，Logo 与版式、设置弹窗、水印工具页关键计算样式符合新 Token（截图存 `/tmp/bmw-shots/`，未纳入仓库）。未新增依赖、字体或二进制。
+- 版本号统一为 `0.92.0`（package.json / package-lock / Cargo.toml / tauri.conf.json / Cargo.lock 本包条目）；未打 tag、未触发发布链路。GitHub/CNB 仓库链接、文案统一与「水印与追溯」残留清理仍按约定放在最后的文案轮。
+- 仍未验证：Tauri 桌面实机的高 DPI、系统字体、Fabric 选框与导出像素一致性；浏览器计算样式不替代桌面壳验收。
+
+## 2026-08-17｜水印度量统一与预览刷新
+
+- 2026-08-17 完成水印与 UI 迭代的只读筹备：确认“间距”被实现为中心步长、45° 仅旋转单个水印而未旋转砖型晶格、视频间距/密度/行列存在双真值，以及视频 Canvas 参数变化仍重复解码底帧。新增 `docs/WATERMARK_MEASUREMENT_UNIFICATION_PREP.md`，定义后续唯一度量、刷新语义和验收门禁。
+- 新增 `docs/UI_ITERATION_PREP_2026-08-17.md` 与 `artifacts/ui-iteration-prep/2026-08-17/` 证据，记录首页、设置、图片/视频水印、App Shell、基础控件和 Token 的问题优先级；本轮未修改功能代码、CSS、依赖、Render Plan、FFmpeg 或导出链路。
 - 阶段一完成图片水印收口：统一产品名「水印工具」、旧 `watermark-trace` 偏好迁移、文字/Logo 共用配置与 Render Plan、single/规则平铺/错位平铺、原图按住查看、输出格式与非覆盖命名保持一致。
 - 阶段二完成同一「水印工具」的图片/视频模式：支持 MP4/MOV 选择、metadata 展示、文字/Logo 的 single/规则平铺、静帧预览、正式 FIFO 任务状态与真实进度。
+- 视频模式进一步拆分为独立「视频水印」页面：图片页不再包含图片/视频 Tabs；新增时间轴 scrubber、零秒首帧预览、高质量/平衡/较小文件三档、GPU 硬件编码开关与 AME 式本地草稿队列。Add Queue 不调用后端，Start Queue 才按序提交 Rust FIFO。
+- 编码参数按后端公开能力映射：libx264 使用 CRF/preset，NVENC 使用 CQ，VideoToolbox 使用公开 bitrate 策略；明确不宣称“无损/不压缩”。未开放 QSV/AMF、硬件解码、暂停/恢复、剪辑时间轴或源目录导出。
 - 视频后端继续复用随包 FFmpeg/FFprobe 与 CPU drawtext/overlay 滤镜；Windows 默认优先尝试 `h264_nvenc`，macOS 优先尝试 `h264_videotoolbox`，失败时兼容模式回退到 `libx264`。当前未验证 Windows 性能收益。
 - 本阶段仅新增 5 个 Radix 直接依赖（Collapsible、Select、Slider、Tabs、Tooltip），锁文件包条目约由 283 增至 328（约 +45 个传递条目）；视频 UI 未新增更多依赖。
 - 本次提交快照构建实测：复用现有 `node_modules` 约 227 MB，`dist` 约 1.5 MB，最大 JavaScript chunk gzip 162.21 KB（`dist/assets` gzip 合计 323,225 bytes）。本轮未打包桌面安装包。
 - 未开放剪辑/时间轴/QSV/AMF/硬件解码/拖入/持久队列或阶段三暗水印。
+- 水印度量统一与预览刷新修复：图片预览/导出、视频 Canvas 预览与 FFmpeg 输出共用同一份 `WatermarkConfig → Render Plan` 纯几何布置（`pattern: single|brick`、`density: dense|standard|sparse`、`phaseOffset` 错位；间距 `inlineGap`/`rowGap` 以水印高度 h 为单位）。删除 `spacingX/spacingY` 中心步长语义及 `tileColumns/tileRows`/`boundingWidth/boundingHeight` 双真值，行列数一律由画布与内容盒推导。默认改为 45° 密集砖型（50% 错位），晶格方向随旋转角；`©KURO GAMES ALL RIGHTS RESERVED` 5% 在 1920×1080 上约 15 个实例，无叠加堆叠、无轮廓接触。视频 Canvas 底帧仅在素材/时间戳变化时解码，文字/字号/透明度/角度/密度/排列变化只重绘覆盖层，参数变化下一帧可见。新增/更新 `watermarkRenderPlan`、`videoWatermarkPlan`、`VideoWatermarkCanvas` 及适配器/工作台测试（含绘制级重绘与不重复解码测试）。
+- 视频水印正式输出契约收口：有效透明度严格等于用户配置透明度（移除遗留的 `darkMode → 0.06` 隐藏覆盖）；FFmpeg 文字水印改为单次旋转的精灵叠加到 Render Plan 百分比 placements，不再对已旋转的砖型中心做整层二次旋转；队列草稿深拷贝冻结 placements 并逐行显示冻结摘要，避免实时控件误指已入队任务；入队与运行时记录非敏感渲染参数诊断日志。新增对应回归测试（0.56 贯通适配器/请求/滤镜、默认密集砖型 45°、队列快照不漂移、`dark_mode` 不覆盖透明度）。
 
 ## 2026-07-28｜0.9.0 品宣工具箱第一个可用生产版本
 

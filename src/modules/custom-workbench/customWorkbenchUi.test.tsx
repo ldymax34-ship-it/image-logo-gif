@@ -30,7 +30,9 @@ describe('CustomWorkbench visible controls', () => {
     expect(html).toContain('aria-label="导出当前画板"');
     expect(html).toContain('>PNG<');
     expect(html).toContain('>JPG<');
-    expect(html).toContain('>导出当前画板<');
+    expect(html).toContain('导出当前画板');
+    expect(html).toContain('class="primary-button"');
+    expect(html).not.toContain('specular-button');
     expect(html).toContain('disabled=""');
     expect(html).toContain('role="status"');
   });

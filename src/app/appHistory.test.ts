@@ -1,0 +1,25 @@
+// @vitest-environment jsdom
+import { describe, expect, it } from 'vitest';
+import { parseRecentTools, pushRecentTool } from './appHistory';
+
+describe('appHistory', () => {
+  it('keeps only released tools when reading an older local cache', () => {
+    const result = parseRecentTools(JSON.stringify([
+      { tool: 'gif-compress', at: 4 },
+      { tool: 'logo-layout', at: 3 },
+      { tool: 'video-watermark', at: 2 },
+      { tool: 'batch-template-gif', at: 1 }
+    ]));
+
+    expect(result.map((entry) => entry.tool)).toEqual(['logo-layout', 'video-watermark']);
+  });
+
+  it('moves the latest released tool to the front without duplicates', () => {
+    const result = pushRecentTool([
+      { tool: 'watermark', at: 1 },
+      { tool: 'logo-layout', at: 2 }
+    ], 'watermark');
+
+    expect(result.map((entry) => entry.tool)).toEqual(['watermark', 'logo-layout']);
+  });
+});

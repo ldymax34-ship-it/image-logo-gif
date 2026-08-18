@@ -11,7 +11,7 @@ export function BrandControlsPanel({ logoGroup, cprState, brandLayer, brandSetti
   const resolvedLogoEffect = resolveColorEffect(logoGroup.colorMode, brandLayer.logoEffect);
 
   return <BrandPanel>
-    <section className="brand-control-group" aria-labelledby="logo-controls-title">
+    <section className="brand-control-group brand-logo-group" aria-labelledby="logo-controls-title">
       <SectionHeader id="logo-controls-title" title="Logo" description="组合与单项资源" state={activeSection === 'logo' ? 'active' : brandLayer.logoEnabled ? 'idle' : 'disabled'} />
       <LogoGroupControls group={logoGroup} language={logoGroup.gameLogoLanguage} onLanguageChange={onLanguageChange} onChange={onLogoChange} effectColor={brandLayer.logoEffect.color} onEffectColorChange={(color) => onBrandLayerChange({ ...brandLayer, logoEffect: { ...brandLayer.logoEffect, color } })} />
       <label className="toggle compact-toggle"><input type="checkbox" checked={brandLayer.logoEnabled} onChange={(event) => onBrandLayerChange({ ...brandLayer, logoEnabled: event.target.checked })} />显示 Logo</label>

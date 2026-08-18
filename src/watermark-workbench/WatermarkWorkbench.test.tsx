@@ -8,6 +8,7 @@ import type { BoardBrandAction } from '../modules/media-workbench/boardBrandRedu
 import type { FocusSession } from '../modules/media-workbench/focusSession';
 import type { PendingConfirmation, PresetApplyMode, MediaWorkbenchState } from '../modules/media-workbench/useMediaWorkbenchState';
 import { buildWatermarkRenderInput } from './watermarkExport';
+import { exportStatusStore } from '../components/export-status/exportStatusStore';
 import {
   WatermarkWorkbench,
   buildWatermarkExportItems,
@@ -113,7 +114,7 @@ describe('WatermarkWorkbench', () => {
   });
 
   it('uses the configured scale in the render config', () => {
-    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, spacingX: 220, spacingY: 160, pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
+    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, density: 'dense', pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
     const result = createWorkbenchWatermarkConfig({ width: 1000, height: 500 }, config, { offsetX: 11, scale: 2 })!;
     if (result.kind !== 'text') throw new Error('expected text watermark config');
     expect(result.fontSize).toBe(50);
@@ -122,7 +123,7 @@ describe('WatermarkWorkbench', () => {
   });
 
   it('keeps watermark font size proportional for smaller output presets', () => {
-    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 10, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, spacingX: 220, spacingY: 160, pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
+    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 10, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, density: 'dense', pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
     const original = createWorkbenchWatermarkConfig({ width: 1200, height: 800 }, config)!;
     const small = createWorkbenchWatermarkConfig({ width: 300, height: 200 }, config)!;
     if (original.kind !== 'text' || small.kind !== 'text') throw new Error('expected text watermark config');
@@ -209,7 +210,7 @@ describe('WatermarkWorkbench', () => {
     expect(exportHarness.exportBoardImage).toHaveBeenCalledTimes(2);
     const exportedInput = exportHarness.exportBoardImage.mock.calls[0][0] as { watermarkConfig?: unknown; asset: MaterialAsset; spec: MaterialSpec };
     expect(exportedInput.watermarkConfig).toBeDefined();
-    const defaultConfig: WatermarkBusinessConfig = { contentKind: 'text', text: '\u00a9KURO GAMES ALL RIGHTS RESERVED', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, spacingX: 220, spacingY: 160, pattern: 'tiled', phaseOffset: 0.5, anchor: 'center' };
+    const defaultConfig: WatermarkBusinessConfig = { contentKind: 'text', text: '\u00a9KURO GAMES ALL RIGHTS RESERVED', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, pattern: 'brick', density: 'dense', phaseOffset: 0.5, anchor: 'center' };
     const previewInput = buildWatermarkRenderInput({ asset: exportedInput.asset, spec: exportedInput.spec }, defaultConfig, undefined, undefined, {});
     expect(exportedInput.watermarkConfig).toEqual(previewInput.watermarkConfig);
     expect(fileSystemHarness.saveBlobToOutputTarget.mock.calls.map((call) => call[1])).toEqual([
@@ -220,20 +221,34 @@ describe('WatermarkWorkbench', () => {
     container.remove();
   });
 
-  it('warns before returning after changing a spacing field', async () => {
+  it('explicitly requests the global export center after the output picker returns', async () => {
+    const requestOpen = vi.spyOn(exportStatusStore, 'requestOpen');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<WatermarkWorkbench onReturn={() => undefined} sharedState={makeSharedState({ assets, selectedAssetId: 'a' })} />); });
+    const exportButton = container.querySelector<HTMLButtonElement>('[aria-label="导出水印图片"]');
+    await act(async () => { exportButton?.click(); await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(fileSystemHarness.chooseOutputTarget).toHaveBeenCalledTimes(1);
+    // 不再只依赖「新批次自动展开」：任务注册后显式打开/聚焦全局导出中心。
+    expect(requestOpen).toHaveBeenCalledTimes(1);
+    requestOpen.mockRestore();
+    await act(async () => { root.unmount(); });
+    container.remove();
+  });
+
+  it('does not render a duplicate page-level return button after changing a watermark field', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
     const onReturn = vi.fn();
     await act(async () => { root.render(<WatermarkWorkbench onReturn={onReturn} sharedState={makeSharedState({ assets, selectedAssetId: 'a' })} />); });
-    const spacing = [...container.querySelectorAll<HTMLInputElement>('input[type="number"]')]
-      .find((input) => input.value === '220');
-    await act(async () => { changeInput(spacing!, '240'); });
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')!;
+    await act(async () => { changeInput(textarea, '改变了的水印文字'); });
     const returnButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
       .find((button) => button.textContent === '返回工具箱');
-    await act(async () => { returnButton?.click(); });
+    expect(returnButton).toBeUndefined();
     expect(onReturn).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('放弃当前设置？');
     await act(async () => { root.unmount(); });
     container.remove();
   });

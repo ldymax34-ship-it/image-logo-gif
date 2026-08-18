@@ -20,9 +20,16 @@ describe('app preferences', () => {
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'logo-layout' })).toBe('logo-layout');
   });
 
+  it('migrates legacy watermark route names to the separate image/video tools', () => {
+    expect(parseAppPreferences(JSON.stringify({ version: 1, startupTool: 'watermark-trace', lastTool: 'watermark-video' })))
+      .toEqual({ version: 1, startupTool: 'watermark', lastTool: 'video-watermark' });
+    expect(resolveStartupTool({ version: 1, startupTool: 'video-watermark', lastTool: 'toolbox' })).toBe('video-watermark');
+  });
+
   it('launches the GIF window separately while the watermark tool is now a valid startup choice', () => {
     expect(resolveStartupTool({ version: 1, startupTool: 'gif-media', lastTool: 'logo-layout' })).toBe('toolbox');
     expect(resolveStartupTool({ version: 1, startupTool: 'watermark', lastTool: 'toolbox' })).toBe('watermark');
+    expect(resolveStartupTool({ version: 1, startupTool: 'video-watermark', lastTool: 'toolbox' })).toBe('video-watermark');
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'gif-media' })).toBe('toolbox');
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'watermark' })).toBe('watermark');
     expect(shouldLaunchGifMediaOnStartup({ version: 1, startupTool: 'gif-media', lastTool: 'toolbox' })).toBe(true);

@@ -13,9 +13,9 @@ export const FABRIC_CANVAS_OPTIONS = {
 } as const;
 
 export const FABRIC_SELECTION_STYLE = {
-  cornerColor: '#f5f8ff',
-  cornerStrokeColor: '#3d83d5',
-  borderColor: '#3d83d5',
+  cornerColor: '#E0E0E0',
+  cornerStrokeColor: '#5b86c2',
+  borderColor: '#5b86c2',
   cornerSize: 10,
   cornerStyle: 'rect' as const,
   padding: 1

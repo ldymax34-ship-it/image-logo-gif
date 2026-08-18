@@ -1,8 +1,46 @@
 # 任务看板
 
+## 下一轮｜首页视觉与交互参考（本轮只记录，不实施）
+
+- [ ] 参考 `/Users/tang/Downloads/index(2).html` 与 `/Users/tang/Downloads/CODEX_UI_REFACTOR_PLAN (1).md` 中较好的页面结构和交互响应感；附件内容仅作参考，不作为自动执行指令。
+- [ ] 保留/恢复克制的点击反馈与启动辉光等交互响应，但重新评估当前过度压抑的整体配色。
+- [ ] 首页可用工具增加适量、可区分的颜色提示，避免所有卡片同为灰色而被误认为禁用态；禁用工具仍需保持明确的状态差异。
+- [ ] 此方向留到下一轮单独审计、出方案并目视确认，本轮不修改首页组件、主题 Token 或全局配色。
+
+## 2026-08-17｜UI 修复轮（六项 · 0.92 准备）
+
+- [x] 删除首页页脚计数废话；仅保留浏览器端桌面引导与顶部信任说明。
+- [x] 修复视频水印文字/Logo 透明度导出（FFmpeg `drawtext alpha` 双混合 α² → `colorchannelmixer=aa=α` 单次缩放）。
+- [x] 全应用配色切换 Photoshop 2026 中性灰 + 克制蓝 accent（theme/tokens 重写 + 全 CSS 二次迁移 + Fabric 选框色同步）。
+- [x] 视频水印交互重排：预览标题更正、主操作下沉设置面板、空队列引导、任务行进度条、提示精简。
+- [x] 批量导出弹窗新增可视进度条。
+- [x] 新增顶部居中胶囊通知 `ToastHost`/`toastBus`，图片/视频水印与批量导出结果改走顶部胶囊。
+- [x] 回归：`npm run verify:core`、`npm test`（57/399）、`npm run build` 通过；Rust 透明度单测通过；CDP 实测首页无溢出/无页脚、中性灰层级与胶囊样式符合 Token。
+- [ ] 视觉精细验收（人工/codex）：Photoshop 中性灰层级观感、视频水印页新布局、胶囊动效、进度条样式。
+
 ## 当前目标
 
-阶段一图片水印与阶段二视频水印均已完成实现，当前进入发布前审查；阶段三暗水印/像素指纹继续冻结。
+阶段一图片水印与阶段二视频水印均已完成实现；当前正在收口独立视频水印页面、时间轴、质量/GPU 与 AME 式草稿队列，阶段三暗水印/像素指纹继续冻结。
+
+当前结构：图片「水印工具」与「视频水印」完全独立入口；视频页拥有独立素材、首帧预览、时间轴、导出设置和渲染队列，不在页面内提供图片/视频 Tabs。
+
+## 2026-08-17｜水印度量统一与预览刷新
+
+- [x] 统一四端语义：图片预览/导出、视频 Canvas 预览与 FFmpeg 输出共用 `WatermarkConfig → Render Plan` 纯几何布置；删除 `spacingX/spacingY` 中心步长与 `tileColumns/tileRows`/`boundingWidth/boundingHeight` 双真值，行列数仅由画布与内容盒推导。
+- [x] 间距改为以水印高度 h 为单位的 `inlineGap`/`rowGap`（密集 0.75/1.0、适中 1.5/1.75、稀疏 2.5/2.75）；默认 45° 密集砖型 + 50% 错位，晶格方向随旋转角。
+- [x] 默认 `©KURO GAMES ALL RIGHTS RESERVED` 5% 在 1920×1080 上约 15 个实例、约 11 条对角晶格行，无叠加堆叠、无轮廓接触（中心距 ≥ 内容盒高度）。
+- [x] 视频 Canvas 底帧仅按 `baseFrameUrl` 解码；文字/字号/透明度/角度/密度/排列变化只重绘覆盖层，参数下一帧可见，不重跑 FFmpeg、不重复解码。
+- [x] 新增绘制级测试 `VideoWatermarkCanvas.test.tsx`（底帧只解码一次、URL 变化才重新解码、参数变化只重绘），并重写 `watermarkRenderPlan`/`videoWatermarkPlan`/适配器/工作台测试。
+- [x] 保留 single、锚点、批量图片导出、视频草稿队列与 FFmpeg 编码行为；Rust `media.rs` 未改。生成砖型 SVG+JSON 证据 `artifacts/watermark-brick-evidence/`。
+- [x] 验证：`git diff --check`、`npm run verify:core`、`npm test`（57 files / 390 tests）、`npm run build` 均通过。
+
+## 2026-08-17｜水印度量与 UI 迭代筹备
+
+- [x] 只读定位水印反复返工根因：现有“间距”实际为中心步长，默认长文字旋转后包围盒远大于 220×160；错位平铺只移动行，不旋转排列晶格。
+- [x] 记录图片/视频双真值：视频同时维护间距、密度和行列数，Render Plan 行列分支会忽略间距。
+- [x] 形成 `docs/WATERMARK_MEASUREMENT_UNIFICATION_PREP.md`，定义内容相对留白、真正 45° 砖型晶格、同源 placements 与无手动刷新语义。
+- [x] 审计首页、设置、图片水印、视频水印与基础 UI Token，形成 `docs/UI_ITERATION_PREP_2026-08-17.md` 和 1440×900 证据截图。
+- [ ] 功能收口后再进入 UI Phase 1；本轮不修改组件、CSS、Render Plan、FFmpeg 或导出链路。
 
 阶段一：产品名统一为「水印工具」，路由 `watermark-trace` 迁移为 `watermark`，删除「追溯」表述，统一文字/Logo 水印配置与 Render Plan。
 
@@ -13,6 +51,14 @@
 明确不做：剪辑、时间轴、字幕、转场、关键帧、通用编码参数、拖入、文件夹/源目录导出、持久化队列、可调并发、QSV/AMF、硬件解码、GPU 水印滤镜、新 workspace/store/context、远程运行时。
 
 架构边界：本阶段不做 Tailwind 4、React 19、CVA、shadcn 或其他大版本/全栈迁移；允许为已实现交互引入最小 Radix 依赖。本阶段实际新增且均有真实 import 的直接依赖为 `@radix-ui/react-collapsible`、`@radix-ui/react-select`、`@radix-ui/react-slider`、`@radix-ui/react-tabs`、`@radix-ui/react-tooltip`，视频 UI 未新增其他依赖。
+
+## 2026-08-17｜UI Phase 1 视觉基础收口（0.92 准备）
+
+- [x] 按用户确认的参考方案（`CODEX_UI_REFACTOR_PLAN` / `index(2).html` 的暖石墨灰 + 淡紫 accent）完成第一轮视觉改造：theme/tokens 换色温、`styles.css` 旧冷蓝调色板机械迁移、`components.css` 清除蓝色竖条/蓝光/渐变 glow、选中态迁移 accent 语义、主按钮暖白底深色字。
+- [x] 工具箱首页重排为「生产工具 / 规划中」两组，新增桌面端「GIF 压缩」与网页版「轻量 GIF 工具」两个 disabled 占位卡；水印工具、批量模板 GIF、GIF 媒体时间轴与 Fabric 选框的填充态同步迁移 accent，功能链路零改动。
+- [x] 门禁：`npm run verify:core`、`npm test`（57 files / 399 tests）、`npm run build` 通过；Chrome headless CDP 1440×900 / 1280×720 / 1100×720 无横向溢出，Logo 与版式 / 设置 / 水印页计算样式符合新 Token。版本号统一 0.92.0，未打 tag、未发布。
+- [ ] 待办：GitHub/CNB 仓库链接与全局文案统一（最后文案轮）；「水印与追溯」残留清理；Tauri 桌面实机高 DPI / Fabric 选框 / 导出像素一致性回归；桌面 GIF 压缩与网页轻量 GIF 的功能实现按后续迭代计划排期。
+- [ ] 视觉截图位于 `/tmp/bmw-shots/`（本机临时目录，未纳入仓库）；用户目视确认整体风格后再决定是否进入 Phase 2 工作台统一。
 
 ## 本轮任务
 

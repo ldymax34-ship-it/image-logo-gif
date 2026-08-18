@@ -75,6 +75,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(media::MediaTaskRegistry::default())
@@ -116,6 +117,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             save_export_file,
             media::media_engine_status,
+            media::watermark_encoder_capability,
+            media::video_watermark_recommendation,
             media::start_gif_media_task,
             media::start_watermark_media_task,
             media::probe_media,

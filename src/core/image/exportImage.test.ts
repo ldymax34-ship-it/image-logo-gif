@@ -85,7 +85,7 @@ describe('buildBoardRenderPlan watermark integration', () => {
   const asset: MaterialAsset = { id: 'asset', fileName: 'background.png', objectUrl: 'blob:background', width: 100, height: 50, fileSize: 1, mimeType: 'image/png' };
   const spec = { id: 'spec', name: 'spec', width: 100, height: 50, format: 'png' as const };
   const previewState = { assetId: asset.id, specId: spec.id, fitMode: 'contain' as const, crop: createInitialCropState(asset, spec, 'contain') };
-  const config: WatermarkConfig = { kind: 'text', text: '同源', fontFamily: 'Arial', color: '#fff', fontSize: 12, pattern: 'tiled', rotation: 45, opacity: .4, offsetX: 0, offsetY: 0, spacingX: 50, spacingY: 40 };
+  const config: WatermarkConfig = { kind: 'text', text: '同源', fontFamily: 'Arial', color: '#fff', fontSize: 12, pattern: 'brick', rotation: 45, opacity: .4, offsetX: 0, offsetY: 0, density: 'dense', phaseOffset: 0.5 };
   const input = (overrides: Partial<BoardRenderInput> = {}): BoardRenderInput => ({ asset, spec, previewState, brandLayer: { ...DEFAULT_BRAND_LAYER, logoEnabled: false, cprEnabled: false }, ...overrides });
 
   it('has no watermark layers in both normal and logo-group branches without config', () => {

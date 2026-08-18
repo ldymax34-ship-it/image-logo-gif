@@ -29,7 +29,7 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
   const setColor = (colorMode: BrandColorMode) => onChange(setCprColorMode(state, colorMode));
 
   return (
-    <section className="brand-control-group" aria-labelledby="cpr-controls-title">
+    <section className="brand-control-group brand-cpr-group" aria-labelledby="cpr-controls-title">
       <SectionHeader id="cpr-controls-title" title="CPR" description="固定 SVG 图层" state={sectionState ?? (state.enabled ? 'idle' : 'disabled')}>
         <label className="toggle compact-toggle">
           <input type="checkbox" checked={state.enabled} onChange={(event) => patch({ enabled: event.target.checked })} />

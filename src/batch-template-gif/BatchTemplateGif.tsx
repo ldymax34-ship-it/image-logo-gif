@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ToolPageHeader } from '../components';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
+import { useOptionalAppRuntime, type AppNavigationTarget } from '../app/AppRuntimeProvider';
 import {
   CHROMA_COLORS,
   createEmptyJob,
@@ -19,13 +20,14 @@ import {
   type VideoFitMode,
 } from './types';
 
-type Props = { onReturn: () => void };
+type Props = { onReturn: () => void; onOpenChangelog?: () => void };
 
 const FIT_LABELS: Record<VideoFitMode, string> = { cover: '填满区域', contain: '完整显示' };
 const PREF_LABELS: Record<CompressionPreference, string> = { balanced: '均衡', clarity: '优先清晰', smoothness: '优先流畅' };
 const CHROMA_MODES: ChromaKeyMode[] = ['green', 'blue', 'red', 'custom'];
 
-export function BatchTemplateGif({ onReturn }: Props) {
+export function BatchTemplateGif({ onReturn, onOpenChangelog }: Props) {
+  const runtime = useOptionalAppRuntime();
   // ---- state ----
   const [desktop, setDesktop] = useState(false);
   const [engine, setEngine] = useState<MediaEngineStatus>({ ready: false, message: '检查引擎…' });
@@ -183,7 +185,27 @@ export function BatchTemplateGif({ onReturn }: Props) {
   // ---- batch run ----
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<AppNavigationTarget>();
   const hasUnsavedWork = Boolean(hasWork || job.outputDir || job.startSeconds > 0 || job.endSeconds !== job.videoDuration);
+
+  useEffect(() => {
+    if (!runtime) return;
+    return runtime.registerNavigationGuard((target) => {
+      if (taskStatus !== 'running' && !hasUnsavedWork) return true;
+      setPendingNavigation(target);
+      return false;
+    });
+  }, [hasUnsavedWork, runtime, taskStatus]);
+
+  function leaveTo(target: AppNavigationTarget) {
+    setPendingNavigation(undefined);
+    if (taskStatus === 'running') {
+      setMessage('批量任务正在处理；当前批量接口未提供安全取消，任务完成或失败后再返回。');
+      return;
+    }
+    if (target === 'media' || target === 'custom') runtime?.setActiveModule(target);
+    else runtime?.setActiveTool(target);
+  }
   function requestReturn() {
     if (taskStatus === 'running' || hasUnsavedWork) setShowReturnConfirm(true);
     else onReturn();
@@ -289,6 +311,7 @@ export function BatchTemplateGif({ onReturn }: Props) {
         description="把视频批量装入 PNG 模板，面向多语言与多版位生产。"
         status="experimental"
         onReturn={requestReturn}
+        onOpenChangelog={onOpenChangelog}
       />
 
       <div className="btg-layout">
@@ -525,6 +548,16 @@ export function BatchTemplateGif({ onReturn }: Props) {
           destructive={taskStatus !== 'running'}
           onCancel={() => setShowReturnConfirm(false)}
           onConfirm={confirmReturn}
+        />
+      )}
+      {pendingNavigation && (
+        <ConfirmationDialog
+          title="切换工具将清空当前合成内容"
+          message="当前批量合成配置或素材尚未输出，切换后会清空这些内容。"
+          confirmLabel="放弃并切换"
+          destructive
+          onCancel={() => setPendingNavigation(undefined)}
+          onConfirm={() => leaveTo(pendingNavigation)}
         />
       )}
 

@@ -17,29 +17,45 @@ import type { ExportJob, ResolvedExportAssets } from './exportJob';
 export type BatchProgress = { current: number; total: number };
 export type BatchFailure<T> = { item: T; message: string };
 export type BatchItemOutcome = { result: 'success' | 'compressed'; beforeBytes?: number; outputBytes: number; actualFileName?: string };
-export type BatchOutcome<T> = { item: T; outcome: BatchItemOutcome | { result: 'failed'; reason: string } };
+export type BatchFailedOutcome = { result: 'failed'; reason: string };
+export type BatchOutcome<T> = { item: T; outcome: BatchItemOutcome | BatchFailedOutcome };
 export type BatchResult<T> = { completed: number; failures: BatchFailure<T>[]; outcomes: BatchOutcome<T>[] };
+
+/**
+ * Per-item lifecycle events emitted by `exportSequentially`. Callers subscribe
+ * here (in the service layer) instead of re-assembling the loop in each page.
+ */
+export type ExportItemCallbacks<T> = {
+  onProgress?: (progress: BatchProgress) => void;
+  onItemStart?: (item: T, index: number) => void;
+  onItemResult?: (item: T, index: number, outcome: BatchItemOutcome | BatchFailedOutcome) => void;
+};
 
 export async function exportSequentially<T>(
   items: T[],
   run: (item: T) => Promise<BatchItemOutcome>,
-  onProgress?: (progress: BatchProgress) => void
+  callbacks: ExportItemCallbacks<T> = {}
 ): Promise<BatchResult<T>> {
   const failures: BatchFailure<T>[] = [];
   const outcomes: BatchOutcome<T>[] = [];
   let completed = 0;
   for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    callbacks.onItemStart?.(item, index);
     try {
-      const outcome = await run(items[index]);
+      const outcome = await run(item);
       completed += 1;
-      outcomes.push({ item: items[index], outcome });
+      outcomes.push({ item, outcome });
+      callbacks.onItemResult?.(item, index, outcome);
     } catch (error) {
       const message = error instanceof Error ? error.message : '导出失败';
       void logDiagnostic('error', 'RENDER_FAILED', message, 'batch-export');
-      failures.push({ item: items[index], message });
-      outcomes.push({ item: items[index], outcome: { result: 'failed', reason: message } });
+      failures.push({ item, message });
+      const failedOutcome: BatchFailedOutcome = { result: 'failed', reason: message };
+      outcomes.push({ item, outcome: failedOutcome });
+      callbacks.onItemResult?.(item, index, failedOutcome);
     }
-    onProgress?.({ current: index + 1, total: items.length });
+    callbacks.onProgress?.({ current: index + 1, total: items.length });
   }
   return { completed, failures, outcomes };
 }
@@ -55,6 +71,8 @@ export type MediaExportRequest = {
   quality: number;
   autoCompressJpeg: boolean;
   onProgress?: (progress: BatchProgress) => void;
+  onJobStart?: (job: ExportJob, index: number) => void;
+  onJobResult?: (job: ExportJob, index: number, outcome: BatchItemOutcome | BatchFailedOutcome) => void;
 };
 
 function resolveAssetsFromJob(job: ExportJob, brandAssets: BrandAsset[]): ResolvedExportAssets {
@@ -110,5 +128,9 @@ export async function exportMediaBatch(request: MediaExportRequest): Promise<Bat
     return result.compressed
       ? { result: 'compressed' as const, beforeBytes: job.estimatedBytes, outputBytes: result.blob.size, actualFileName }
       : { result: 'success' as const, outputBytes: result.blob.size, actualFileName };
-  }, request.onProgress);
+  }, {
+    onProgress: request.onProgress,
+    onItemStart: request.onJobStart,
+    onItemResult: request.onJobResult
+  });
 }

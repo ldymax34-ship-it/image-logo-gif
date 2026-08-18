@@ -20,7 +20,7 @@ export function useMediaBrandActions(input: {
   setPreviewStates: Dispatch<SetStateAction<Record<string, BoardPreviewState>>>; dispatchBoardBrand: Dispatch<BoardBrandAction>;
   setBrandLayer: Dispatch<SetStateAction<BrandLayerState>>;
   setSelectedAssetId: Dispatch<SetStateAction<string | undefined>>; setSelectedSpecId: Dispatch<SetStateAction<string | undefined>>;
-  setMessage: Dispatch<SetStateAction<string>>;
+  setMessage: (message: string) => void;
 }) {
   function applyLogoGroupToSameAspect(nextLogoGroup: LogoGroupState) {
     if (!input.focusSpec) return;

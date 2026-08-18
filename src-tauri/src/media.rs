@@ -75,12 +75,25 @@ pub struct WatermarkOptions {
     #[serde(default)]
     pub offset_y: Option<f64>,
     #[serde(default)]
-    pub spacing_x: Option<f64>,
+    pub columns: Option<u32>,
     #[serde(default)]
-    pub spacing_y: Option<f64>,
+    pub rows: Option<u32>,
     #[serde(default)]
-    pub phase_offset: Option<f64>,
+    pub placements: Option<Vec<WatermarkPlacement>>,
+    #[serde(default)]
+    pub quality: Option<String>,
+    #[serde(default)]
+    pub prefer_hardware: Option<bool>,
+    #[serde(default)]
+    pub reserved_output_path: Option<String>,
     pub output_directory: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPlacement {
+    pub x_percent: f64,
+    pub y_percent: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -123,6 +136,38 @@ pub struct MediaEngineStatus {
     pub message: String,
     pub ffmpeg_version: Option<String>,
     pub ffprobe_version: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkEncoderCapability {
+    pub hardware_available: bool,
+    pub backend_name: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkRecommendationRequest {
+    pub input_path: String,
+    pub kind: String,
+    pub text: String,
+    pub image_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoWatermarkRecommendation {
+    pub size_percent: u32,
+    pub density: String,
+    pub columns: u32,
+    pub rows: u32,
+    pub spacing_x: f64,
+    pub spacing_y: f64,
+    pub opacity: f64,
+    pub angle: i32,
+    pub gutter_percent: u32,
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -468,6 +513,23 @@ fn validate_watermark_request(request: &WatermarkMediaTaskRequest) -> Result<(),
     Ok(())
 }
 
+/// Concise, non-sensitive render parameters for production audit logs. The
+/// watermark text, input/output paths and task ids are deliberately excluded;
+/// only the numeric/layout parameters that determine the visual output are
+/// included so a future render can be reconstructed and compared.
+fn watermark_render_diagnostics(options: &WatermarkOptions) -> String {
+    format!(
+        "kind={} pattern={} density={} size_percent={} opacity={} angle={} placements={}",
+        options.kind,
+        options.pattern.as_deref().unwrap_or("single"),
+        options.density.as_deref().unwrap_or("none"),
+        options.size_percent,
+        options.opacity,
+        options.angle.unwrap_or(0),
+        options.placements.as_ref().map(Vec::len).unwrap_or(0),
+    )
+}
+
 fn next_available_path(directory: &Path, preferred_name: &str) -> PathBuf {
     let candidate = directory.join(preferred_name);
     if !candidate.exists() {
@@ -519,6 +581,24 @@ fn watermark_preferred_name(request: &WatermarkMediaTaskRequest) -> String {
         .unwrap_or("media");
     let extension = media_extension(input).unwrap_or_else(|| "png".into());
     format!("{source_stem}_watermarked.{extension}")
+}
+
+fn watermark_reserved_preferred_name(
+    request: &WatermarkMediaTaskRequest,
+    directory: &Path,
+) -> String {
+    request
+        .options
+        .reserved_output_path
+        .as_deref()
+        .and_then(|reserved| {
+            let reserved = Path::new(reserved);
+            (reserved.parent() == Some(directory))
+                .then(|| reserved.file_name().and_then(|name| name.to_str()))
+                .flatten()
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_else(|| watermark_preferred_name(request))
 }
 
 fn duration_seconds(app: &AppHandle, input: &Path) -> Result<f64, String> {
@@ -859,11 +939,32 @@ fn offset_filter_position(base: &str, offset: Option<f64>) -> String {
 fn text_watermark_positions(
     pattern: &str,
     position: &str,
-    spacing_x: Option<f64>,
-    spacing_y: Option<f64>,
+    density: Option<&str>,
+    columns: Option<u32>,
+    rows: Option<u32>,
+    placements: Option<&[WatermarkPlacement]>,
     offset_x: Option<f64>,
     offset_y: Option<f64>,
 ) -> Vec<(String, String)> {
+    if let Some(placements) = placements {
+        return placements
+            .iter()
+            .map(|placement| {
+                (
+                    format!(
+                        "(w-text_w)*{}{}",
+                        (placement.x_percent / 100.0).clamp(0.0, 1.0),
+                        filter_offset(offset_x)
+                    ),
+                    format!(
+                        "(h-text_h)*{}{}",
+                        (placement.y_percent / 100.0).clamp(0.0, 1.0),
+                        filter_offset(offset_y)
+                    ),
+                )
+            })
+            .collect();
+    }
     if pattern == "single" {
         let (x, y) = drawtext_single_position(position);
         return vec![(
@@ -871,22 +972,23 @@ fn text_watermark_positions(
             offset_filter_position(y, offset_y),
         )];
     }
-    if spacing_x.is_none() && spacing_y.is_none() && offset_x.is_none() && offset_y.is_none() {
-        return drawtext_tiled_coordinates()
-            .iter()
-            .map(|(x, y)| ((*x).to_string(), (*y).to_string()))
-            .collect();
-    }
-    let spacing_x = filter_number(spacing_x.filter(|value| value.is_finite()).unwrap_or(220.0));
-    let spacing_y = filter_number(spacing_y.filter(|value| value.is_finite()).unwrap_or(160.0));
-    let x_shifts = [format!("-{spacing_x}"), "0".into(), format!("+{spacing_x}")];
-    let y_shifts = [format!("-{spacing_y}"), "0".into(), format!("+{spacing_y}")];
-    let mut positions = Vec::with_capacity(9);
-    for y_shift in &y_shifts {
-        for x_shift in &x_shifts {
+    let (cols, rows) = watermark_grid_dimensions(density, columns, rows);
+    let mut positions = Vec::with_capacity(cols * rows);
+    for row in 0..rows {
+        for col in 0..cols {
             positions.push((
-                format!("(w-text_w)/2{x_shift}{}", filter_offset(offset_x)),
-                format!("(h-text_h)/2{y_shift}{}", filter_offset(offset_y)),
+                format!(
+                    "((w-text_w)*{}/{} ){}",
+                    col * 2 + 1,
+                    cols * 2,
+                    filter_offset(offset_x)
+                ),
+                format!(
+                    "((h-text_h)*{}/{} ){}",
+                    row * 2 + 1,
+                    rows * 2,
+                    filter_offset(offset_y)
+                ),
             ));
         }
     }
@@ -896,11 +998,32 @@ fn text_watermark_positions(
 fn image_watermark_positions(
     pattern: &str,
     position: &str,
-    spacing_x: Option<f64>,
-    spacing_y: Option<f64>,
+    density: Option<&str>,
+    columns: Option<u32>,
+    rows: Option<u32>,
+    placements: Option<&[WatermarkPlacement]>,
     offset_x: Option<f64>,
     offset_y: Option<f64>,
 ) -> Vec<(String, String)> {
+    if let Some(placements) = placements {
+        return placements
+            .iter()
+            .map(|placement| {
+                (
+                    format!(
+                        "(main_w-overlay_w)*{}{}",
+                        (placement.x_percent / 100.0).clamp(0.0, 1.0),
+                        filter_offset(offset_x)
+                    ),
+                    format!(
+                        "(main_h-overlay_h)*{}{}",
+                        (placement.y_percent / 100.0).clamp(0.0, 1.0),
+                        filter_offset(offset_y)
+                    ),
+                )
+            })
+            .collect();
+    }
     if pattern == "single" {
         let (x, y) = overlay_coordinates(position);
         return vec![(
@@ -908,26 +1031,42 @@ fn image_watermark_positions(
             offset_filter_position(y, offset_y),
         )];
     }
-    if spacing_x.is_none() && spacing_y.is_none() && offset_x.is_none() && offset_y.is_none() {
-        return tiled_coordinates()
-            .iter()
-            .map(|(x, y)| ((*x).to_string(), (*y).to_string()))
-            .collect();
-    }
-    let spacing_x = filter_number(spacing_x.filter(|value| value.is_finite()).unwrap_or(220.0));
-    let spacing_y = filter_number(spacing_y.filter(|value| value.is_finite()).unwrap_or(160.0));
-    let x_shifts = [format!("-{spacing_x}"), "0".into(), format!("+{spacing_x}")];
-    let y_shifts = [format!("-{spacing_y}"), "0".into(), format!("+{spacing_y}")];
-    let mut positions = Vec::with_capacity(9);
-    for y_shift in &y_shifts {
-        for x_shift in &x_shifts {
+    let (cols, rows) = watermark_grid_dimensions(density, columns, rows);
+    let mut positions = Vec::with_capacity(cols * rows);
+    for row in 0..rows {
+        for col in 0..cols {
             positions.push((
-                format!("(main_w-overlay_w)/2{x_shift}{}", filter_offset(offset_x)),
-                format!("(main_h-overlay_h)/2{y_shift}{}", filter_offset(offset_y)),
+                format!(
+                    "((main_w-overlay_w)*{}/{} ){}",
+                    col * 2 + 1,
+                    cols * 2,
+                    filter_offset(offset_x)
+                ),
+                format!(
+                    "((main_h-overlay_h)*{}/{} ){}",
+                    row * 2 + 1,
+                    rows * 2,
+                    filter_offset(offset_y)
+                ),
             ));
         }
     }
     positions
+}
+
+fn watermark_grid_dimensions(
+    density: Option<&str>,
+    columns: Option<u32>,
+    rows: Option<u32>,
+) -> (usize, usize) {
+    if let (Some(columns), Some(rows)) = (columns, rows) {
+        return (columns.clamp(1, 12) as usize, rows.clamp(1, 12) as usize);
+    }
+    match density.unwrap_or("medium") {
+        "high" => (5, 3),
+        "low" => (2, 2),
+        _ => (3, 2),
+    }
 }
 
 fn escape_filter_value(value: &str) -> String {
@@ -1015,6 +1154,19 @@ fn current_platform() -> &'static str {
         "macos"
     } else {
         "linux"
+    }
+}
+
+fn encoder_backend_for_request(
+    prefer_hardware: Option<bool>,
+    hardware_available: bool,
+) -> EncoderBackend {
+    if prefer_hardware == Some(false) {
+        EncoderBackend::Cpu
+    } else if hardware_available {
+        EncoderBackend::Hardware
+    } else {
+        EncoderBackend::Cpu
     }
 }
 
@@ -1134,11 +1286,127 @@ where
     }
 }
 
-fn video_encoder_args(platform: &str, backend: EncoderBackend) -> Vec<OsString> {
-    vec![
-        OsString::from("-c:v"),
-        OsString::from(video_encoder_name(platform, backend)),
-    ]
+fn video_encoder_args(
+    platform: &str,
+    backend: EncoderBackend,
+    quality: Option<&str>,
+) -> Vec<OsString> {
+    let encoder = video_encoder_name(platform, backend);
+    let mut args = vec![OsString::from("-c:v"), OsString::from(encoder)];
+    match (backend, encoder) {
+        (EncoderBackend::Cpu, "libx264") => {
+            let (crf, preset) = match quality.unwrap_or("high") {
+                "compact" => ("28", "faster"),
+                "balanced" => ("23", "medium"),
+                _ => ("18", "slow"),
+            };
+            args.extend([
+                OsString::from("-crf"),
+                OsString::from(crf),
+                OsString::from("-preset"),
+                OsString::from(preset),
+            ]);
+        }
+        (EncoderBackend::Hardware, "h264_nvenc") => {
+            let cq = match quality.unwrap_or("high") {
+                "compact" => "28",
+                "balanced" => "23",
+                _ => "18",
+            };
+            args.extend([OsString::from("-cq"), OsString::from(cq)]);
+        }
+        (EncoderBackend::Hardware, "h264_videotoolbox") => {
+            let bitrate = match quality.unwrap_or("high") {
+                "compact" => "2000k",
+                "balanced" => "4000k",
+                _ => "8000k",
+            };
+            args.extend([OsString::from("-b:v"), OsString::from(bitrate)]);
+        }
+        _ => {}
+    }
+    args
+}
+
+/// Builds the FFmpeg text watermark graph for the render-plan path, where
+/// `placements` are absolute pre-rotated brick centers (percentages of the
+/// source frame). The text is drawn once, centered on a transparent layer,
+/// rotated once, split, and overlaid at each center. This keeps the rotation
+/// semantics identical to the Canvas preview (one rotation around each center)
+/// instead of rotating the whole lattice layer a second time.
+fn text_watermark_sprite_filter(
+    placements: &[WatermarkPlacement],
+    font: &str,
+    text_file_value: &str,
+    font_size: &str,
+    alpha: &str,
+    angle: i32,
+    angle_radians: f64,
+    angle_sin: f64,
+    angle_cos: f64,
+    cleanup: Vec<PathBuf>,
+) -> (String, Vec<PathBuf>) {
+    let mut graph = vec![
+        "[0:v]split[base][text-source]".to_string(),
+        "[text-source]format=rgba,colorchannelmixer=aa=0[text-base]".to_string(),
+        format!(
+            "[text-base]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2[text-centered]"
+        ),
+    ];
+    // Draw the glyphs fully opaque first, then scale the sprite's alpha
+    // channel once. Drawing with `alpha` directly would blend the text
+    // against the video pixels already present in `text-base` and then
+    // blend again at overlay time, yielding opacity ≈ α² instead of α.
+    graph.push(format!(
+        "[text-centered]colorchannelmixer=aa={alpha}[text-faded]"
+    ));
+    let text_label = if angle != 0 {
+        graph.push(format!(
+            "[text-faded]rotate={angle_radians:.8}:ow=iw*{angle_cos:.8}+ih*{angle_sin:.8}:oh=iw*{angle_sin:.8}+ih*{angle_cos:.8}:fillcolor=black@0[text-rotated]"
+        ));
+        "text-rotated"
+    } else {
+        "text-faded"
+    };
+    // `W`/`H` are the base dimensions and `w`/`h` the (rotated) sprite
+    // dimensions; `x=p*W-w/2` centers the sprite on the placement center `p`.
+    let positions: Vec<(String, String)> = placements
+        .iter()
+        .map(|placement| {
+            let x = (placement.x_percent / 100.0).clamp(0.0, 1.0);
+            let y = (placement.y_percent / 100.0).clamp(0.0, 1.0);
+            (format!("{x}*W-w/2"), format!("{y}*H-h/2"))
+        })
+        .collect();
+    if positions.len() == 1 {
+        let (x, y) = &positions[0];
+        graph.push(format!(
+            "[base][{text_label}]overlay=x={x}:y={y}:format=auto[watermarked]"
+        ));
+    } else {
+        let labels: Vec<String> = (0..positions.len())
+            .map(|index| format!("wm{index}"))
+            .collect();
+        graph.push(format!(
+            "[{text_label}]split={}[{}]",
+            positions.len(),
+            labels.join("][")
+        ));
+        let mut previous = "base".to_string();
+        for (index, (x, y)) in positions.iter().enumerate() {
+            let next = if index + 1 == positions.len() {
+                "watermarked".to_string()
+            } else {
+                format!("tile{index}")
+            };
+            graph.push(format!(
+                "[{previous}][{}]overlay=x={x}:y={y}:format=auto[{next}]",
+                labels[index]
+            ));
+            previous = next;
+        }
+    }
+    (graph.join(";"), cleanup)
 }
 
 fn watermark_filter_with_font(
@@ -1146,22 +1414,17 @@ fn watermark_filter_with_font(
     request: &WatermarkMediaTaskRequest,
 ) -> Result<(String, Vec<PathBuf>), String> {
     let options = &request.options;
-    let is_dark = options.dark_mode.unwrap_or(false);
-    let alpha = if is_dark {
-        "0.06".to_string() // very subtle for dark watermark
-    } else {
-        options.opacity.to_string()
-    };
+    // Effective opacity is the user-visible config opacity. The legacy
+    // `dark_mode` field is intentionally ignored: it used to force `0.06`,
+    // which silently diverged the FFmpeg output from the preview. The field is
+    // kept only for wire compatibility and no longer changes any render output.
+    let alpha = options.opacity.to_string();
     let pattern = options.pattern.as_deref().unwrap_or("diagonal");
+    let angle = options.angle.unwrap_or(0).clamp(-180, 180);
+    let angle_radians = (angle as f64).to_radians();
+    let angle_sin = angle_radians.sin().abs();
+    let angle_cos = angle_radians.cos().abs();
     if options.kind == "text" {
-        let positions = text_watermark_positions(
-            pattern,
-            &options.position,
-            options.spacing_x,
-            options.spacing_y,
-            options.offset_x,
-            options.offset_y,
-        );
         let font = escape_filter_value(
             &font_path
                 .ok_or_else(|| "内置中文水印字体未找到".to_string())?
@@ -1170,17 +1433,70 @@ fn watermark_filter_with_font(
         let text_file = watermark_text_file(&request.task_id, &options.text)?;
         let text_file_value = escape_filter_value(&text_file.to_string_lossy());
         let font_size = format!("h*{}/100", options.size_percent);
-        let mut previous = "0:v".to_string();
-        let mut graph = Vec::new();
+        // The render plan always ships absolute, pre-rotated brick centers as
+        // `placements`. Draw the text once into a rotated sprite and overlay it
+        // at each center so preview and FFmpeg share one rotation semantics
+        // instead of double-rotating the whole lattice layer.
+        if let Some(placements) = options.placements.as_deref() {
+            // The render plan measures the font as a percentage of the short
+            // frame edge (`min(w, h)`); using `h` alone would render portrait
+            // videos with a larger watermark than the Canvas preview. The legacy
+            // no-placements path keeps its frozen `h`-based rule for the older
+            // media tools.
+            let sprite_font_size = format!("min(w\\,h)*{}/100", options.size_percent);
+            return Ok(text_watermark_sprite_filter(
+                placements,
+                &font,
+                &text_file_value,
+                &sprite_font_size,
+                &alpha,
+                angle,
+                angle_radians,
+                angle_sin,
+                angle_cos,
+                vec![text_file],
+            ));
+        }
+        // Legacy path (no explicit placements): grid/single positions are drawn
+        // on one transparent layer and rotated once as a whole.
+        let positions = text_watermark_positions(
+            pattern,
+            &options.position,
+            options.density.as_deref(),
+            options.columns,
+            options.rows,
+            None,
+            options.offset_x,
+            options.offset_y,
+        );
+        let mut graph = vec![
+            "[0:v]split[base][text-source]".to_string(),
+            "[text-source]format=rgba,colorchannelmixer=aa=0[text-base]".to_string(),
+        ];
+        let mut previous = "text-base".to_string();
         for (index, (x, y)) in positions.iter().enumerate() {
             let next = if index + 1 == positions.len() {
-                "watermarked".to_string()
+                "text-complete".to_string()
             } else {
                 format!("text{index}")
             };
-            graph.push(format!("[{previous}]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white@{alpha}:fontsize={font_size}:x={x}:y={y}[{next}]"));
+            graph.push(format!("[{previous}]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white:fontsize={font_size}:x={x}:y={y}[{next}]"));
             previous = next;
         }
+        graph.push(format!(
+            "[{previous}]colorchannelmixer=aa={alpha}[text-faded]"
+        ));
+        let text_layer = if angle != 0 {
+            graph.push(format!(
+                "[text-faded]rotate={angle_radians:.8}:ow=iw*{angle_cos:.8}+ih*{angle_sin:.8}:oh=iw*{angle_sin:.8}+ih*{angle_cos:.8}:fillcolor=black@0[text-rotated]"
+            ));
+            "text-rotated"
+        } else {
+            &previous
+        };
+        graph.push(format!(
+            "[base][{text_layer}]overlay=(W-w)/2:(H-h)/2:format=auto[watermarked]"
+        ));
         return Ok((graph.join(";"), vec![text_file]));
     }
 
@@ -1188,8 +1504,10 @@ fn watermark_filter_with_font(
     let positions = image_watermark_positions(
         pattern,
         &options.position,
-        options.spacing_x,
-        options.spacing_y,
+        options.density.as_deref(),
+        options.columns,
+        options.rows,
+        options.placements.as_deref(),
         options.offset_x,
         options.offset_y,
     );
@@ -1200,17 +1518,27 @@ fn watermark_filter_with_font(
             options.size_percent
         ),
     ];
+    if angle != 0 {
+        graph.push(format!(
+            "[watermark]rotate={angle_radians:.8}:ow=iw*{angle_cos:.8}+ih*{angle_sin:.8}:oh=iw*{angle_sin:.8}+ih*{angle_cos:.8}:fillcolor=black@0[watermark-rotated]"
+        ));
+    }
+    let watermark_label = if angle != 0 {
+        "watermark-rotated"
+    } else {
+        "watermark"
+    };
     if positions.len() == 1 {
         let (x, y) = &positions[0];
         graph.push(format!(
-            "[base][watermark]overlay=x={x}:y={y}:format=auto[watermarked]"
+            "[base][{watermark_label}]overlay=x={x}:y={y}:format=auto[watermarked]"
         ));
     } else {
         let labels: Vec<String> = (0..positions.len())
             .map(|index| format!("wm{index}"))
             .collect();
         graph.push(format!(
-            "[watermark]split={}[{}]",
+            "[{watermark_label}]split={}[{}]",
             positions.len(),
             labels.join("][")
         ));
@@ -1276,7 +1604,11 @@ fn watermark_ffmpeg_args_with_font(
         // Video watermark CPU closure: fixed libx264 + AAC, yuv420p, faststart,
         // and optional audio mapping so silent sources never fail.
         args.extend([OsString::from("-map"), OsString::from("0:a?")]);
-        args.extend(video_encoder_args(current_platform(), backend));
+        args.extend(video_encoder_args(
+            current_platform(),
+            backend,
+            request.options.quality.as_deref(),
+        ));
         args.extend([
             OsString::from("-pix_fmt"),
             OsString::from("yuv420p"),
@@ -1378,6 +1710,342 @@ fn probe_video(ffprobe: &Path, path: &Path) -> Result<VideoProbe, String> {
         has_audio: audio.is_some(),
         codec,
         pix_fmt,
+    })
+}
+
+fn text_watermark_estimate_units(text: &str) -> (f64, f64) {
+    let lines = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+        .max(1) as f64;
+    let width_units = text
+        .chars()
+        .map(|character| {
+            if character.is_ascii_whitespace() {
+                0.30
+            } else if character.is_ascii() {
+                0.55
+            } else {
+                1.0
+            }
+        })
+        .sum::<f64>()
+        .max(1.0)
+        + 0.8;
+    (width_units, lines * 1.18 + 0.25)
+}
+
+fn rotated_bounding_box(width: f64, height: f64, angle_degrees: i32) -> (f64, f64) {
+    let radians = (angle_degrees as f64).to_radians();
+    let cosine = radians.cos().abs();
+    let sine = radians.sin().abs();
+    (
+        width * cosine + height * sine,
+        width * sine + height * cosine,
+    )
+}
+
+struct WatermarkRecommendationEstimate {
+    width_per_percent: f64,
+    height_per_percent: f64,
+}
+
+fn watermark_recommendation_estimate(
+    ffprobe: &Path,
+    source_width: u32,
+    source_height: u32,
+    kind: &str,
+    text: &str,
+    image_path: Option<&Path>,
+) -> Result<WatermarkRecommendationEstimate, String> {
+    if kind == "image" {
+        let logo = image_path.ok_or("Logo 推荐缺少图片素材")?;
+        let probe = probe_video(ffprobe, logo)?;
+        if probe.width == 0 || probe.height == 0 {
+            return Err("无法读取 Logo 尺寸".into());
+        }
+        let width_per_percent = source_width as f64 / 100.0;
+        let height_per_percent = width_per_percent * probe.height as f64 / probe.width as f64;
+        return Ok(WatermarkRecommendationEstimate {
+            width_per_percent,
+            height_per_percent,
+        });
+    }
+    let (width_units, height_units) = text_watermark_estimate_units(text);
+    // The render plan measures the font against the short frame edge; keep the
+    // recommendation on the same basis so portrait video sizes stay consistent
+    // with the preview and the FFmpeg sprite filter.
+    let font_height_per_percent = source_width.min(source_height) as f64 / 100.0;
+    Ok(WatermarkRecommendationEstimate {
+        width_per_percent: font_height_per_percent * width_units,
+        height_per_percent: font_height_per_percent * height_units,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct RecommendationGrid {
+    density: &'static str,
+    columns: u32,
+    rows: u32,
+}
+
+fn recommendation_grids(width: u32, height: u32) -> Vec<RecommendationGrid> {
+    let aspect = width as f64 / height.max(1) as f64;
+    if aspect < 0.8 {
+        vec![
+            RecommendationGrid {
+                density: "high",
+                columns: 2,
+                rows: 3,
+            },
+            RecommendationGrid {
+                density: "medium",
+                columns: 2,
+                rows: 3,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 2,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 1,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 1,
+                rows: 1,
+            },
+        ]
+    } else if aspect > 2.0 {
+        vec![
+            RecommendationGrid {
+                density: "high",
+                columns: 5,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "medium",
+                columns: 4,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 3,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 2,
+                rows: 1,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 1,
+                rows: 1,
+            },
+        ]
+    } else {
+        vec![
+            RecommendationGrid {
+                density: "high",
+                columns: 3,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "medium",
+                columns: 3,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 3,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 2,
+                rows: 2,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 2,
+                rows: 1,
+            },
+            RecommendationGrid {
+                density: "low",
+                columns: 1,
+                rows: 1,
+            },
+        ]
+    }
+}
+
+fn first_frame_edge_density(ffmpeg: &Path, input: &Path, duration: f64) -> Option<f64> {
+    let timestamp = (duration * 0.1).clamp(0.0, 1.0);
+    let output = Command::new(ffmpeg)
+        .args(["-hide_banner", "-nostdin", "-ss"])
+        .arg(timestamp.to_string())
+        .args(["-i"])
+        .arg(input)
+        .args([
+            "-vf",
+            "scale=160:-2:flags=area,edgedetect=low=0.05:high=0.15,format=gray,signalstats,metadata=print:file=-",
+            "-frames:v",
+            "1",
+            "-an",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    stdout
+        .lines()
+        .chain(stderr.lines())
+        .find_map(|line| {
+            line.strip_prefix("lavfi.signalstats.YAVG=")
+                .and_then(|value| value.parse::<f64>().ok())
+        })
+        .filter(|value| value.is_finite())
+}
+
+fn max_recommended_size(
+    estimate: &WatermarkRecommendationEstimate,
+    source_width: u32,
+    source_height: u32,
+    grid: RecommendationGrid,
+    min_size: u32,
+    max_size: u32,
+    angle: i32,
+    area_ratio_limit: f64,
+) -> Option<u32> {
+    let cell_width = source_width as f64 / grid.columns as f64 * 0.82;
+    let cell_height = source_height as f64 / grid.rows as f64 * 0.82;
+    for percent in (min_size..=max_size).rev() {
+        let width = estimate.width_per_percent * percent as f64;
+        let height = estimate.height_per_percent * percent as f64;
+        let (rotated_width, rotated_height) = rotated_bounding_box(width, height, angle);
+        if rotated_width > cell_width || rotated_height > cell_height {
+            continue;
+        }
+        let occupied_ratio =
+            rotated_width * rotated_height * grid.columns as f64 * grid.rows as f64
+                / (source_width as f64 * source_height as f64);
+        if occupied_ratio > area_ratio_limit {
+            continue;
+        }
+        return Some(percent);
+    }
+    None
+}
+
+#[tauri::command]
+pub fn video_watermark_recommendation(
+    app: AppHandle,
+    request: WatermarkRecommendationRequest,
+) -> Result<VideoWatermarkRecommendation, String> {
+    let input = PathBuf::from(&request.input_path);
+    if !is_video_media(&input) || !input.is_file() {
+        return Err("推荐仅支持可访问的 MP4 或 MOV 视频".into());
+    }
+    if !matches!(request.kind.as_str(), "text" | "image") {
+        return Err("推荐水印类型无效".into());
+    }
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let ffprobe = sidecar_path(&app, "ffprobe")?;
+    let probe = probe_video(&ffprobe, &input)?;
+    if probe.width == 0 || probe.height == 0 {
+        return Err("无法读取视频尺寸".into());
+    }
+    let estimate = watermark_recommendation_estimate(
+        &ffprobe,
+        probe.width,
+        probe.height,
+        &request.kind,
+        &request.text,
+        request.image_path.as_deref().map(Path::new),
+    )?;
+    let edge_density = first_frame_edge_density(&ffmpeg, &input, probe.duration);
+    let fallback = edge_density.is_none();
+    let edge = edge_density.unwrap_or(6.0);
+    let preferred_density = if edge < 4.0 {
+        0usize
+    } else if edge > 12.0 {
+        2usize
+    } else {
+        1usize
+    };
+    let grids = recommendation_grids(probe.width, probe.height);
+    let min_size = 3;
+    let max_size = if request.kind == "image" { 14 } else { 10 };
+    let angle = 30;
+    let area_ratio_limit = if edge > 12.0 { 0.18 } else { 0.24 };
+    let mut selected = None;
+    for index in preferred_density..grids.len() {
+        let grid = grids[index];
+        if let Some(size) = max_recommended_size(
+            &estimate,
+            probe.width,
+            probe.height,
+            grid,
+            min_size,
+            max_size,
+            angle,
+            area_ratio_limit,
+        ) {
+            selected = Some((grid, size));
+            break;
+        }
+    }
+    let (grid, size_percent) = selected
+        .ok_or_else(|| "当前水印内容过长或画面尺寸过小，无法生成不重叠的推荐平铺".to_string())?;
+    let opacity = if edge > 12.0 {
+        0.56
+    } else if edge < 4.0 {
+        0.42
+    } else {
+        0.50
+    };
+    let aspect = probe.width as f64 / probe.height as f64;
+    let orientation = if aspect < 0.8 {
+        "竖屏"
+    } else if aspect > 2.0 {
+        "超宽"
+    } else {
+        "横屏"
+    };
+    let analysis = if fallback {
+        "画面分析不可用，按尺寸与包围盒保守计算".to_string()
+    } else {
+        format!("画面复杂度 {edge:.1}")
+    };
+    let reason = format!(
+        "{orientation} {analysis} · {cols}×{rows} 网格 · 字号 {size_percent}%",
+        cols = grid.columns,
+        rows = grid.rows
+    );
+    Ok(VideoWatermarkRecommendation {
+        size_percent,
+        density: grid.density.to_string(),
+        columns: grid.columns,
+        rows: grid.rows,
+        spacing_x: 240.0,
+        spacing_y: 180.0,
+        opacity,
+        angle,
+        gutter_percent: 18,
+        reason,
     })
 }
 
@@ -1968,6 +2636,34 @@ pub fn media_engine_status(app: AppHandle) -> MediaEngineStatus {
     engine_status(app)
 }
 
+#[tauri::command]
+pub fn watermark_encoder_capability(app: AppHandle) -> Result<WatermarkEncoderCapability, String> {
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let ffprobe = sidecar_path(&app, "ffprobe")?;
+    let platform = current_platform();
+    let available = hardware_encoder_available(&ffmpeg, &ffprobe);
+    let encoder = video_encoder_name(platform, EncoderBackend::Hardware);
+    let backend_name = if available {
+        match encoder {
+            "h264_nvenc" => "NVENC",
+            "h264_videotoolbox" => "VideoToolbox",
+            _ => "CPU",
+        }
+    } else {
+        "CPU"
+    };
+    let reason = if available {
+        "随包 FFmpeg 已通过硬件编码探测".to_string()
+    } else {
+        "当前随包 FFmpeg 未通过硬件编码探测".to_string()
+    };
+    Ok(WatermarkEncoderCapability {
+        hardware_available: available,
+        backend_name: backend_name.to_string(),
+        reason,
+    })
+}
+
 /// Adjust GIF encoding parameters to reduce file size based on compression preference.
 fn reduce_gif_params(
     current_fps: u32,
@@ -2416,11 +3112,10 @@ pub fn start_watermark_media_task(
     if is_video {
         let ffmpeg = sidecar_path(&app, "ffmpeg")?;
         let ffprobe = sidecar_path(&app, "ffprobe")?;
-        let backend = if hardware_encoder_available(&ffmpeg, &ffprobe) {
-            EncoderBackend::Hardware
-        } else {
-            EncoderBackend::Cpu
-        };
+        let backend = encoder_backend_for_request(
+            request.options.prefer_hardware,
+            hardware_encoder_available(&ffmpeg, &ffprobe),
+        );
         let font_path = if request.options.kind == "text" {
             Some(watermark_font_path(&app)?)
         } else {
@@ -2440,7 +3135,11 @@ pub fn start_watermark_media_task(
             input_path,
         };
         let directory = PathBuf::from(&payload.request.options.output_directory);
-        let preferred_name = watermark_preferred_name(&payload.request);
+        let preferred_name = watermark_reserved_preferred_name(&payload.request, &directory);
+        log::info!(
+            "WATERMARK_ENQUEUE task_id={task_id} {}",
+            watermark_render_diagnostics(&payload.request.options)
+        );
         let final_output = queue
             .enqueue_with_reservation(task_id.clone(), payload, &directory, &preferred_name)
             .map_err(|error| match error {
@@ -2979,17 +3678,21 @@ pub struct WatermarkPreviewRequest {
     #[serde(default)]
     pub pattern: Option<String>,
     #[serde(default)]
+    pub density: Option<String>,
+    #[serde(default)]
     pub angle: Option<i32>,
     #[serde(default)]
     pub offset_x: Option<f64>,
     #[serde(default)]
     pub offset_y: Option<f64>,
     #[serde(default)]
-    pub spacing_x: Option<f64>,
+    pub columns: Option<u32>,
     #[serde(default)]
-    pub spacing_y: Option<f64>,
+    pub rows: Option<u32>,
     #[serde(default)]
-    pub phase_offset: Option<f64>,
+    pub placements: Option<Vec<WatermarkPlacement>>,
+    #[serde(default)]
+    pub clean_frame: Option<bool>,
     pub timestamp_seconds: Option<f64>,
     pub width: Option<u32>,
     pub duration: Option<f64>,
@@ -3400,7 +4103,7 @@ fn preview_temp_path(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
-    Ok(directory.join(format!(".watermark-preview-{safe_id}-{nonce}.png")))
+    Ok(directory.join(format!("watermark-preview-{safe_id}-{nonce}.png")))
 }
 
 fn watermark_preview_args(
@@ -3408,6 +4111,36 @@ fn watermark_preview_args(
     request: &WatermarkPreviewRequest,
     output: &Path,
 ) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
+    if request.clean_frame == Some(true) {
+        let mut args = vec![
+            OsString::from("-hide_banner"),
+            OsString::from("-nostdin"),
+            OsString::from("-y"),
+        ];
+        if let Some(timestamp) = request.timestamp_seconds {
+            args.extend([
+                OsString::from("-ss"),
+                OsString::from(timestamp.max(0.0).to_string()),
+            ]);
+        }
+        args.extend([OsString::from("-i"), OsString::from(&request.input_path)]);
+        if let Some(width) = request.width.filter(|width| *width > 0) {
+            args.extend([
+                OsString::from("-vf"),
+                OsString::from(format!("scale={width}:-2:flags=lanczos")),
+            ]);
+        }
+        args.extend([
+            OsString::from("-frames:v"),
+            OsString::from("1"),
+            OsString::from("-map"),
+            OsString::from("0:v:0"),
+            OsString::from("-f"),
+            OsString::from("image2"),
+            output.as_os_str().to_owned(),
+        ]);
+        return Ok((args, Vec::new()));
+    }
     if request.kind != "text" && request.kind != "image" {
         return Err("水印预览仅支持文字或 Logo".into());
     }
@@ -3425,14 +4158,17 @@ fn watermark_preview_args(
             size_percent: request.size_percent,
             opacity: request.opacity,
             pattern: request.pattern.clone(),
-            density: None,
+            density: request.density.clone(),
             angle: request.angle,
             dark_mode: None,
             offset_x: request.offset_x,
             offset_y: request.offset_y,
-            spacing_x: request.spacing_x,
-            spacing_y: request.spacing_y,
-            phase_offset: request.phase_offset,
+            columns: request.columns,
+            rows: request.rows,
+            placements: request.placements.clone(),
+            quality: None,
+            prefer_hardware: None,
+            reserved_output_path: None,
             output_directory: request.temp_directory.clone(),
         },
     };
@@ -3613,10 +4349,12 @@ pub fn start_watermark_preview(
                 .min(duration),
         );
     }
-    request.temp_directory = std::env::temp_dir()
-        .join("brand-material-workbench-watermark-preview")
-        .to_string_lossy()
-        .into_owned();
+    let preview_root = app
+        .path()
+        .resolve("watermark-preview", tauri::path::BaseDirectory::AppCache)
+        .map_err(|error| format!("无法解析应用缓存目录：{error}"))?;
+    fs::create_dir_all(&preview_root).map_err(|error| format!("无法创建预览缓存目录：{error}"))?;
+    request.temp_directory = preview_root.to_string_lossy().into_owned();
     request.ffmpeg_path = Some(sidecar_path(&app, "ffmpeg")?);
     request.ffprobe_path = Some(sidecar_path(&app, "ffprobe")?);
     request.font_path = if request.kind == "text" {
@@ -3648,6 +4386,10 @@ fn run_watermark_production_job(
 ) -> WatermarkTerminal {
     let payload = &job.payload;
     let task_id = job.task_id.clone();
+    log::info!(
+        "WATERMARK_RUN task_id={task_id} {}",
+        watermark_render_diagnostics(&payload.request.options)
+    );
     (emit)(WatermarkQueueEvent::Status {
         task_id: task_id.clone(),
         status: WatermarkJobStatus::Probing,
@@ -4479,10 +5221,10 @@ mod tests {
         start_watermark_preview_queue_with_runner, start_watermark_video_queue,
         target_sidecar_name, tiled_coordinates, watermark_output_path, EncoderBackend,
         FrozenWatermarkJob, FrozenWatermarkPreviewJob, GifMediaOptions, GifMediaTaskRequest,
-        MediaTaskEvent, WatermarkEncodePayload, WatermarkJobStatus, WatermarkMediaTaskRequest,
-        WatermarkOptions, WatermarkPreviewRequest, WatermarkPreviewStatus,
-        WatermarkPreviewStatusEvent, WatermarkPreviewTerminal, WatermarkQueueError,
-        WatermarkQueueEvent, WatermarkTerminal,
+        MediaTaskEvent, MediaTerminal, WatermarkEncodePayload, WatermarkJobStatus,
+        WatermarkMediaTaskRequest, WatermarkOptions, WatermarkPreviewRequest,
+        WatermarkPreviewStatus, WatermarkPreviewStatusEvent, WatermarkPreviewTerminal,
+        WatermarkQueueError, WatermarkQueueEvent, WatermarkTerminal,
     };
     use std::{
         ffi::OsString,
@@ -4817,15 +5559,22 @@ mod tests {
                 position: position.into(),
                 size_percent,
                 opacity,
-                pattern: None,
-                density: None,
+                pattern: Some(if tiled {
+                    "tiled".into()
+                } else {
+                    "single".into()
+                }),
+                density: Some("medium".into()),
                 angle: None,
                 dark_mode: None,
                 offset_x: None,
                 offset_y: None,
-                spacing_x: None,
-                spacing_y: None,
-                phase_offset: None,
+                columns: None,
+                rows: None,
+                placements: None,
+                quality: None,
+                prefer_hardware: None,
+                reserved_output_path: None,
                 output_directory: tmp_dir.to_string_lossy().into_owned(),
             },
         }
@@ -4881,6 +5630,29 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(watermark_output_path(&req).to_string_lossy(), expected);
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn watermark_reserved_name_only_accepts_same_directory() {
+        let tmp =
+            std::env::temp_dir().join(format!("brand-media-wm-reserved-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut req = watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, false);
+        req.options.reserved_output_path = Some(
+            tmp.join("P6-GIF1_watermarked_2.mp4")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        assert_eq!(
+            super::watermark_reserved_preferred_name(&req, &tmp),
+            "P6-GIF1_watermarked_2.mp4"
+        );
+        req.options.reserved_output_path = Some("/tmp/other/P6-GIF1_watermarked_2.mp4".into());
+        assert_eq!(
+            super::watermark_reserved_preferred_name(&req, &tmp),
+            "photo_watermarked.jpg"
+        );
         fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -5064,7 +5836,7 @@ mod tests {
             ("macos", super::EncoderBackend::Hardware),
             ("linux", super::EncoderBackend::Hardware),
         ] {
-            let args = super::video_encoder_args(platform, backend);
+            let args = super::video_encoder_args(platform, backend, Some("high"));
             let joined = args
                 .iter()
                 .map(|a| a.to_string_lossy())
@@ -5073,6 +5845,95 @@ mod tests {
             assert!(!joined.contains("qsv"), "no QSV: {joined}");
             assert!(!joined.contains("amf"), "no AMF: {joined}");
         }
+    }
+
+    #[test]
+    fn recommendation_grids_adapt_landscape_portrait_and_ultrawide_and_respect_the_maximum_count() {
+        let landscape = super::recommendation_grids(3840, 2160);
+        let portrait = super::recommendation_grids(1080, 1920);
+        let ultrawide = super::recommendation_grids(3440, 1080);
+        for grid in landscape
+            .iter()
+            .chain(portrait.iter())
+            .chain(ultrawide.iter())
+        {
+            assert!(
+                grid.columns * grid.rows <= 12,
+                "too many watermarks: {}x{}",
+                grid.columns,
+                grid.rows
+            );
+        }
+        assert_eq!((landscape[0].columns, landscape[0].rows), (3, 2));
+        assert_eq!((portrait[0].columns, portrait[0].rows), (2, 3));
+        assert_eq!((ultrawide[0].columns, ultrawide[0].rows), (5, 2));
+    }
+
+    #[test]
+    fn recommendation_size_keeps_rotated_bounding_boxes_inside_cells_with_a_gutter() {
+        for (width, height) in [(3840u32, 2160u32), (1920, 1080), (1080, 1920), (3440, 1080)] {
+            let estimate = super::watermark_recommendation_estimate(
+                Path::new("/unused/ffprobe"),
+                width,
+                height,
+                "text",
+                "©KURO GAMES ALL RIGHTS RESERVED",
+                None,
+            )
+            .unwrap();
+            let grids = super::recommendation_grids(width, height);
+            let feasible = grids.iter().find_map(|grid| {
+                super::max_recommended_size(&estimate, width, height, *grid, 1, 10, 30, 0.24)
+                    .map(|size| (*grid, size))
+            });
+            let (grid, size) = feasible
+                .unwrap_or_else(|| panic!("no feasible recommendation for {width}x{height}"));
+            let percent = size as f64;
+            let rotated = super::rotated_bounding_box(
+                estimate.width_per_percent * percent,
+                estimate.height_per_percent * percent,
+                30,
+            );
+            assert!(rotated.0 <= width as f64 / grid.columns as f64 * 0.82);
+            assert!(rotated.1 <= height as f64 / grid.rows as f64 * 0.82);
+        }
+    }
+
+    #[test]
+    fn encoder_quality_args_use_backend_specific_public_parameters() {
+        let cpu_high = super::video_encoder_args("macos", super::EncoderBackend::Cpu, Some("high"));
+        let cpu_compact =
+            super::video_encoder_args("macos", super::EncoderBackend::Cpu, Some("compact"));
+        assert!(cpu_high
+            .iter()
+            .any(|arg| arg == "-crf" && cpu_high.iter().any(|value| value == "18")));
+        assert!(cpu_compact.iter().any(|value| value == "28"));
+
+        let nvenc_high =
+            super::video_encoder_args("windows", super::EncoderBackend::Hardware, Some("high"));
+        assert!(nvenc_high.iter().any(|arg| arg == "-cq"));
+        assert!(nvenc_high.iter().any(|value| value == "18"));
+
+        let videotoolbox_balanced =
+            super::video_encoder_args("macos", super::EncoderBackend::Hardware, Some("balanced"));
+        assert!(videotoolbox_balanced.iter().any(|arg| arg == "-b:v"));
+        assert!(videotoolbox_balanced.iter().any(|value| value == "4000k"));
+    }
+
+    #[test]
+    fn encoder_backend_request_respects_explicit_cpu_preference() {
+        assert_eq!(
+            super::encoder_backend_for_request(Some(false), true),
+            super::EncoderBackend::Cpu
+        );
+        assert_eq!(
+            super::encoder_backend_for_request(None, true),
+            super::EncoderBackend::Hardware
+        );
+        assert_eq!(
+            super::encoder_backend_for_request(Some(true), false),
+            super::EncoderBackend::Cpu
+        );
     }
 
     #[test]
@@ -5359,11 +6220,15 @@ mod tests {
         let tmp =
             std::env::temp_dir().join(format!("brand-media-wm-txt-tiled-{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
-        let args = test_watermark_args(
-            &watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, true),
-            Path::new("/tmp/out.jpg"),
-        );
-        let filter = extract_filter(&args.0);
+        let mut request =
+            watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, true);
+        request.options.pattern = Some("tiled".into());
+        let (filter, cleanup) =
+            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
+                .expect("production filter");
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
         assert!(
             filter.contains("drawtext"),
             "text tiled filter must contain drawtext"
@@ -5377,8 +6242,179 @@ mod tests {
             !filter.contains("overlay_w"),
             "text tiled must not contain overlay_w"
         );
-        assert!(filter.contains("w*0.17-text_w/2") || filter.contains("w*0.50-text_w/2"));
+        assert!(
+            filter.contains("((w-text_w)*1/6 )"),
+            "unexpected filter: {filter}"
+        );
+        assert!(
+            filter.contains("((w-text_w)*5/6 )"),
+            "unexpected filter: {filter}"
+        );
+        assert!(
+            filter.contains("((h-text_h)*1/4 )"),
+            "unexpected filter: {filter}"
+        );
         fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn explicit_render_plan_placements_override_legacy_grid_coordinates() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-plan-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request = watermark_request(&tmp, "text", "水印", None, "center", 5, 0.5, true);
+        request.options.placements = Some(vec![
+            super::WatermarkPlacement {
+                x_percent: 20.0,
+                y_percent: 30.0,
+            },
+            super::WatermarkPlacement {
+                x_percent: 80.0,
+                y_percent: 70.0,
+            },
+        ]);
+        request.options.columns = Some(9);
+        request.options.rows = Some(9);
+        let (filter, cleanup) =
+            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
+                .expect("production filter");
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
+        // The render-plan path draws one centered text sprite and overlays it at
+        // each pre-rotated placement center instead of emitting one drawtext per
+        // grid cell.
+        assert_eq!(filter.matches("drawtext=").count(), 1);
+        assert!(filter.contains("x=(w-text_w)/2"));
+        assert!(filter.contains("overlay=x=0.2*W-w/2:y=0.3*H-h/2"));
+        assert!(filter.contains("overlay=x=0.8*W-w/2:y=0.7*H-h/2"));
+        assert!(!filter.contains("(w-text_w)*0.2"));
+        assert!(!filter.contains("((w-text_w)*1/18"));
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn render_plan_text_placements_rotate_once_without_double_rotating() {
+        let tmp =
+            std::env::temp_dir().join(format!("brand-media-wm-sprite-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request =
+            watermark_request(&tmp, "text", "旋转水印", None, "center", 5, 0.56, true);
+        request.options.placements = Some(vec![
+            super::WatermarkPlacement {
+                x_percent: 20.0,
+                y_percent: 30.0,
+            },
+            super::WatermarkPlacement {
+                x_percent: 80.0,
+                y_percent: 70.0,
+            },
+        ]);
+        request.options.angle = Some(45);
+        let (filter, cleanup) =
+            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
+                .expect("production filter");
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
+        // Exactly one rotation (the sprite), never a whole-layer rotate plus a
+        // second rotation of already-rotated centers.
+        assert_eq!(filter.matches("drawtext=").count(), 1);
+        assert_eq!(filter.matches("rotate=").count(), 1);
+        assert!(
+            filter.contains("colorchannelmixer=aa=0.56"),
+            "single application alpha, not drawtext alpha: {filter}"
+        );
+        assert!(
+            !filter.contains("alpha=0.56"),
+            "no double-blended drawtext alpha: {filter}"
+        );
+        assert!(filter.contains("rotate=0.78539816"));
+        assert!(!filter.contains("overlay=(W-w)/2"));
+        assert!(filter.contains("overlay=x=0.2*W-w/2:y=0.3*H-h/2"));
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn watermark_text_opacity_ignores_legacy_dark_mode_override() {
+        let tmp =
+            std::env::temp_dir().join(format!("brand-media-wm-opacity-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request = watermark_request(&tmp, "text", "水印", None, "center", 5, 0.56, true);
+        request.options.placements = Some(vec![super::WatermarkPlacement {
+            x_percent: 50.0,
+            y_percent: 50.0,
+        }]);
+        request.options.dark_mode = Some(true);
+        let (filter, cleanup) =
+            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
+                .expect("production filter");
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
+        assert!(
+            filter.contains("colorchannelmixer=aa=0.56"),
+            "single application alpha: {filter}"
+        );
+        assert!(
+            !filter.contains("alpha=0.56"),
+            "no drawtext alpha double blend: {filter}"
+        );
+        assert!(
+            !filter.contains("aa=0.06"),
+            "dark mode override must stay ignored: {filter}"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn render_plan_placements_fit_inside_frame_and_do_not_overlap() {
+        let text = "©KURO GAMES ALL RIGHTS RESERVED";
+        let (width_units, height_units) = super::text_watermark_estimate_units(text);
+        let font_height = 2160.0 * 0.03;
+        let (bbox_width, bbox_height) =
+            super::rotated_bounding_box(font_height * width_units, font_height * height_units, 30);
+        let placements = vec![
+            (
+                508.5905593292539 / 3840.0 * 100.0,
+                320.38468900814064 / 2160.0 * 100.0,
+            ),
+            (1920.0 / 3840.0 * 100.0, 320.38468900814064 / 2160.0 * 100.0),
+            (
+                3331.4094406707463 / 3840.0 * 100.0,
+                320.38468900814064 / 2160.0 * 100.0,
+            ),
+            (
+                508.5905593292539 / 3840.0 * 100.0,
+                1839.6153109918594 / 2160.0 * 100.0,
+            ),
+            (50.0, 1839.6153109918594 / 2160.0 * 100.0),
+            (
+                3331.4094406707463 / 3840.0 * 100.0,
+                1839.6153109918594 / 2160.0 * 100.0,
+            ),
+        ];
+        for (index, (x_percent, y_percent)) in placements.iter().enumerate() {
+            let cx = x_percent / 100.0 * 3840.0;
+            let cy = y_percent / 100.0 * 2160.0;
+            assert!(
+                cx - bbox_width / 2.0 >= -0.01 && cx + bbox_width / 2.0 <= 3840.01,
+                "placement {index} overflows horizontally"
+            );
+            assert!(
+                cy - bbox_height / 2.0 >= -0.01 && cy + bbox_height / 2.0 <= 2160.01,
+                "placement {index} overflows vertically"
+            );
+            for other in &placements[index + 1..] {
+                let other_x = other.0 / 100.0 * 3840.0;
+                let other_y = other.1 / 100.0 * 2160.0;
+                let overlaps_x = (cx - other_x).abs() < bbox_width;
+                let overlaps_y = (cy - other_y).abs() < bbox_height;
+                assert!(
+                    !(overlaps_x && overlaps_y),
+                    "placement {index} overlaps another placement"
+                );
+            }
+        }
     }
 
     #[test]
@@ -5417,6 +6453,730 @@ mod tests {
             "image filter must not contain text_w"
         );
         fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn watermark_filter_consumes_angle_for_text_and_logo() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-angle-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request =
+            watermark_request(&tmp, "text", "旋转水印", None, "center", 10, 0.5, true);
+        request.options.pattern = Some("single".into());
+        request.options.angle = Some(45);
+        let text = super::watermark_filter_with_font(Some(Path::new("/tmp/font.otf")), &request)
+            .expect("text filter");
+        assert!(text.0.contains("rotate=0.78539816"));
+        assert!(!text.0.contains("[0:v]rotate="));
+        assert!(text
+            .0
+            .contains("[base][text-rotated]overlay=(W-w)/2:(H-h)/2"));
+
+        request.options.kind = "image".into();
+        request.options.image_path = Some("/tmp/logo.png".into());
+        let logo = super::watermark_filter_with_font(None, &request).expect("logo filter");
+        let filter = logo.0;
+        assert!(filter.contains("[watermark]rotate=0.78539816"));
+        assert!(filter.contains("ow=iw*0.70710678+ih*0.70710678"));
+        assert!(filter.contains("[watermark-rotated]overlay="));
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn angle_text_rotates_watermark_without_rotating_background() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("品牌水印角度像素 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let text_file = dir.join("text.txt");
+        fs::write(&text_file, "角度测试").unwrap();
+
+        let run_angle = |angle: i32, output: &Path| {
+            let request = WatermarkMediaTaskRequest {
+                task_id: format!("angle-{angle}"),
+                input_path: input.to_string_lossy().into_owned(),
+                options: WatermarkOptions {
+                    kind: "text".into(),
+                    text: "角度测试".into(),
+                    image_path: None,
+                    position: "bottom-right".into(),
+                    size_percent: 8,
+                    opacity: 0.85,
+                    pattern: Some("single".into()),
+                    density: None,
+                    angle: Some(angle),
+                    dark_mode: None,
+                    offset_x: None,
+                    offset_y: None,
+                    columns: None,
+                    rows: None,
+                    placements: None,
+                    quality: None,
+                    prefer_hardware: None,
+                    reserved_output_path: None,
+                    output_directory: dir.to_string_lossy().into_owned(),
+                },
+            };
+            let (filter, cleanup) =
+                super::watermark_filter_with_font(Some(&font), &request).unwrap();
+            let result = std::process::Command::new(&ffmpeg)
+                .args(["-hide_banner", "-nostdin", "-ss", "0", "-i"])
+                .arg(&input)
+                .args([
+                    "-filter_complex",
+                    &filter,
+                    "-map",
+                    "[watermarked]",
+                    "-frames:v",
+                    "1",
+                    "-y",
+                ])
+                .arg(output)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .unwrap();
+            for path in cleanup {
+                let _ = fs::remove_file(path);
+            }
+            assert!(
+                result.status.success(),
+                "angle {angle} output failed: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        };
+
+        let zero = dir.join("zero.png");
+        let forty_five = dir.join("forty-five.png");
+        run_angle(0, &zero);
+        run_angle(45, &forty_five);
+
+        let background = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(&zero)
+            .args(["-i"])
+            .arg(&forty_five)
+            .args([
+                "-lavfi",
+                "[0:v]crop=100:80:0:0[a];[1:v]crop=100:80:0:0[b];[a][b]psnr",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&background.stderr).contains("average:inf"),
+            "background must not change between angles: {}",
+            String::from_utf8_lossy(&background.stderr)
+        );
+
+        let watermark = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(&zero)
+            .args(["-i"])
+            .arg(&forty_five)
+            .args([
+                "-lavfi",
+                "[0:v][1:v]psnr",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !String::from_utf8_lossy(&watermark.stderr).contains("average:inf"),
+            "watermark region must change between angles"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn render_plan_text_sprite_filter_produces_valid_output() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("品牌砖型同源 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_fixture(&ffmpeg, &input);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let request = WatermarkMediaTaskRequest {
+            task_id: "render-plan-sprite".into(),
+            input_path: input.to_string_lossy().into_owned(),
+            options: WatermarkOptions {
+                kind: "text".into(),
+                text: "©KURO GAMES ALL RIGHTS RESERVED".into(),
+                image_path: None,
+                position: "center".into(),
+                size_percent: 5,
+                opacity: 0.56,
+                pattern: Some("tiled".into()),
+                density: Some("high".into()),
+                angle: Some(45),
+                dark_mode: Some(true),
+                offset_x: None,
+                offset_y: None,
+                columns: None,
+                rows: None,
+                placements: Some(vec![
+                    super::WatermarkPlacement {
+                        x_percent: 25.0,
+                        y_percent: 35.0,
+                    },
+                    super::WatermarkPlacement {
+                        x_percent: 75.0,
+                        y_percent: 65.0,
+                    },
+                ]),
+                quality: None,
+                prefer_hardware: None,
+                reserved_output_path: None,
+                output_directory: dir.to_string_lossy().into_owned(),
+            },
+        };
+        let (filter, cleanup) =
+            super::watermark_filter_with_font(Some(&font), &request).expect("sprite filter");
+        let output = dir.join("watermarked.png");
+        let result = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(&input)
+            .args([
+                "-filter_complex",
+                &filter,
+                "-map",
+                "[watermarked]",
+                "-frames:v",
+                "1",
+                "-y",
+            ])
+            .arg(&output)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
+        assert!(
+            result.status.success(),
+            "render-plan sprite filter failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(output.is_file());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn text_watermark_parameters_change_real_pixels_without_changing_frame_geometry() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("品牌文字参数像素 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_fixture(&ffmpeg, &input);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+
+        let base = || WatermarkOptions {
+            kind: "text".into(),
+            text: "A".into(),
+            image_path: None,
+            position: "bottom-right".into(),
+            size_percent: 10,
+            opacity: 0.5,
+            pattern: Some("single".into()),
+            density: Some("medium".into()),
+            angle: Some(0),
+            dark_mode: None,
+            offset_x: None,
+            offset_y: None,
+            columns: None,
+            rows: None,
+            placements: None,
+            quality: None,
+            prefer_hardware: None,
+            reserved_output_path: None,
+            output_directory: dir.to_string_lossy().into_owned(),
+        };
+
+        let pairs = vec![
+            ("text-content", base(), {
+                let mut options = base();
+                options.text = "B".into();
+                options
+            }),
+            ("size", base(), {
+                let mut options = base();
+                options.size_percent = 18;
+                options
+            }),
+            ("opacity", base(), {
+                let mut options = base();
+                options.opacity = 0.9;
+                options
+            }),
+            ("angle", base(), {
+                let mut options = base();
+                options.angle = Some(45);
+                options
+            }),
+            ("anchor", base(), {
+                let mut options = base();
+                options.position = "top-left".into();
+                options
+            }),
+            (
+                "density",
+                {
+                    let mut options = base();
+                    options.pattern = Some("tiled".into());
+                    options.density = Some("medium".into());
+                    options
+                },
+                {
+                    let mut options = base();
+                    options.pattern = Some("tiled".into());
+                    options.density = Some("high".into());
+                    options
+                },
+            ),
+        ];
+
+        for (index, (name, first, second)) in pairs.into_iter().enumerate() {
+            let first_output = dir.join(format!("{name}-first-{index}.png"));
+            let second_output = dir.join(format!("{name}-second-{index}.png"));
+            render_production_watermark_frame(&ffmpeg, &font, &input, &first, &first_output);
+            render_production_watermark_frame(&ffmpeg, &font, &input, &second, &second_output);
+            assert!(
+                frames_differ(&ffmpeg, &first_output, &second_output),
+                "{name} parameter did not change pixels"
+            );
+            for output in [&first_output, &second_output] {
+                let probe = super::probe_video(&bundled_test_sidecar("ffprobe"), output).unwrap();
+                assert_eq!(
+                    (probe.width, probe.height),
+                    (160, 90),
+                    "{name} changed geometry"
+                );
+            }
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn logo_watermark_parameters_change_real_pixels_and_angle_keeps_output_geometry() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("品牌Logo参数像素 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        let logo = dir.join("logo.png");
+        create_fixture(&ffmpeg, &input);
+        let logo_status = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=48x24:rate=1",
+                "-frames:v",
+                "1",
+                "-pix_fmt",
+                "rgba",
+                "-y",
+            ])
+            .arg(&logo)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(logo_status.success(), "logo fixture creation failed");
+
+        let base = || WatermarkOptions {
+            kind: "image".into(),
+            text: String::new(),
+            image_path: Some(logo.to_string_lossy().into_owned()),
+            position: "bottom-right".into(),
+            size_percent: 12,
+            opacity: 0.5,
+            pattern: Some("single".into()),
+            density: Some("medium".into()),
+            angle: Some(0),
+            dark_mode: None,
+            offset_x: None,
+            offset_y: None,
+            columns: None,
+            rows: None,
+            placements: None,
+            quality: None,
+            prefer_hardware: None,
+            reserved_output_path: None,
+            output_directory: dir.to_string_lossy().into_owned(),
+        };
+
+        let pairs = vec![
+            ("size", base(), {
+                let mut options = base();
+                options.size_percent = 24;
+                options
+            }),
+            ("opacity", base(), {
+                let mut options = base();
+                options.opacity = 0.9;
+                options
+            }),
+            ("angle", base(), {
+                let mut options = base();
+                options.angle = Some(45);
+                options
+            }),
+            ("anchor", base(), {
+                let mut options = base();
+                options.position = "top-left".into();
+                options
+            }),
+            (
+                "density",
+                {
+                    let mut options = base();
+                    options.pattern = Some("tiled".into());
+                    options.density = Some("medium".into());
+                    options
+                },
+                {
+                    let mut options = base();
+                    options.pattern = Some("tiled".into());
+                    options.density = Some("high".into());
+                    options
+                },
+            ),
+        ];
+
+        for (index, (name, first, second)) in pairs.into_iter().enumerate() {
+            let first_output = dir.join(format!("{name}-first-{index}.png"));
+            let second_output = dir.join(format!("{name}-second-{index}.png"));
+            render_production_watermark_frame(&ffmpeg, &logo, &input, &first, &first_output);
+            render_production_watermark_frame(&ffmpeg, &logo, &input, &second, &second_output);
+            assert!(
+                frames_differ(&ffmpeg, &first_output, &second_output),
+                "{name} logo parameter did not change pixels"
+            );
+            for output in [&first_output, &second_output] {
+                let probe = super::probe_video(&bundled_test_sidecar("ffprobe"), output).unwrap();
+                assert_eq!(
+                    (probe.width, probe.height),
+                    (160, 90),
+                    "{name} changed geometry"
+                );
+            }
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn preview_and_formal_watermark_frames_share_the_same_filter_contract() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌预览正式同源 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_fixture(&ffmpeg, &input);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let options = WatermarkOptions {
+            kind: "text".into(),
+            text: "同源验证".into(),
+            image_path: None,
+            position: "bottom-right".into(),
+            size_percent: 10,
+            opacity: 0.8,
+            pattern: Some("single".into()),
+            density: None,
+            angle: Some(0),
+            dark_mode: None,
+            offset_x: None,
+            offset_y: None,
+            columns: None,
+            rows: None,
+            placements: None,
+            quality: Some("high".into()),
+            prefer_hardware: Some(false),
+            reserved_output_path: None,
+            output_directory: dir.to_string_lossy().into_owned(),
+        };
+        let formal_request = WatermarkMediaTaskRequest {
+            task_id: "formal-same-source".into(),
+            input_path: input.to_string_lossy().into_owned(),
+            options: options.clone(),
+        };
+        let formal_output = dir.join("formal.mp4");
+        let temp = super::video_watermark_temp_path(&formal_output);
+        let (args, cleanup) = super::watermark_ffmpeg_args_with_font(
+            Some(&font),
+            &formal_request,
+            &temp,
+            EncoderBackend::Cpu,
+        )
+        .unwrap();
+        let finalize = super::MediaFinalize {
+            final_output: formal_output.clone(),
+            input: input.clone(),
+            validate: true,
+        };
+        let cancel = AtomicBool::new(false);
+        let (terminal, stderr) = super::run_watermark_process_with_progress(
+            &ffmpeg,
+            &ffprobe,
+            &args,
+            &temp,
+            Some(&finalize),
+            &cancel,
+            Some((0.0, 1.0)),
+            &mut |_| {},
+        );
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
+        assert!(
+            matches!(terminal, MediaTerminal::Completed { .. }),
+            "formal encode failed: {stderr}"
+        );
+
+        let formal_frame = dir.join("formal.png");
+        let extraction = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-ss", "0", "-i"])
+            .arg(&formal_output)
+            .args(["-frames:v", "1", "-y"])
+            .arg(&formal_frame)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(extraction.success(), "formal frame extraction failed");
+
+        let preview_request = WatermarkPreviewRequest {
+            task_id: "preview-same-source".into(),
+            input_path: input.to_string_lossy().into_owned(),
+            temp_directory: dir.to_string_lossy().into_owned(),
+            kind: "text".into(),
+            text: options.text.clone(),
+            image_path: None,
+            position: options.position.clone(),
+            size_percent: options.size_percent,
+            opacity: options.opacity,
+            pattern: options.pattern.clone(),
+            density: Some("medium".into()),
+            angle: options.angle,
+            offset_x: options.offset_x,
+            offset_y: options.offset_y,
+            columns: None,
+            rows: None,
+            placements: None,
+            clean_frame: None,
+            timestamp_seconds: Some(0.0),
+            width: Some(160),
+            duration: Some(1.0),
+            ffmpeg_path: Some(ffmpeg.clone()),
+            ffprobe_path: Some(ffprobe.clone()),
+            font_path: Some(font),
+        };
+        let preview_output = dir.join("preview.png");
+        let (preview_args, preview_cleanup) = super::watermark_preview_args(
+            preview_request.font_path.as_deref(),
+            &preview_request,
+            &preview_output,
+        )
+        .unwrap();
+        let preview_result = std::process::Command::new(&ffmpeg)
+            .args(&preview_args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        for path in preview_cleanup {
+            let _ = fs::remove_file(path);
+        }
+        assert!(
+            preview_result.status.success(),
+            "preview encode failed: {}",
+            String::from_utf8_lossy(&preview_result.stderr)
+        );
+        assert!(
+            average_psnr(&ffmpeg, &formal_frame, &preview_output) > 20.0,
+            "preview and formal frame diverge"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn first_frame_edge_density_detects_complexity_and_returns_none_on_failure() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let dir = std::env::temp_dir().join(format!("推荐复杂度 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let complex = dir.join("complex.mp4");
+        let simple = dir.join("simple.mp4");
+        create_fixture(&ffmpeg, &complex);
+        let simple_status = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0x336699:s=160x90:r=15",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
+            .arg(&simple)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(simple_status.success(), "simple fixture failed");
+        let complex_density = super::first_frame_edge_density(&ffmpeg, &complex, 1.0).unwrap();
+        let simple_density = super::first_frame_edge_density(&ffmpeg, &simple, 1.0).unwrap();
+        assert!(
+            complex_density > simple_density,
+            "complex {complex_density} simple {simple_density}"
+        );
+        assert!(
+            super::first_frame_edge_density(&ffmpeg, Path::new("/missing/video.mp4"), 1.0)
+                .is_none()
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn recommended_tiled_watermark_has_non_overlapping_contained_cells_in_real_pixels() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("推荐真实像素 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        let fixture_status = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x360:rate=15",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
+            .arg(&input)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(fixture_status.success(), "recommendation fixture failed");
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let text = "©KURO GAMES ALL RIGHTS RESERVED";
+        let probe = super::probe_video(&ffprobe, &input).unwrap();
+        let estimate = super::watermark_recommendation_estimate(
+            &ffprobe,
+            probe.width,
+            probe.height,
+            "text",
+            text,
+            None,
+        )
+        .unwrap();
+        let edge = super::first_frame_edge_density(&ffmpeg, &input, probe.duration).unwrap_or(6.0);
+        let grids = super::recommendation_grids(probe.width, probe.height);
+        let preferred = if edge < 4.0 {
+            0
+        } else if edge > 12.0 {
+            2
+        } else {
+            1
+        };
+        let (grid, size) = (preferred..grids.len())
+            .find_map(|index| {
+                let grid = grids[index];
+                super::max_recommended_size(
+                    &estimate,
+                    probe.width,
+                    probe.height,
+                    grid,
+                    1,
+                    10,
+                    30,
+                    0.24,
+                )
+                .map(|size| (grid, size))
+            })
+            .expect("no feasible recommendation");
+        assert!(grid.columns * grid.rows <= 12);
+        let options = WatermarkOptions {
+            kind: "text".into(),
+            text: text.into(),
+            image_path: None,
+            position: "center".into(),
+            size_percent: size,
+            opacity: 0.5,
+            pattern: Some("tiled".into()),
+            density: Some(grid.density.into()),
+            angle: Some(30),
+            dark_mode: None,
+            offset_x: None,
+            offset_y: None,
+            columns: Some(grid.columns),
+            rows: Some(grid.rows),
+            placements: None,
+            quality: None,
+            prefer_hardware: None,
+            reserved_output_path: None,
+            output_directory: dir.to_string_lossy().into_owned(),
+        };
+        let output = dir.join("recommended.png");
+        let baseline = dir.join("baseline.png");
+        let baseline_status = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-ss", "0", "-i"])
+            .arg(&input)
+            .args(["-frames:v", "1", "-y"])
+            .arg(&baseline)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .status()
+            .unwrap();
+        assert!(baseline_status.success(), "baseline frame failed");
+        render_production_watermark_frame(&ffmpeg, &font, &input, &options, &output);
+        assert!(
+            frames_differ(&ffmpeg, &baseline, &output),
+            "recommendation did not render"
+        );
+        let rendered = super::probe_video(&ffprobe, &output).unwrap();
+        assert_eq!(
+            (rendered.width, rendered.height),
+            (probe.width, probe.height)
+        );
+        // Cell containment is proven numerically by the recommendation bbox
+        // test; this real filter run verifies the same production builder.
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -5781,6 +7541,106 @@ mod tests {
         assert_frame_differs(ffmpeg, input, output);
         let probe = super::probe_video(ffprobe, output).unwrap();
         assert_eq!(probe.has_audio, has_audio, "audio presence mismatch");
+    }
+
+    #[cfg(target_os = "macos")]
+    fn render_production_watermark_frame(
+        ffmpeg: &Path,
+        font: &Path,
+        input: &Path,
+        options: &WatermarkOptions,
+        output: &Path,
+    ) {
+        let request = WatermarkMediaTaskRequest {
+            task_id: output
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("frame")
+                .to_string(),
+            input_path: input.to_string_lossy().into_owned(),
+            options: options.clone(),
+        };
+        let (filter, cleanup) =
+            super::watermark_filter_with_font(Some(font), &request).expect("production filter");
+        let mut command = std::process::Command::new(ffmpeg);
+        command
+            .args(["-hide_banner", "-nostdin", "-ss", "0", "-i"])
+            .arg(input);
+        if options.kind == "image" {
+            command
+                .args(["-i"])
+                .arg(options.image_path.as_deref().unwrap_or_default());
+        }
+        let result = command
+            .args(["-filter_complex", &filter, "-map", "[watermarked]"])
+            .args(["-frames:v", "1", "-y"])
+            .arg(output)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        for path in cleanup {
+            let _ = fs::remove_file(path);
+        }
+        assert!(
+            result.status.success(),
+            "production watermark frame failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    fn frames_differ(ffmpeg: &Path, first: &Path, second: &Path) -> bool {
+        let result = std::process::Command::new(ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(first)
+            .args(["-i"])
+            .arg(second)
+            .args([
+                "-lavfi",
+                "[0:v][1:v]psnr",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        assert!(result.status.success(), "psnr failed");
+        !String::from_utf8_lossy(&result.stderr).contains("average:inf")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn average_psnr(ffmpeg: &Path, first: &Path, second: &Path) -> f64 {
+        let result = std::process::Command::new(ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-i"])
+            .arg(first)
+            .args(["-i"])
+            .arg(second)
+            .args([
+                "-lavfi",
+                "[0:v][1:v]psnr",
+                "-frames:v",
+                "1",
+                "-f",
+                "null",
+                "-",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(result.status.success(), "psnr failed: {stderr}");
+        stderr
+            .split("average:")
+            .nth(1)
+            .and_then(|tail| tail.split_whitespace().next())
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(f64::NEG_INFINITY)
     }
 
     #[cfg(target_os = "macos")]
@@ -6154,6 +8014,93 @@ mod tests {
         run_video_watermark_to_mp4(&ffmpeg, &ffprobe, &input, &output, &graph.join(";"), false);
         fs::remove_dir_all(&dir).unwrap();
         let _ = fs::remove_file(&text_file);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn cpu_quality_presets_produce_valid_outputs_with_expected_size_direction() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌质量预设 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let mut sizes = Vec::new();
+        for quality in ["high", "balanced", "compact"] {
+            let request = WatermarkMediaTaskRequest {
+                task_id: format!("quality-{quality}"),
+                input_path: input.to_string_lossy().into_owned(),
+                options: WatermarkOptions {
+                    kind: "text".into(),
+                    text: "质量预设".into(),
+                    image_path: None,
+                    position: "bottom-right".into(),
+                    size_percent: 10,
+                    opacity: 0.5,
+                    pattern: Some("tiled".into()),
+                    density: None,
+                    angle: None,
+                    dark_mode: None,
+                    offset_x: None,
+                    offset_y: None,
+                    columns: None,
+                    rows: None,
+                    placements: None,
+                    quality: Some(quality.into()),
+                    prefer_hardware: Some(false),
+                    reserved_output_path: None,
+                    output_directory: dir.to_string_lossy().into_owned(),
+                },
+            };
+            let output = dir.join(format!("{quality}.mp4"));
+            let temp = super::video_watermark_temp_path(&output);
+            let (args, cleanup) = super::watermark_ffmpeg_args_with_font(
+                Some(&font),
+                &request,
+                &temp,
+                super::EncoderBackend::Cpu,
+            )
+            .unwrap();
+            let finalize = super::MediaFinalize {
+                final_output: output.clone(),
+                input: input.clone(),
+                validate: true,
+            };
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let (terminal, stderr) = super::run_watermark_process_with_progress(
+                &ffmpeg,
+                &ffprobe,
+                &args,
+                &temp,
+                Some(&finalize),
+                &cancel,
+                Some((0.0, 1.0)),
+                &mut |_| {},
+            );
+            assert!(
+                matches!(terminal, super::MediaTerminal::Completed { .. }),
+                "quality {quality} failed: {stderr}"
+            );
+            for path in cleanup {
+                let _ = fs::remove_file(path);
+            }
+            let probe = super::probe_video(&ffprobe, &output).unwrap();
+            assert_eq!(probe.width, 160);
+            assert_eq!(probe.height, 90);
+            assert!(!probe.has_audio);
+            sizes.push(fs::metadata(&output).unwrap().len());
+        }
+        assert!(
+            sizes[0] >= sizes[2],
+            "high should not be smaller than compact: {sizes:?}"
+        );
+        assert!(
+            sizes[1] >= sizes[2],
+            "balanced should not be smaller than compact: {sizes:?}"
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[cfg(target_os = "macos")]
@@ -6722,12 +8669,14 @@ mod tests {
             size_percent: 10,
             opacity: 0.7,
             pattern: Some("single".into()),
+            density: None,
             angle: None,
             offset_x: None,
             offset_y: None,
-            spacing_x: None,
-            spacing_y: None,
-            phase_offset: None,
+            columns: None,
+            rows: None,
+            placements: None,
+            clean_frame: None,
             timestamp_seconds: Some(0.2),
             width: Some(160),
             duration: Some(1.0),
@@ -6735,6 +8684,41 @@ mod tests {
             ffprobe_path: None,
             font_path: None,
         }
+    }
+
+    #[test]
+    fn preview_temp_name_matches_app_cache_scope_without_hidden_components() {
+        let dir = std::env::temp_dir().join(format!("bmw-preview-name-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = super::preview_temp_path(&preview_request(&dir, "job-1")).unwrap();
+        let file_name = path.file_name().unwrap().to_string_lossy();
+        assert!(
+            file_name.starts_with("watermark-preview-"),
+            "hidden file bypasses Tauri scope: {file_name}"
+        );
+        assert!(file_name.ends_with(".png"));
+        assert!(path.starts_with(&dir));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn clean_frame_preview_uses_only_input_frame_and_does_not_apply_watermark_filter() {
+        let dir = std::env::temp_dir().join(format!("clean-frame-preview-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let mut request = preview_request(&dir, "clean-frame");
+        request.clean_frame = Some(true);
+        let output = dir.join("clean.png");
+        let (args, cleanup) =
+            super::watermark_preview_args(None, &request, &output).expect("clean frame args");
+        assert!(cleanup.is_empty());
+        let values: Vec<_> = args
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert!(values.iter().any(|value| value == "-vf"));
+        assert!(!values.iter().any(|value| value == "-filter_complex"));
+        assert!(values.iter().any(|value| value == "0:v:0"));
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     fn preview_sink() -> (
@@ -7239,6 +9223,74 @@ mod tests {
     }
 
     #[test]
+    fn watermark_queue_finalizing_transitions_to_single_completed_terminal() {
+        // Regression for the "stuck at 99%" lifecycle: a job that reaches 99%
+        // and Finalizing must commit exactly one Completed terminal, with no
+        // Progress (or any other event) replayed after the terminal.
+        let (sink, events, rx) = recording_sink();
+        let runner = move |job: FrozenWatermarkJob<String>,
+                           emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>| {
+            (emit)(WatermarkQueueEvent::Status {
+                task_id: job.task_id.clone(),
+                status: WatermarkJobStatus::Processing,
+                reason: None,
+            });
+            (emit)(WatermarkQueueEvent::Progress {
+                task_id: job.task_id.clone(),
+                progress: 0.99,
+            });
+            (emit)(WatermarkQueueEvent::Status {
+                task_id: job.task_id.clone(),
+                status: WatermarkJobStatus::Finalizing,
+                reason: None,
+            });
+            WatermarkTerminal::Completed {
+                output_path: "/tmp/out.mp4".into(),
+                output_bytes: 1,
+            }
+        };
+        let queue = start_watermark_video_queue::<String, _>(sink, runner);
+        queue
+            .enqueue("job".into(), "payload".into(), PathBuf::from("/tmp/a.mp4"))
+            .unwrap();
+        drain_until_terminal(&rx, terminal_completed);
+        queue.shutdown();
+
+        let recorded = events.lock().unwrap().clone();
+        let mut saw_finalizing = false;
+        let mut terminal_count = 0usize;
+        let mut events_after_terminal = 0usize;
+        for event in recorded.iter().filter(|e| {
+            let id = match e {
+                WatermarkQueueEvent::Status { task_id, .. }
+                | WatermarkQueueEvent::Progress { task_id, .. }
+                | WatermarkQueueEvent::Terminal { task_id, .. } => task_id,
+            };
+            id == "job"
+        }) {
+            if terminal_count > 0 {
+                events_after_terminal += 1;
+                continue;
+            }
+            match event {
+                WatermarkQueueEvent::Status { status, .. }
+                    if *status == WatermarkJobStatus::Finalizing =>
+                {
+                    saw_finalizing = true;
+                }
+                WatermarkQueueEvent::Terminal { terminal, .. } => {
+                    assert!(matches!(terminal, WatermarkTerminal::Completed { .. }));
+                    terminal_count += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_finalizing, "finalizing must precede the terminal");
+        assert_eq!(terminal_count, 1, "terminal committed exactly once");
+        assert_eq!(events_after_terminal, 0, "no events after the terminal");
+    }
+
+    #[test]
     fn watermark_queue_waiting_cancel_never_runs_and_commits_cancelled_once() {
         let (sink, rx) = queue_sink();
         let first_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -7525,9 +9577,12 @@ mod tests {
                     dark_mode: None,
                     offset_x: None,
                     offset_y: None,
-                    spacing_x: None,
-                    spacing_y: None,
-                    phase_offset: None,
+                    columns: None,
+                    rows: None,
+                    placements: None,
+                    quality: None,
+                    prefer_hardware: None,
+                    reserved_output_path: None,
                     output_directory: "/tmp".into(),
                 },
             },
@@ -7616,9 +9671,12 @@ mod tests {
                     dark_mode: None,
                     offset_x: None,
                     offset_y: None,
-                    spacing_x: None,
-                    spacing_y: None,
-                    phase_offset: None,
+                    columns: None,
+                    rows: None,
+                    placements: None,
+                    quality: None,
+                    prefer_hardware: None,
+                    reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             },
@@ -7646,9 +9704,12 @@ mod tests {
                     dark_mode: None,
                     offset_x: None,
                     offset_y: None,
-                    spacing_x: None,
-                    spacing_y: None,
-                    phase_offset: None,
+                    columns: None,
+                    rows: None,
+                    placements: None,
+                    quality: None,
+                    prefer_hardware: None,
+                    reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             },
@@ -7781,9 +9842,12 @@ mod tests {
                     dark_mode: None,
                     offset_x: None,
                     offset_y: None,
-                    spacing_x: None,
-                    spacing_y: None,
-                    phase_offset: None,
+                    columns: None,
+                    rows: None,
+                    placements: None,
+                    quality: None,
+                    prefer_hardware: None,
+                    reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             },

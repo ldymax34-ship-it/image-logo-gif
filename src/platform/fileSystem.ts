@@ -108,6 +108,38 @@ export async function saveBlobToOutputTarget(target: OutputTarget, fileName: str
   throw new Error('未选择输出位置');
 }
 
+/**
+ * Joins a desktop-native output directory and a resolved file name into a
+ * single native path. Only `desktop-directory` targets may use it: browser
+ * (File System Access / downloads) targets have no revealable native path.
+ */
+export function joinNativePath(directory: string, fileName: string): string {
+  const separator = /^[A-Za-z]:[\\/]/.test(directory) || directory.includes('\\') ? '\\' : '/';
+  const base = directory.replace(/[\\/]+$/, '');
+  if (!base) return directory.startsWith('/') ? `/${fileName}` : fileName;
+  return `${base}${separator}${fileName}`;
+}
+
+/**
+ * A revealable output path is a real native (absolute) path, not a bare file
+ * name. Browser/download tasks store a bare name or no path at all, so they
+ * are naturally excluded from the "在文件夹中显示" action.
+ */
+export function isRevealableOutputPath(path: string | undefined): path is string {
+  return typeof path === 'string' && (
+    path.startsWith('/') ||
+    /^[A-Za-z]:[\\/]/.test(path) ||
+    path.startsWith('\\\\')
+  );
+}
+
+/** Reveals a file in its folder via the system explorer (desktop bridge only). */
+export async function revealPathInFolder(path: string): Promise<void> {
+  if (!isDesktopBridgeAvailable()) return;
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+  await revealItemInDir(path);
+}
+
 export function downloadBlobFile(blob: Blob, fileName: string): void {
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');

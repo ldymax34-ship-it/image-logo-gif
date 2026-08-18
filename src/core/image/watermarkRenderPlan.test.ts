@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildBrickPlacements,
+  buildWatermarkCenters,
   buildWatermarkRenderLayers,
-  adaptWatermarkConfig,
+  measureWatermarkTextContent,
+  rotatedBoundingBox,
+  WATERMARK_DENSITY_GAPS,
   type WatermarkConfig,
 } from './watermarkRenderPlan';
-import type { MaterialAsset } from './imageMeta';
 
 const CANVAS = { width: 1000, height: 500 };
 
@@ -15,13 +18,13 @@ function textConfig(overrides: Partial<WatermarkConfig> = {}): WatermarkConfig {
     fontFamily: 'Source Han Sans SC',
     color: '#ffffff',
     fontSize: 50,
-    pattern: 'single',
+    pattern: 'brick',
     rotation: 0,
     opacity: 0.5,
     offsetX: 0,
     offsetY: 0,
-    spacingX: 200,
-    spacingY: 150,
+    density: 'dense',
+    phaseOffset: 0.5,
     ...overrides,
   } as WatermarkConfig;
 }
@@ -33,29 +36,36 @@ function imageConfig(overrides: Partial<WatermarkConfig> = {}): WatermarkConfig 
     intrinsicWidth: 200,
     intrinsicHeight: 100,
     displayWidth: 250,
-    pattern: 'single',
+    pattern: 'brick',
     rotation: 0,
     opacity: 0.8,
     offsetX: 0,
     offsetY: 0,
-    spacingX: 200,
-    spacingY: 150,
+    density: 'dense',
+    phaseOffset: 0.5,
     ...overrides,
   } as WatermarkConfig;
 }
 
-function makeAsset(overrides: Partial<MaterialAsset> = {}): MaterialAsset {
-  return { id: 'a1', fileName: 'logo.png', objectUrl: 'blob:logo', width: 200, height: 100, fileSize: 1000, mimeType: 'image/png', ...overrides };
+function minPairwiseDistance(layers: Array<{ cx: number; cy: number }>): number {
+  let min = Infinity;
+  for (let i = 0; i < layers.length; i += 1) {
+    for (let j = i + 1; j < layers.length; j += 1) {
+      const d = Math.hypot(layers[i].cx - layers[j].cx, layers[i].cy - layers[j].cy);
+      if (d < min) min = d;
+    }
+  }
+  return min;
 }
 
 describe('buildWatermarkRenderLayers', () => {
   /* ── single ── */
   it('single text: one instance at center+offset', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ offsetX: 10, offsetY: 20, rotation: 45, opacity: 0.7 }));
+    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'single', offsetX: 10, offsetY: 20, rotation: 45, opacity: 0.7 }));
     expect(layers).toHaveLength(1);
     const l = layers[0];
-    expect(l.cx).toBe(510); // 500 + 10
-    expect(l.cy).toBe(270); // 250 + 20
+    expect(l.cx).toBe(510);
+    expect(l.cy).toBe(270);
     expect(l.rotation).toBe(45);
     expect(l.opacity).toBe(0.7);
     expect(l.kind).toBe('text');
@@ -64,292 +74,176 @@ describe('buildWatermarkRenderLayers', () => {
   });
 
   it('single image: one instance, aspect-correct height', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, imageConfig());
+    const layers = buildWatermarkRenderLayers(CANVAS, imageConfig({ pattern: 'single' }));
     expect(layers).toHaveLength(1);
     const l = layers[0];
     expect(l.kind).toBe('image');
     if (l.kind !== 'image') throw new Error('expected image');
     expect(l.src).toBe('blob:logo');
     expect(l.width).toBe(250);
-    expect(l.height).toBe(125); // 250 * (100/200)
+    expect(l.height).toBe(125);
   });
 
-  /* ── 45° + opacity ── */
   it('45° rotation and opacity are preserved', () => {
     const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ rotation: 45, opacity: 0.3 }));
     expect(layers[0].rotation).toBe(45);
     expect(layers[0].opacity).toBe(0.3);
   });
 
-  /* ── determinism / deepEqual ── */
+  /* ── brick determinism ── */
   it('same config produces deepEqual layers', () => {
-    const cfg = textConfig({ pattern: 'tiled', spacingX: 100, spacingY: 80 });
-    const a = buildWatermarkRenderLayers(CANVAS, cfg);
-    const b = buildWatermarkRenderLayers(CANVAS, cfg);
-    expect(a).toEqual(b);
+    const cfg = textConfig();
+    expect(buildWatermarkRenderLayers(CANVAS, cfg)).toEqual(buildWatermarkRenderLayers(CANVAS, cfg));
   });
 
-  /* ── tiled ── */
-  it('tiled produces more than one instance', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled' }));
+  it('brick produces a bounded number of instances (no 200+ stacking)', () => {
+    const layers = buildWatermarkRenderLayers(CANVAS, textConfig());
     expect(layers.length).toBeGreaterThan(1);
-  });
-
-  it('staggered differs from tiled by shifting odd rows', () => {
-    const tiled = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 200, spacingY: 200 }));
-    const staggered = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered', spacingX: 200, spacingY: 200, phaseOffset: 0.5 }));
-    expect(staggered.length).toBe(tiled.length);
-    // Every odd row (grid row index) is horizontally shifted by phase * spacingX.
-    const byRow = new Map<string, number[]>();
-    for (const layer of staggered) {
-      const row = layer.id.split(':')[1];
-      byRow.set(row, [...(byRow.get(row) ?? []), layer.cx]);
-    }
-    const tiledByRow = new Map<string, number[]>();
-    for (const layer of tiled) {
-      const row = layer.id.split(':')[1];
-      tiledByRow.set(row, [...(tiledByRow.get(row) ?? []), layer.cx]);
-    }
-    let sawShift = false;
-    for (const row of byRow.keys()) {
-      const shift = (byRow.get(row)![0] ?? 0) - (tiledByRow.get(row)![0] ?? 0);
-      if (Math.abs(shift) > 0.5) sawShift = true;
-    }
-    expect(sawShift).toBe(true);
-  });
-
-  it('staggered phase offset controls the row shift magnitude', () => {
-    const half = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered', spacingX: 200, spacingY: 200, phaseOffset: 0.25 }));
-    const full = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered', spacingX: 200, spacingY: 200, phaseOffset: 0.5 }));
-    const pickRow1X = (layers: { id: string; cx: number }[]) => layers.filter((l) => l.id.startsWith('wm:1:')).map((l) => l.cx).sort((a, b) => a - b);
-    expect(pickRow1X(full)[0]).not.toBe(pickRow1X(half)[0]);
-  });
-
-  it('larger spacing → fewer instances', () => {
-    const small = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 50, spacingY: 50 })).length;
-    const large = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 500, spacingY: 500 })).length;
-    expect(large).toBeLessThan(small);
-  });
-
-  it('spacing change alters instance count and positions', () => {
-    const a = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 100, spacingY: 100 }));
-    const b = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 200, spacingY: 200 }));
-    expect(a.length).not.toBe(b.length);
-    expect(a[0].cx).not.toBe(b[0].cx); // different grid start
-  });
-
-  /* ── safety ── */
-  it('zero spacing clamped to minimum, no infinite loop', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 0, spacingY: 0 }));
     expect(layers.length).toBeLessThanOrEqual(500);
+  });
+
+  it('brick instances keep a positive gap (no overlapping centers)', () => {
+    const layers = buildWatermarkRenderLayers(CANVAS, textConfig());
+    const content = measureWatermarkTextContent('水印', 'Source Han Sans SC', 50);
+    expect(minPairwiseDistance(layers)).toBeGreaterThanOrEqual(content.height);
+  });
+
+  /* ── legacy pattern aliases ── */
+  it('legacy staggered behaves like brick with 50% phase', () => {
+    const brick = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'brick', phaseOffset: 0.5 }));
+    const staggered = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'staggered' as WatermarkConfig['pattern'], phaseOffset: 0.5 }));
+    expect(staggered).toEqual(brick);
+  });
+
+  it('legacy tiled keeps a zero phase', () => {
+    const tiled = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled' as WatermarkConfig['pattern'] }));
+    const phaseZero = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'brick', phaseOffset: 0 }));
+    expect(tiled).toEqual(phaseZero);
+  });
+
+  /* ── boundary safety ── */
+  it('empty canvas produces no layers', () => {
+    expect(buildWatermarkRenderLayers({ width: 0, height: 0 }, textConfig())).toEqual([]);
+  });
+
+  it('non-finite and NaN inputs are clamped without throwing', () => {
+    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ rotation: NaN, opacity: NaN, phaseOffset: NaN }));
     expect(layers.length).toBeGreaterThan(0);
+    expect(layers[0].opacity).toBe(0.5);
   });
 
-  it('negative spacing clamped to minimum', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: -10, spacingY: -10 }));
-    expect(layers.length).toBeLessThanOrEqual(500);
-    expect(layers.length).toBeGreaterThan(0);
+  it('clamps opacity into [0,1]', () => {
+    expect(buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'single', opacity: -0.5 }))[0].opacity).toBe(0);
+    expect(buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'single', opacity: 2 }))[0].opacity).toBe(1);
+    expect(buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'single', opacity: NaN }))[0].opacity).toBe(0.5);
   });
 
-  it('single-line tiled ids retain the legacy row:col shape', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: 200, spacingY: 200 }));
-    const ids = layers.map(l => l.id);
-    for (const id of ids) {
-      expect(id).toMatch(/^wm:\d+:\d+$/);
-    }
-    // no duplicates
-    expect(new Set(ids).size).toBe(ids.length);
+  /* ── multi-line: centers stay per-brick, rendering expands per line ── */
+  it('keeps one center per brick for multi-line text while rendering expands per line', () => {
+    const twoLine = textConfig({ text: 'A\nB' });
+    const threeLine = textConfig({ text: 'A\nB\nC' });
+    const twoCenters = buildWatermarkCenters(CANVAS, twoLine);
+    const threeCenters = buildWatermarkCenters(CANVAS, threeLine);
+    expect(twoCenters.length).toBeGreaterThan(0);
+    expect(threeCenters.length).toBeGreaterThan(0);
+    expect(buildWatermarkRenderLayers(CANVAS, twoLine)).toHaveLength(twoCenters.length * 2);
+    expect(buildWatermarkRenderLayers(CANVAS, threeLine)).toHaveLength(threeCenters.length * 3);
   });
 
-  it('multi-line text expands each cell with preserved blank lines', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ text: '第一行\n\n第三行', fontSize: 50 }));
-    expect(layers).toHaveLength(3);
-    expect(layers.map((layer) => layer.id)).toEqual(['wm:0:0:L0', 'wm:0:0:L1', 'wm:0:0:L2']);
-    expect(layers.map((layer) => layer.kind === 'text' ? layer.text : '')).toEqual(['第一行', '', '第三行']);
-    expect(layers[1].cy - layers[0].cy).toBe(60);
-  });
-
-  it('multi-line tiled output remains capped after line expansion', () => {
-    const layers = buildWatermarkRenderLayers(
-      { width: 99999, height: 99999 },
-      textConfig({ pattern: 'tiled', text: Array.from({ length: 20 }, (_value, index) => `line ${index}`).join('\n'), spacingX: 1, spacingY: 1 }),
-    );
-    expect(layers.length).toBeLessThanOrEqual(500);
-    expect(layers.every((layer) => /^wm:\d+:\d+:L\d+$/.test(layer.id))).toBe(true);
-  });
-
-  /* ── image zero intrinsic width ── */
-  it('image with zero intrinsic width falls back to aspect 1', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, imageConfig({ intrinsicWidth: 0, intrinsicHeight: 0 }));
-    if (layers[0].kind !== 'image') throw new Error('expected image');
-    expect(layers[0].height).toBe(layers[0].width); // aspect 1
+  it('single pattern still produces exactly one center and one layer', () => {
+    const single = textConfig({ pattern: 'single' });
+    expect(buildWatermarkCenters(CANVAS, single)).toHaveLength(1);
+    expect(buildWatermarkRenderLayers(CANVAS, single)).toHaveLength(1);
   });
 });
 
-describe('adaptWatermarkConfig', () => {
-  it('text: maps state fields to config', () => {
-    const cfg = adaptWatermarkConfig(CANVAS, {
-      kind: 'text', pattern: 'single', text: '测试', fontFamily: 'Arial', color: '#000',
-      scale: 2, rotation: 30, opacity: 0.6, x: 10, y: 20, density: 'medium',
-    });
-    expect(cfg).toBeDefined();
-    expect(cfg!.kind).toBe('text');
-    if (cfg!.kind !== 'text') throw new Error('expected text');
-    expect(cfg!.text).toBe('测试');
-    expect(cfg!.rotation).toBe(30);
-    expect(cfg!.opacity).toBe(0.6);
-    expect(cfg!.offsetX).toBe(10);
-    expect(cfg!.offsetY).toBe(20);
-    // min(cw=1000, ch=500) * 0.05 * scale=2 = 500 * 0.05 * 2 = 50
-    expect(cfg!.fontSize).toBe(50);
+describe('buildBrickPlacements (pure geometry)', () => {
+  const content = { width: 100, height: 40 };
+
+  it('rotates the lattice direction together with the watermark angle', () => {
+    const flat = buildBrickPlacements({ canvasWidth: 1000, canvasHeight: 500, contentWidth: content.width, contentHeight: content.height, angleDeg: 0, inlineGap: 1, rowGap: 2, phase: 0.5 });
+    const rotated = buildBrickPlacements({ canvasWidth: 1000, canvasHeight: 500, contentWidth: content.width, contentHeight: content.height, angleDeg: 45, inlineGap: 1, rowGap: 2, phase: 0.5 });
+    expect(flat.length).toBeGreaterThan(0);
+    expect(rotated.length).toBeGreaterThan(0);
+    // A flat lattice keeps a purely horizontal first neighbour step; a rotated
+    // lattice tilts it. Verify a neighbour exists with a non-zero vertical delta.
+    const flatDeltas = flat.map((p) => ({ dx: p.cx - flat[0].cx, dy: p.cy - flat[0].cy }));
+    expect(flatDeltas.some((d) => d.dx !== 0 && d.dy === 0)).toBe(true);
+    const rotatedDeltas = rotated.map((p) => ({ dx: p.cx - rotated[0].cx, dy: p.cy - rotated[0].cy }));
+    expect(rotatedDeltas.some((d) => d.dx !== 0 && d.dy !== 0)).toBe(true);
   });
 
-  it('image: uses MaterialAsset objectUrl and computes displayWidth', () => {
-    const asset = makeAsset();
-    const cfg = adaptWatermarkConfig(CANVAS, {
-      kind: 'image', pattern: 'single', text: '', fontFamily: '', color: '',
-      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
-      imageAsset: asset,
-    });
-    expect(cfg).toBeDefined();
-    expect(cfg!.kind).toBe('image');
-    if (cfg!.kind !== 'image') throw new Error('expected image');
-    expect(cfg!.src).toBe('blob:logo');
-    expect(cfg!.displayWidth).toBe(250); // 1000 * 1 * 0.25
+  it('honours the 50% phase as a half-cell column offset', () => {
+    const phase0 = buildBrickPlacements({ canvasWidth: 1000, canvasHeight: 500, contentWidth: 100, contentHeight: 40, angleDeg: 0, inlineGap: 1, rowGap: 2, phase: 0 });
+    const phaseHalf = buildBrickPlacements({ canvasWidth: 1000, canvasHeight: 500, contentWidth: 100, contentHeight: 40, angleDeg: 0, inlineGap: 1, rowGap: 2, phase: 0.5 });
+    // Rows alternate by half a cell in column space; the two plans differ.
+    expect(phaseHalf).not.toEqual(phase0);
   });
 
-  it('image without asset returns undefined', () => {
-    const cfg = adaptWatermarkConfig(CANVAS, {
-      kind: 'image', pattern: 'single', text: '', fontFamily: '', color: '',
-      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
-    });
-    expect(cfg).toBeUndefined();
-  });
-
-  it('diagonal pattern maps to tiled', () => {
-    const cfg = adaptWatermarkConfig(CANVAS, {
-      kind: 'text', pattern: 'diagonal', text: 'x', fontFamily: '', color: '',
-      scale: 1, rotation: 45, opacity: 0.5, x: 0, y: 0, density: 'high',
-    });
-    expect(cfg!.pattern).toBe('tiled');
-  });
-
-  it('custom spacing overrides density preset', () => {
-    const cfg = adaptWatermarkConfig(CANVAS, {
-      kind: 'text', pattern: 'tiled', text: 'x', fontFamily: '', color: '',
-      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
-      spacingX: 777, spacingY: 888,
-    });
-    expect(cfg!.spacingX).toBe(777);
-    expect(cfg!.spacingY).toBe(888);
-  });
-
-  it('font size uses short edge as baseline for landscape canvas', () => {
-    const cfg = adaptWatermarkConfig({ width: 2000, height: 600 }, {
-      kind: 'text', pattern: 'single', text: 'a', fontFamily: '', color: '',
-      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
-    });
-    // short edge * 0.05 = 600 * 0.05 = 30
-    if (cfg!.kind !== 'text') throw new Error('expected text');
-    expect(cfg!.fontSize).toBe(30);
-  });
-
-  it('font size uses short edge as baseline for portrait canvas', () => {
-    const cfg = adaptWatermarkConfig({ width: 600, height: 2000 }, {
-      kind: 'text', pattern: 'single', text: 'a', fontFamily: '', color: '',
-      scale: 1, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
-    });
-    // short edge * 0.05 = 600 * 0.05 = 30
-    if (cfg!.kind !== 'text') throw new Error('expected text');
-    expect(cfg!.fontSize).toBe(30);
-  });
-
-  it('font size respects scale multiplier', () => {
-    const cfg = adaptWatermarkConfig({ width: 1000, height: 500 }, {
-      kind: 'text', pattern: 'single', text: 'a', fontFamily: '', color: '',
-      scale: 3, rotation: 0, opacity: 0.5, x: 0, y: 0, density: 'medium',
-    });
-    // 500 * 0.05 * 3 = 75
-    if (cfg!.kind !== 'text') throw new Error('expected text');
-    expect(cfg!.fontSize).toBe(75);
+  it('is deterministic and capped', () => {
+    const input = { canvasWidth: 1920, canvasHeight: 1080, contentWidth: 891, contentHeight: 65, angleDeg: 45, inlineGap: 0.75, rowGap: 3, phase: 0.5 };
+    expect(buildBrickPlacements(input)).toEqual(buildBrickPlacements(input));
+    expect(buildBrickPlacements({ ...input, canvasWidth: 99999, canvasHeight: 99999 }).length).toBeLessThanOrEqual(500);
   });
 });
 
-describe('buildWatermarkRenderLayers — boundary safety', () => {
-  it('MAX_INSTANCES never exceeded even with tiny spacing', () => {
-    const layers = buildWatermarkRenderLayers({ width: 99999, height: 99999 }, textConfig({ pattern: 'tiled', spacingX: 1, spacingY: 1 }));
-    expect(layers.length).toBeLessThanOrEqual(500);
+describe('default brick acceptance (1920×1080, 5%, 45°, dense)', () => {
+  const config: WatermarkConfig = {
+    kind: 'text',
+    text: '\u00a9KURO GAMES ALL RIGHTS RESERVED',
+    fontFamily: 'Source Han Sans SC',
+    color: '#ffffff',
+    fontSize: 54,
+    pattern: 'brick',
+    rotation: 45,
+    opacity: 0.5,
+    offsetX: 0,
+    offsetY: 0,
+    phaseOffset: 0.5,
+    density: 'dense',
+  };
+
+  it('produces roughly 10–18 instances with several diagonal rows and no stacking', () => {
+    const layers = buildWatermarkRenderLayers({ width: 1920, height: 1080 }, config);
+    const rows = new Set(layers.map((l) => l.id.split(':')[1])).size;
+    expect(layers.length).toBeGreaterThanOrEqual(10);
+    expect(layers.length).toBeLessThanOrEqual(25);
+    expect(rows).toBeGreaterThanOrEqual(4);
+    expect(layers.length).toBeLessThan(200);
+    const content = measureWatermarkTextContent(config.text, config.fontFamily, config.fontSize);
+    expect(minPairwiseDistance(layers)).toBeGreaterThanOrEqual(content.height);
   });
 
-  it('scaled-up spacing keeps grid centered and covering', () => {
-    const canvas = { width: 99999, height: 99999 };
-    const layers = buildWatermarkRenderLayers(canvas, textConfig({ pattern: 'tiled', spacingX: 1, spacingY: 1, offsetX: 0, offsetY: 0 }));
-    // Grid should be centered and span each axis's rotation overscan.
-    const cxs = [...new Set(layers.map(l => l.cx))].sort((a, b) => a - b);
-    const cys = [...new Set(layers.map(l => l.cy))].sort((a, b) => a - b);
-    const spacingX = cxs[1] - cxs[0];
-    const spacingY = cys[1] - cys[0];
-    const diagonal = Math.sqrt(canvas.width ** 2 + canvas.height ** 2);
-    const halfX = diagonal / 2 + spacingX;
-    const halfY = diagonal / 2 + spacingY;
-    expect(cxs[cxs.length - 1] - cxs[0]).toBeGreaterThanOrEqual(halfX * 2);
-    expect(cys[cys.length - 1] - cys[0]).toBeGreaterThanOrEqual(halfY * 2);
+  it('density presets strictly increase sparseness', () => {
+    const dense = buildWatermarkRenderLayers({ width: 1920, height: 1080 }, { ...config, density: 'dense' }).length;
+    const standard = buildWatermarkRenderLayers({ width: 1920, height: 1080 }, { ...config, density: 'standard' }).length;
+    const sparse = buildWatermarkRenderLayers({ width: 1920, height: 1080 }, { ...config, density: 'sparse' }).length;
+    expect(dense).toBeGreaterThan(standard);
+    expect(standard).toBeGreaterThan(sparse);
+  });
+});
+
+describe('content measurement and geometry helpers', () => {
+  it('measures a multi-line block as one tall content box', () => {
+    const box = measureWatermarkTextContent('第一行\n第二行', 'Source Han Sans SC', 50);
+    expect(box.height).toBeCloseTo(50 * 1.2 * 2);
+    expect(box.width).toBeGreaterThan(0);
   });
 
-  it.each([
-    [1_000_000_000, 1],
-    [1, 1_000_000_000],
-  ])('converges and preserves independent overscan for asymmetric spacing %d × %d', (spacingX, spacingY) => {
-    const canvas = { width: 99999, height: 99999 };
-    const layers = buildWatermarkRenderLayers(canvas, textConfig({ pattern: 'tiled', spacingX, spacingY }));
-    expect(layers.length).toBeGreaterThan(0);
-    expect(layers.length).toBeLessThanOrEqual(500);
-    for (const layer of layers) {
-      expect(Number.isFinite(layer.cx)).toBe(true);
-      expect(Number.isFinite(layer.cy)).toBe(true);
-    }
-    const cxs = [...new Set(layers.map(layer => layer.cx))].sort((left, right) => left - right);
-    const cys = [...new Set(layers.map(layer => layer.cy))].sort((left, right) => left - right);
-    const finalSpacingX = cxs[1] - cxs[0];
-    const finalSpacingY = cys[1] - cys[0];
-    const diagonal = Math.sqrt(canvas.width ** 2 + canvas.height ** 2);
-    expect(cxs[cxs.length - 1] - cxs[0]).toBeGreaterThanOrEqual(2 * (diagonal / 2 + finalSpacingX));
-    expect(cys[cys.length - 1] - cys[0]).toBeGreaterThanOrEqual(2 * (diagonal / 2 + finalSpacingY));
+  it('falls back to a deterministic width when canvas metrics are unavailable', () => {
+    const wide = measureWatermarkTextContent('WWWW', 'Source Han Sans SC', 50).width;
+    const narrow = measureWatermarkTextContent('llll', 'Source Han Sans SC', 50).width;
+    expect(wide).toBeCloseTo(narrow);
   });
 
-  it('non-finite canvas returns empty', () => {
-    expect(buildWatermarkRenderLayers({ width: NaN, height: 500 }, textConfig())).toEqual([]);
-    expect(buildWatermarkRenderLayers({ width: 0, height: 500 }, textConfig())).toEqual([]);
-    expect(buildWatermarkRenderLayers({ width: -10, height: 500 }, textConfig())).toEqual([]);
+  it('computes the rotated bounding box', () => {
+    const box = rotatedBoundingBox(100, 40, 90);
+    expect(box.width).toBeCloseTo(40);
+    expect(box.height).toBeCloseTo(100);
   });
 
-  it('non-finite rotation defaults to 0', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ rotation: NaN }));
-    expect(layers[0].rotation).toBe(0);
-  });
-
-  it('non-finite offset defaults to 0', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ offsetX: Infinity, offsetY: -Infinity }));
-    expect(layers[0].cx).toBe(500);
-    expect(layers[0].cy).toBe(250);
-  });
-
-  it('opacity clamped to 0..1', () => {
-    expect(buildWatermarkRenderLayers(CANVAS, textConfig({ opacity: -0.5 }))[0].opacity).toBe(0);
-    expect(buildWatermarkRenderLayers(CANVAS, textConfig({ opacity: 2 }))[0].opacity).toBe(1);
-    expect(buildWatermarkRenderLayers(CANVAS, textConfig({ opacity: NaN }))[0].opacity).toBe(0.5);
-  });
-
-  it('non-finite spacing clamped to minimum', () => {
-    const layers = buildWatermarkRenderLayers(CANVAS, textConfig({ pattern: 'tiled', spacingX: NaN, spacingY: NaN }));
-    expect(layers.length).toBeGreaterThan(0);
-    expect(layers.length).toBeLessThanOrEqual(500);
-  });
-
-  it('tiled with adjusted spacing is still deterministic', () => {
-    const cfg = textConfig({ pattern: 'tiled', spacingX: 1, spacingY: 1 });
-    const a = buildWatermarkRenderLayers({ width: 99999, height: 99999 }, cfg);
-    const b = buildWatermarkRenderLayers({ width: 99999, height: 99999 }, cfg);
-    expect(a).toEqual(b);
+  it('exposes density gaps as height units', () => {
+    expect(WATERMARK_DENSITY_GAPS.dense.rowGap).toBeGreaterThan(WATERMARK_DENSITY_GAPS.dense.inlineGap);
+    expect(WATERMARK_DENSITY_GAPS.sparse.inlineGap).toBeGreaterThan(WATERMARK_DENSITY_GAPS.dense.inlineGap);
   });
 });

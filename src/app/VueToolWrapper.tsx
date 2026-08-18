@@ -4,12 +4,13 @@ import { ToolPageHeader } from '../components';
 type VueToolWrapperProps = {
   mountKey: string;
   onReturn: () => void;
+  onOpenChangelog?: () => void;
 };
 
 /**
  * Mounts a Vue 3 app into a React-managed div.
  */
-export function VueToolWrapper({ mountKey, onReturn }: VueToolWrapperProps) {
+export function VueToolWrapper({ mountKey, onReturn, onOpenChangelog }: VueToolWrapperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<{ unmount: () => void } | null>(null);
 
@@ -57,6 +58,7 @@ export function VueToolWrapper({ mountKey, onReturn }: VueToolWrapperProps) {
           : '为图片与视频批量添加可见水印，不覆盖原文件。'}
         status={mountKey === 'gif-compress' ? 'available' : 'experimental'}
         onReturn={() => window.dispatchEvent(new CustomEvent('gif-tool-request-return'))}
+        onOpenChangelog={onOpenChangelog}
       />
       <div ref={containerRef} className="embedded-tool-container" />
     </div>
