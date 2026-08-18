@@ -1,6 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
+export function previewReleaseNotes(version) {
+  return `${version}：统一下拉与深色界面，修复水印选中态、视频缩略图及导出队列体验。`;
+}
+
 export function assertUpdaterSignature(signature) {
   const value = signature.trim();
   if (!value || /^https?:\/\//i.test(value)) throw new Error('Updater signature must be trimmed signature content, not a URL');
@@ -30,7 +34,7 @@ async function main() {
   const pubDate = new Date().toISOString();
   const manifest = buildPreviewManifest({
     version,
-    notes: process.env.PREVIEW_RELEASE_NOTES || `Preview ${version} · ${pubDate} · Signed macOS Apple Silicon and Windows x64 updater artifacts.`,
+    notes: process.env.PREVIEW_RELEASE_NOTES || previewReleaseNotes(version),
     pubDate,
     macUrl: `${releaseBase}/${encodeURIComponent(basename(macPackage))}`,
     macSignature: await readFile(resolve(macSig), 'utf8'),

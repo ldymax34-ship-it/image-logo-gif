@@ -29,7 +29,6 @@ export function BatchExportDialog({
   brandSettings,
   boardBrandStates,
   onClose,
-  onComplete,
   onExportingChange
 }: {
   assets: MaterialAsset[];
@@ -40,7 +39,6 @@ export function BatchExportDialog({
   brandSettings: BrandSettingsV1;
   boardBrandStates: BoardBrandStateMap;
   onClose: () => void;
-  onComplete: (message: string) => void;
   onExportingChange?: (exporting: boolean) => void;
 }) {
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -164,7 +162,7 @@ export function BatchExportDialog({
       format,
       quality,
       autoCompressJpeg
-    }, { onExportingChange, onComplete });
+    }, { onExportingChange });
     // 目标已接受、任务已注册后立即关闭弹窗，后台进度交给全局导出中心。
     if (started) onClose();
   }

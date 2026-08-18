@@ -1,4 +1,5 @@
 import type { BrandColorMode, BrandLanguage, BrandPlacement, BrandSize, CompanyLogoScale, LogoConstraintMode, LogoGroupMode, LogoGroupState } from '../../core';
+import { Select } from '../ui';
 
 const GROUP_MODE_OPTIONS: Array<{ value: LogoGroupMode; label: string }> = [
   { value: 'game-only', label: '仅游戏 Logo' },
@@ -57,22 +58,14 @@ export function LogoGroupControls({
 
   return (
     <div className="brand-section logo-group-section">
-      <div className="panel-heading">
-        <h2>Logo 组合</h2>
-        <small>版型族规则自动识别</small>
-      </div>
       <div className="toolbar-line compact">
         <label className="control-label small">组合</label>
-        <select
+        <Select
           value={group.mode}
-          onChange={(event) => patch({ mode: event.target.value as LogoGroupMode })}
-        >
-          {GROUP_MODE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={GROUP_MODE_OPTIONS}
+          onChange={(value) => patch({ mode: value as LogoGroupMode })}
+          aria-label="Logo 组合"
+        />
       </div>
       <label className="range-field compact-range">
         <span>连续缩放 {Math.round((group.scale ?? 1) * 100)}% · 双击复位</span>
@@ -90,52 +83,38 @@ export function LogoGroupControls({
       </label>
       <div className="toolbar-line compact">
         <label className="control-label small">语种</label>
-        <select value={language} onChange={(event) => onLanguageChange(event.target.value as BrandLanguage)}>
-          <option value="zh-CN">简中</option><option value="zh-TW">繁中</option><option value="ja-JP">日文</option><option value="ko-KR">韩文</option><option value="en-US">英文</option>
-        </select>
+        <Select value={language} options={[{ value: 'zh-CN', label: '简中' }, { value: 'zh-TW', label: '繁中' }, { value: 'ja-JP', label: '日文' }, { value: 'ko-KR', label: '韩文' }, { value: 'en-US', label: '英文' }]} onChange={(value) => onLanguageChange(value as BrandLanguage)} aria-label="Logo 语种" />
       </div>
       <div className="toolbar-line compact">
         <label className="control-label small">配色</label>
-        <select
+        <Select
           value={group.colorMode}
-          onChange={(event) => patch({ colorMode: event.target.value as BrandColorMode })}
-        >
-          {COLOR_MODE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={COLOR_MODE_OPTIONS}
+          onChange={(value) => patch({ colorMode: value as BrandColorMode })}
+          aria-label="Logo 配色"
+        />
       </div>
       {group.colorMode === 'custom' && onEffectColorChange ? <label className="control-row"><span>颜色</span><input className="color-input" type="color" value={effectColor ?? '#ffffff'} onChange={(event) => onEffectColorChange(event.target.value)} aria-label="Logo 自定义颜色" /></label> : null}
       <div className="toolbar-line compact">
         <label className="control-label small">位置</label>
-        <select
+        <Select
           value={group.placement === 'custom' ? group.lastExplicitPlacement ?? 'corner-right' : group.placement}
-          onChange={(event) => {
-            const placement = event.target.value as Exclude<BrandPlacement, 'custom'>;
+          options={PLACEMENT_OPTIONS}
+          onChange={(value) => {
+            const placement = value as Exclude<BrandPlacement, 'custom'>;
             patch({ placement, lastExplicitPlacement: placement, manualOffset: undefined });
           }}
-        >
-          {PLACEMENT_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          aria-label="Logo 位置"
+        />
       </div>
       <div className="toolbar-line compact">
         <label className="control-label small">大小</label>
-        <select
+        <Select
           value={group.sizePreset}
-          onChange={(event) => patch({ sizePreset: event.target.value as BrandSize })}
-        >
-          {SIZE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={SIZE_OPTIONS}
+          onChange={(value) => patch({ sizePreset: value as BrandSize })}
+          aria-label="Logo 大小"
+        />
       </div>
       <label className="range-field">
         <span className="control-label small">间距 {group.gapUnits.toFixed(1)}U</span>
@@ -150,15 +129,11 @@ export function LogoGroupControls({
       </label>
       {group.mode === 'company-and-game' ? <div className="toolbar-line compact">
         <label className="control-label small">公司比例</label>
-        <select value={group.companyLogoScale} onChange={(event) => patch({ companyLogoScale: event.target.value as CompanyLogoScale })}>
-          {COMPANY_SCALE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        <Select value={group.companyLogoScale} options={COMPANY_SCALE_OPTIONS} onChange={(value) => patch({ companyLogoScale: value as CompanyLogoScale })} aria-label="公司 Logo 比例" />
       </div> : null}
             {group.placement === 'custom' ? <div className="toolbar-line compact">
         <label className="control-label small">位置边界</label>
-        <select value={group.constraintMode ?? 'safe-area'} onChange={(event) => patch({ constraintMode: event.target.value as LogoConstraintMode })}>
-          {CONSTRAINT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        <Select value={group.constraintMode ?? 'safe-area'} options={CONSTRAINT_OPTIONS} onChange={(value) => patch({ constraintMode: value as LogoConstraintMode })} aria-label="Logo 位置边界" />
       </div> : null}
 <p className="inline-note" title="Logo 位置与大小仅保存到当前画板；CPR 使用独立的底部设置。">当前画板独立保存；CPR 单独设置。</p>
     </div>

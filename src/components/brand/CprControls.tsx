@@ -1,6 +1,7 @@
 import type { BrandColorMode, CprPlacement, CprState } from '../../core';
 import { BrandEffectControls } from './BrandEffectControls';
 import { SectionHeader } from '../ui';
+import { Select } from '../ui';
 
 const PLACEMENTS: Array<{ value: CprPlacement; label: string }> = [
   { value: 'bottom-left', label: '左下' },
@@ -38,9 +39,7 @@ export function CprControls({ state, onChange, onApplySameSpec, onApplySameAsset
       </SectionHeader>
       <label className="control-row">
         <span>位置</span>
-        <select value={state.transform.placement} onChange={(event) => patchTransform({ placement: event.target.value as CprPlacement, offsetX: 0, offsetY: 0 })}>
-          {PLACEMENTS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+        <Select value={state.transform.placement} options={PLACEMENTS} onChange={(value) => patchTransform({ placement: value as CprPlacement, offsetX: 0, offsetY: 0 })} aria-label="CPR 位置" />
       </label>
       {state.transform.placement === 'custom' ? <small className="inline-note" title="在聚焦画板中拖动 CPR；使用下方控件微调。">聚焦画板中可拖动，下面可微调。</small> : null}
       <div className="control-row cpr-nudge-row">

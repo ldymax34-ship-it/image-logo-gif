@@ -1,5 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { createMaterialAsset, releaseMaterialAsset, type BoardPreviewState, type MaterialAsset } from '../../core';
+import { notify } from '../../components/ui/toastBus';
 import type { BoardBrandAction } from './boardBrandReducer';
 import type { PendingConfirmation } from './useMediaWorkbenchState';
 
@@ -20,7 +21,14 @@ export function useMediaAssetActions(input: {
     const failures = results.flatMap((result, index) => result.status === 'rejected' ? [`${files[index]?.name ?? '未知文件'}：${result.reason instanceof Error ? result.reason.message : '导入失败'}`] : []);
     if (nextAssets.length) { input.setAssets((previous) => [...previous, ...nextAssets]); input.setSelectedAssetId((current) => current ?? nextAssets[0]?.id); }
     input.setImportFailures(failures);
-    input.setMessage(failures.length ? `已导入 ${nextAssets.length} 张图片，${failures.length} 个文件失败` : `已导入 ${nextAssets.length} 张图片`);
+    if (failures.length) {
+      input.setMessage('部分图片导入失败，详情见素材列表');
+      notify('error', nextAssets.length
+        ? `已导入 ${nextAssets.length} 张图片，${failures.length} 个文件失败`
+        : `图片导入失败：${failures.length} 个文件均未能读取`);
+    } else {
+      input.setMessage(`已导入 ${nextAssets.length} 张图片`);
+    }
     if (input.imageInputRef.current) input.imageInputRef.current.value = '';
   }
   function selectBoard(assetId: string, specId: string) { input.setSelectedAssetId(assetId); input.setSelectedSpecId(specId); }

@@ -76,7 +76,7 @@ export function AppSidebar({
         ) : (
           <>
             <span className="app-sidebar-brand-mark" aria-hidden="true">
-              <Palette size={15} strokeWidth={1.6} />
+              <Palette size={16} strokeWidth={1.6} />
             </span>
             <div className="app-sidebar-brand-copy">
               <strong>品宣工具箱</strong>
@@ -113,7 +113,7 @@ export function AppSidebar({
                 aria-label={tool.label}
                 title={tool.label}
               >
-                <span className="app-sidebar-icon"><ToolIcon size={16} strokeWidth={1.6} aria-hidden="true" /></span>
+                <span className="app-sidebar-icon"><ToolIcon size={18} strokeWidth={1.6} aria-hidden="true" /></span>
                 <span className="app-sidebar-copy">{tool.label}</span>
               </button>
             </div>
@@ -123,7 +123,7 @@ export function AppSidebar({
 
       <div className="app-sidebar-foot">
         <button type="button" className="app-sidebar-item" onClick={onOpenSettings} aria-label="设置" title="设置">
-          <span className="app-sidebar-icon"><Settings size={16} strokeWidth={1.6} aria-hidden="true" /></span>
+          <span className="app-sidebar-icon"><Settings size={18} strokeWidth={1.6} aria-hidden="true" /></span>
           <span className="app-sidebar-copy">设置</span>
         </button>
         <div className="app-sidebar-local-note">

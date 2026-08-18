@@ -8,3 +8,4 @@ export * from './Toggle';
 export * from './Toolbar';
 export * from './SectionHeader';
 export * from './ClickSpark';
+export * from './pointerHighlight';

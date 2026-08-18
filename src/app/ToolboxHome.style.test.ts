@@ -17,6 +17,8 @@ describe('ToolboxHome style contract', () => {
     expect(components).toMatch(/\.toolbox-tool-button::before\s*\{[\s\S]*?radial-gradient\([\s\S]*?var\(--pointer-x[\s\S]*?var\(--pointer-y/);
     expect(components).toMatch(/\.toolbox-tool-button::before\s*\{[\s\S]*?pointer-events:\s*none/);
     expect(components).toMatch(/\.toolbox-tool-button:hover:not\(:disabled\)::before\s*\{\s*opacity:\s*1/);
+    expect(components).toMatch(/\.toolbox-tool-button::after\s*\{[\s\S]*?linear-gradient\(90deg, transparent, rgb\(255 255 255 \/ 18%\)/);
+    expect(components).toMatch(/\.toolbox-tool-button:hover:not\(:disabled\)::after\s*\{\s*opacity:\s*1/);
   });
 
   it('provides a pressed scale affordance around 0.98 for enabled cards only', () => {
@@ -30,6 +32,7 @@ describe('ToolboxHome style contract', () => {
     expect(reduced).toContain('transition: none');
     expect(reduced).toContain('transform: none');
     expect(reduced).toMatch(/\.toolbox-tool-button::before\s*\{\s*opacity:\s*0\s*!important/);
+    expect(reduced).toMatch(/\.toolbox-tool-button::after\s*\{\s*opacity:\s*0\s*!important/);
   });
 
   it('raises the homepage card surface locally without touching global tokens', () => {

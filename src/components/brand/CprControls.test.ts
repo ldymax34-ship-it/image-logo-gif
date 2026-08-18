@@ -61,11 +61,8 @@ describe('color mode labels', () => {
       onLanguageChange: () => undefined,
       onChange: () => undefined
     }));
-    const colorSelectStart = html.indexOf('>配色</label>');
-    const colorSelectEnd = html.indexOf('</select>', colorSelectStart) + '</select>'.length;
-    const colorSelect = html.slice(colorSelectStart, colorSelectEnd);
-
-    expectLabelsInOrder(colorSelect, COLOR_LABELS, '</option>');
+    expect((html.match(/role="combobox"/g) ?? []).length).toBeGreaterThanOrEqual(5);
+    expect(html).toContain('aria-label="Logo 配色"');
   });
 
   it('renders CPR color modes as 原色、白色、黑色、自定义', () => {

@@ -148,7 +148,7 @@ describe('video watermark adapter', () => {
       fontSize: 3,
       opacity: 0.56,
       rotation: 30,
-      density: 'standard',
+      density: 'dense',
       phaseOffset: 0.5,
     });
     expect(recommended).not.toHaveProperty('spacingX');

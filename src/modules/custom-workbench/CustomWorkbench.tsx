@@ -1,5 +1,6 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
+import { Select, trackPointerHighlight } from '../../components/ui';
 import { buildBoardRenderPlan, canvasToBlob, computeCprPlacementRect, computeFitScale, createInitialCropState, createMaterialAsset, deriveBrandColorMode, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, panCropState, renderBoardToCanvas, snapLogoGroupPosition, zoomCropState, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
 import { releaseMaterialAsset } from '../../core/image/imageMeta';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
@@ -7,6 +8,7 @@ import { BoardCanvas } from '../../components/canvas';
 import { CustomFabricOverlay, type CustomFabricObjectId } from './CustomFabricOverlay';
 import { resolveCustomFabricItems, type CustomFabricOverlayItem } from './customFabricItems';
 import { createExportBatchId, exportStatusStore, formatExportSize } from '../../components/export-status/exportStatusStore';
+import { notify } from '../../components/ui/toastBus';
 import { constrainCustomTransform, getCustomObjectScaleLimits, getCustomTransformBounds, type CustomObjectTransform } from './customFabricCoords';
 import { constrainCustomCanvasObjectTransform, toCustomFabricTransformPatch } from './customFabricState';
 import { CUSTOM_CANVAS_OPTION, CUSTOM_MANUAL_CANVAS_PRESETS, MAX_CUSTOM_CANVAS_EDGE, createCustomCanvasSelection, getCustomCanvasOptionValue, resolveCustomCanvasSelection, resolveCustomCanvasSpec, selectCustomCanvasPreset, type CustomCanvasSelection } from './customCanvasSpec';
@@ -309,11 +311,11 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
         }
       }
       const saved = await saveBlobToOutputTarget(target, name, result.blob);
-      setStatus(`已导出 ${saved}`);
+      notify('success', `已导出 ${saved}`);
       exportStatusStore.patch(taskId, { status: 'completed', progress: 100, size: formatExportSize(result.blob.size), outputPath: saved });
     } catch (error) {
       const message = error instanceof Error ? error.message : '导出失败';
-      setStatus(message);
+      notify('error', `导出失败：${message}`);
       exportStatusStore.patch(taskId, { status: 'failed', error: message });
     }
   }
@@ -469,11 +471,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
             <div className="section-header is-idle" data-section-state="idle">
               <div><h3><span className="section-state-dot" aria-hidden="true" />画布与底图</h3><small>{canvas.width} × {canvas.height}</small></div>
             </div>
-            <label className="control-row"><span>尺寸</span><select aria-label="自定义画布尺寸" value={canvasOption} onChange={(event) => selectCanvasSize(event.target.value)}>
-              <option value="source">原图尺寸（跟随底图）</option>
-              {CUSTOM_MANUAL_CANVAS_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-              <option value={CUSTOM_CANVAS_OPTION}>自定义尺寸</option>
-            </select></label>
+            <label className="control-row"><span>尺寸</span><Select aria-label="自定义画布尺寸" value={canvasOption} onChange={selectCanvasSize} options={[{ value: 'source', label: '原图尺寸（跟随底图）' }, ...CUSTOM_MANUAL_CANVAS_PRESETS.map((preset) => ({ value: preset.id, label: preset.name })), { value: CUSTOM_CANVAS_OPTION, label: '自定义尺寸' }]} /></label>
             {canvasOption === CUSTOM_CANVAS_OPTION ? <div className="custom-canvas-dimensions" aria-label="自定义画布宽高">
               <label><span>宽</span><input aria-label="自定义画布宽度" inputMode="numeric" type="number" min="1" max={MAX_CUSTOM_CANVAS_EDGE} step="1" value={customWidthDraft} onChange={(event) => setCustomWidthDraft(event.target.value)} onBlur={commitCustomCanvasSize} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
               <span aria-hidden="true">×</span>
@@ -495,9 +493,9 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
               <div><h3><span className="section-state-dot" aria-hidden="true" />固定对象</h3><small>点击画布对象或在此选择</small></div>
             </div>
             <div className="custom-object-selector" role="group" aria-label="选择固定对象">
-              <button type="button" className={selectedObjectId === 'game' ? 'active' : ''} onClick={() => { setCropEditing(false); setSelectedObjectId('game'); }}>游戏 Logo</button>
-              <button type="button" className={selectedObjectId === 'company' ? 'active' : ''} onClick={() => { setCropEditing(false); setSelectedObjectId('company'); }}>公司 Logo</button>
-              <button type="button" className={selectedObjectId === 'cpr' ? 'active' : ''} onClick={() => { setCropEditing(false); setSelectedObjectId('cpr'); }}>CPR</button>
+              <button type="button" className={`pointer-highlight ${selectedObjectId === 'game' ? 'active' : ''}`} onPointerMove={trackPointerHighlight} onClick={() => { setCropEditing(false); setSelectedObjectId('game'); }}>游戏 Logo</button>
+              <button type="button" className={`pointer-highlight ${selectedObjectId === 'company' ? 'active' : ''}`} onPointerMove={trackPointerHighlight} onClick={() => { setCropEditing(false); setSelectedObjectId('company'); }}>公司 Logo</button>
+              <button type="button" className={`pointer-highlight ${selectedObjectId === 'cpr' ? 'active' : ''}`} onPointerMove={trackPointerHighlight} onClick={() => { setCropEditing(false); setSelectedObjectId('cpr'); }}>CPR</button>
             </div>
           </div>
 
@@ -507,7 +505,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
             </div>
             {selectedObjectId === 'game' ? <>
               <label className="toggle"><input type="checkbox" checked={gameEnabled} onChange={(event) => setGameEnabled(event.target.checked)} />显示游戏 Logo</label>
-              <label className="control-row"><span>语种</span><select value={gameLanguage} onChange={(event) => setGameLanguage(event.target.value as BrandLanguage)}>{gameLogos.map((item) => <option key={item.id} value={item.language}>{getBrandLanguageLabel(item.language)}</option>)}</select></label>
+              <label className="control-row"><span>语种</span><Select value={gameLanguage} options={gameLogos.map((item) => ({ value: item.language, label: getBrandLanguageLabel(item.language) }))} onChange={(value) => setGameLanguage(value as BrandLanguage)} aria-label="自定义 Logo 语种" /></label>
               {numberControl('缩放', selectedInteractionItem?.currentScale ?? resolvedGameScale, selectedScaleLimits?.minScale ?? .01, selectedScaleLimits?.maxScale ?? resolvedGameScale, .01, (scale) => editSelectedTransform({ scale }))}
               {numberControl('X', selectedInteractionItem?.rect.x ?? 0, 0, selectedTransformBounds?.maxX ?? 0, 1, (x) => editSelectedTransform({ x }))}
               {numberControl('Y', selectedInteractionItem?.rect.y ?? 0, 0, selectedTransformBounds?.maxY ?? 0, 1, (y) => editSelectedTransform({ y }))}

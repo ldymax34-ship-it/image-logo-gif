@@ -222,6 +222,7 @@ describe('VideoWatermarkWorkspace independent page', () => {
     expect(harness.pickVideoFiles).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('clip.mp4');
     expect(container.textContent).toContain('640 × 360');
+    expect(container.querySelector('button[aria-label="视频平铺密度"]')?.textContent).toContain('密集');
     expect(harness.startWatermarkPreview).toHaveBeenCalledTimes(1);
     expect(harness.startWatermarkPreview.mock.calls[0][0].timestampSeconds).toBe(0);
     expect(harness.api.getVideoWatermarkRecommendation).toHaveBeenCalledTimes(1);
@@ -229,6 +230,7 @@ describe('VideoWatermarkWorkspace independent page', () => {
     expect(harness.startWatermarkPreview.mock.calls[0][0].columns).toBeUndefined();
     expect(harness.startWatermarkPreview.mock.calls[0][0].rows).toBeUndefined();
     expect(container.textContent).toContain('已应用推荐');
+    expect(container.querySelector('button[aria-label="视频平铺密度"]')?.textContent).toContain('密集');
     const previewTaskId = harness.startWatermarkPreview.mock.calls[0][0].taskId;
     act(() => { harness.getPreviewListener()?.({ taskId: previewTaskId, status: 'completed', outputPath: `/tmp/${previewTaskId}.png` }); });
     await flush();
@@ -259,6 +261,7 @@ describe('VideoWatermarkWorkspace independent page', () => {
     const { container, root } = mount(<VideoWatermarkWorkspace onReturn={() => undefined} injectedApi={harness.api} previewObjectUrlLoader={fakePreviewLoader} />);
     await chooseFirstVideo(container);
     expect(container.textContent).toContain('已应用推荐');
+    expect(container.querySelector('button[aria-label="视频平铺密度"]')?.textContent).toContain('密集');
     const textarea = container.querySelector<HTMLTextAreaElement>('textarea')!;
     act(() => { setTextAreaValue(textarea, '手工修改'); });
     expect(container.textContent).toContain('已自定义');
@@ -739,6 +742,38 @@ describe('VideoWatermarkWorkspace independent page', () => {
     expect(thumb).not.toBeNull();
     expect(thumb?.getAttribute('src')).toBe(`blob:preview-/tmp/${previewTaskId}.png`);
     expect(container.querySelector('.wm-video-file-icon')).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('generates independent clean-frame thumbnails for every imported video', async () => {
+    const harness = createApi({
+      pickVideoFiles: async () => ['/tmp/first.mp4', '/tmp/second.mov'],
+    });
+    const { container, root } = mount(<VideoWatermarkWorkspace onReturn={() => undefined} injectedApi={harness.api} previewObjectUrlLoader={fakePreviewLoader} />);
+    await chooseFirstVideo(container);
+
+    expect(container.querySelectorAll('.wm-video-asset-row')).toHaveLength(2);
+    const initialPreview = harness.startWatermarkPreview.mock.calls.find(([request]) => request.taskId.startsWith('wm-preview-'))?.[0];
+    expect(initialPreview).toBeDefined();
+    act(() => { harness.getPreviewListener()?.({ taskId: initialPreview!.taskId, status: 'completed', outputPath: `/tmp/${initialPreview!.taskId}.png` }); });
+    await flush();
+
+    const completedThumbnailIds = new Set<string>();
+    for (let index = 0; index < 1; index += 1) {
+      const thumbnailRequest = harness.startWatermarkPreview.mock.calls
+        .map(([request]) => request)
+        .find((request) => request.taskId.startsWith('wm-thumb-') && !completedThumbnailIds.has(request.taskId));
+      expect(thumbnailRequest).toBeDefined();
+      completedThumbnailIds.add(thumbnailRequest!.taskId);
+      act(() => { harness.getPreviewListener()?.({ taskId: thumbnailRequest!.taskId, status: 'completed', outputPath: `/tmp/${thumbnailRequest!.taskId}.png` }); });
+      await flush();
+    }
+
+    const thumbnails = [...container.querySelectorAll<HTMLImageElement>('.wm-video-asset-thumb')];
+    expect(thumbnails).toHaveLength(2);
+    expect(new Set(thumbnails.map((thumbnail) => thumbnail.src)).size).toBe(2);
+    expect(container.querySelectorAll('.wm-video-thumb-loading')).toHaveLength(0);
     act(() => root.unmount());
     container.remove();
   });

@@ -24,7 +24,6 @@ function jobToExportTask(job: ExportJob, batchId: string, fallbackExtension: str
 
 export type BatchExportCallbacks = {
   onExportingChange?: (exporting: boolean) => void;
-  onComplete?: (message: string) => void;
 };
 
 /**
@@ -84,12 +83,12 @@ export function useBatchExportController() {
         });
         setResult(nextResult);
         if (nextResult.failures.length) {
-          const message = `已导出 ${nextResult.completed} 个文件，${nextResult.failures.length} 个失败。${nextResult.failures[0].message}`;
-          setErrorMessage(message);
           notify('error', `已导出 ${nextResult.completed} 个文件，${nextResult.failures.length} 个失败：${nextResult.failures[0].message}`);
         } else {
-          callbacks.onComplete?.(`已导出 ${nextResult.completed} 个文件`);
+          notify('success', `已导出 ${nextResult.completed} 个文件`);
         }
+      } catch (error) {
+        notify('error', `导出失败：${error instanceof Error ? error.message : String(error)}`);
       } finally {
         setExporting(false);
         callbacks.onExportingChange?.(false);

@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
   /* ── 深色 dashboard 近黑中性层：低对比、细边框、近白正文 ── */
-  --color-canvas-deep: #111113;
-  --color-canvas: #151517;           /* 工作区 */
-  --color-app: #1a1a1d;              /* 窗口背景 */
+  --color-canvas-deep: #0f1011;
+  --color-app: #121214;              /* app/window 最深表面 */
+  --color-canvas: #18181b;           /* workspace / canvas */
   --color-panel: #202024;            /* 主面板 */
-  --color-panel-muted: #25252a;      /* 次级区域 */
-  --color-panel-raised: #2b2b31;     /* 次级区域 / hover 抬升 */
-  --color-field: #1d1d21;            /* 输入控件 */
-  --color-field-hover: #27272d;
+  --color-panel-muted: #27272b;      /* 次级区域 */
+  --color-panel-raised: #2e2e33;     /* 次级区域 / hover 抬升 */
+  --color-field: #1b1b1e;            /* 输入控件 */
+  --color-field-hover: #29292e;
   --color-border: #34343b;           /* 边界 */
   --color-border-strong: #474750;    /* hover/selected 边界 */
   --color-text: #f4f4f5;             /* 主文字 */

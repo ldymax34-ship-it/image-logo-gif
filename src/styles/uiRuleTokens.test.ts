@@ -4,6 +4,16 @@ import { describe, expect, it } from 'vitest';
 const tokens = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8');
 const theme = readFileSync(new URL('./theme.css', import.meta.url), 'utf8');
 const components = readFileSync(new URL('./components.css', import.meta.url), 'utf8');
+const formalReactSources = [
+  '../app/ApplicationSettingsDialog.tsx',
+  '../components/brand/BrandSettingsDialog.tsx',
+  '../components/brand/LogoGroupControls.tsx',
+  '../components/brand/CprControls.tsx',
+  '../modules/custom-workbench/CustomWorkbench.tsx',
+  '../watermark-workbench/WatermarkWorkbench.tsx',
+  '../watermark-workbench/VideoWatermarkWorkspace.tsx',
+  '../modules/media-workbench/BatchExportDialog.tsx'
+].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'));
 
 describe('desktop UI rule tokens', () => {
   it('uses one compact typography and control scale', () => {
@@ -24,6 +34,23 @@ describe('desktop UI rule tokens', () => {
     expect(theme).toContain('--color-focus-ring:');
     expect(theme).toContain('--color-danger-border:');
     expect(theme).toContain('--color-warning-border:');
+  });
+
+  it('keeps the global neutral surface hierarchy ordered from app to raised controls', () => {
+    const surface = ['--color-app: #121214', '--color-canvas: #18181b', '--color-panel: #202024', '--color-panel-muted: #27272b', '--color-panel-raised: #2e2e33'];
+    let previous = -1;
+    for (const token of surface) {
+      const index = theme.indexOf(token);
+      expect(index).toBeGreaterThan(previous);
+      previous = index;
+    }
+    expect(theme).toContain('--color-field: #1b1b1e');
+    expect(theme).toContain('--color-field-hover: #29292e');
+    expect(theme).toContain('--color-border: #34343b');
+  });
+
+  it('keeps formal React pages free of interactive native select markup', () => {
+    expect(formalReactSources.every((source) => !/<select\b/.test(source))).toBe(true);
   });
 
   it('flattens property groups instead of nesting another card', () => {

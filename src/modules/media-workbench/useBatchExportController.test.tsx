@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { exportStatusStore } from '../../components/export-status/exportStatusStore';
+import * as toastBus from '../../components/ui/toastBus';
 import type { ExportJob, MediaExportRequest } from '../../services/export';
 import { useBatchExportController, type BatchExportCallbacks } from './useBatchExportController';
 
@@ -100,12 +101,12 @@ describe('useBatchExportController', () => {
     exportMediaBatch.mockReturnValue(new Promise((resolve) => { resolveBatch = resolve; }));
 
     const onExportingChange = vi.fn();
-    const onComplete = vi.fn();
+    const notify = vi.spyOn(toastBus, 'notify');
 
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
-    await act(async () => { root.render(<Harness request={makeRequest()} callbacks={{ onExportingChange, onComplete }} />); });
+    await act(async () => { root.render(<Harness request={makeRequest()} callbacks={{ onExportingChange }} />); });
     const button = container.querySelector('button')!;
     await act(async () => { button.click(); });
 
@@ -114,14 +115,15 @@ describe('useBatchExportController', () => {
     expect(onExportingChange).toHaveBeenCalledWith(true);
     expect(exportStatusStore.getSnapshot()).toHaveLength(2);
     expect(exportStatusStore.getSnapshot().every((task) => task.status === 'queued')).toBe(true);
-    expect(onComplete).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
 
     // Simulate the dialog closing immediately after run() reports that it started.
     act(() => root.unmount());
     await act(async () => { resolveBatch({ completed: 2, failures: [], outcomes: [] }); });
 
     expect(onExportingChange).toHaveBeenCalledWith(false);
-    expect(onComplete).toHaveBeenCalledWith('已导出 2 个文件');
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('success', '已导出 2 个文件');
     container.remove();
   });
 
@@ -197,6 +199,28 @@ describe('useBatchExportController', () => {
     expect(snapshot.every((task) => task.status === 'failed')).toBe(true);
     expect(snapshot.map((task) => task.error)).toEqual(['磁盘已满', '资源缺失']);
 
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('emits one failure toast for a batch summary instead of one toast per failed job', async () => {
+    const notify = vi.spyOn(toastBus, 'notify');
+    chooseOutputTarget.mockResolvedValue(desktopTarget('/tmp'));
+    exportMediaBatch.mockResolvedValue({
+      completed: 0,
+      failures: [{ item: jobs[0], message: '磁盘已满' }, { item: jobs[1], message: '资源缺失' }],
+      outcomes: []
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<Harness request={makeRequest()} />); });
+    await act(async () => { container.querySelector<HTMLButtonElement>('button')?.click(); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('error', expect.stringContaining('2 个失败'));
     act(() => root.unmount());
     container.remove();
   });

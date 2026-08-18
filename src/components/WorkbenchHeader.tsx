@@ -1,4 +1,5 @@
 import { GlobalTopActions } from '../app/GlobalTopActions';
+import { Palette } from 'lucide-react';
 
 export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendingSpecChanges, onOpenSettings, onCheckUpdate, onOpenChangelog }: {
   assetCount: number;
@@ -11,6 +12,7 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
 }) {
   return <header className="topbar">
     <div className="tool-page-heading">
+      <span className="tool-page-icon" aria-hidden="true"><Palette size={18} strokeWidth={1.6} /></span>
       <h1>Logo 与版式</h1>
       <span className="tool-status-badge is-stable">可用</span>
       <p className="tool-page-description">批量套用 Logo、CPR 与常用画板尺寸。</p>

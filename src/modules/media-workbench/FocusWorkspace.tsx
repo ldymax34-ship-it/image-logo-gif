@@ -31,6 +31,7 @@ import {
 } from './focusCoords';
 import { updateFocusCpr, updateFocusLogo, withFocusDraft } from './focusSession';
 import { FocusLogoFabricOverlay } from './FocusLogoFabricOverlay';
+import { ConfirmationDialog } from './ConfirmationDialog';
 
 const MIN_VIEW_ZOOM = 25;
 const MAX_VIEW_ZOOM = 300;
@@ -358,6 +359,25 @@ export function FocusWorkspace({
         <p className="dialog-help" title="聚焦期间所有修改先保存在草稿中，点击“保存并返回”后才写入画板。">修改先保存在草稿中</p>
       </aside>
     </div>
-    {pendingModuleChange ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存。保存后切换到{pendingModuleChange}吗？</span><button type="button" onClick={onCancelModuleChange}>取消</button><button type="button" className="danger-button" onClick={onDiscardAndLeave}>放弃</button><button type="button" className="primary-button" onClick={onSaveAndLeave}>保存</button></div> : confirmDiscard ? <div className="focus-discard-confirm" role="alert"><span>当前调整尚未保存，确定放弃吗？</span><button type="button" onClick={() => setConfirmDiscard(false)}>继续调整</button><button type="button" className="danger-button" onClick={onCancel}>放弃修改</button></div> : null}
+    {pendingModuleChange ? <ConfirmationDialog
+      title="放弃当前画板调整？"
+      message={`当前调整尚未保存，切换到${pendingModuleChange}后会清空这次构图调整。`}
+      details={["部分设置仅临时保存在本机，未导出的内容仍可能丢失。"]}
+      cancelLabel="取消"
+      secondaryLabel="保存并切换"
+      confirmLabel="放弃并切换"
+      destructive
+      onCancel={onCancelModuleChange ?? (() => undefined)}
+      onSecondary={onSaveAndLeave}
+      onConfirm={onDiscardAndLeave ?? (() => undefined)}
+    /> : confirmDiscard ? <ConfirmationDialog
+      title="放弃当前画板调整？"
+      message="当前调整尚未保存，放弃后这次构图修改会被清空。"
+      cancelLabel="继续编辑"
+      confirmLabel="放弃修改"
+      destructive
+      onCancel={() => setConfirmDiscard(false)}
+      onConfirm={onCancel}
+    /> : null}
   </section>;
 }

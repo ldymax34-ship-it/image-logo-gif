@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertUpdaterSignature, buildPreviewManifest } from './create-preview-manifest.mjs';
+import { assertUpdaterSignature, buildPreviewManifest, previewReleaseNotes } from './create-preview-manifest.mjs';
 
 describe('Preview updater manifest', () => {
   it('contains exactly the two preview platforms and signature contents', () => {
@@ -9,4 +9,8 @@ describe('Preview updater manifest', () => {
     expect(result.platforms['windows-x86_64'].signature).toBe('win-signature');
   });
   it('rejects URLs in signature fields', () => expect(() => assertUpdaterSignature('https://example.com/file.sig')).toThrow(/not a URL/));
+
+  it('uses the concise Chinese Preview release note', () => {
+    expect(previewReleaseNotes('0.9.2')).toBe('0.9.2：统一下拉与深色界面，修复水印选中态、视频缩略图及导出队列体验。');
+  });
 });

@@ -38,4 +38,13 @@ describe('ToastHost', () => {
 
     expect(container.querySelector('.toast-card')).toBeNull();
   });
+
+  it('deduplicates the same event during the short notification window', () => {
+    act(() => {
+      notify('error', '批量导出失败：磁盘已满');
+      notify('error', '批量导出失败：磁盘已满');
+    });
+
+    expect(container.querySelectorAll('.toast-card')).toHaveLength(1);
+  });
 });

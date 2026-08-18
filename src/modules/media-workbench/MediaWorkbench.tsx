@@ -35,6 +35,7 @@ import {
   MultiAssetBoardOverview,
   SpecPanel
 } from '../../components';
+import { trackPointerHighlight } from '../../components/ui';
 import { useAppRuntime, type AppNavigationTarget } from '../../app/AppRuntimeProvider';
 import type { WorkbenchModule } from '../../components/ModuleNav';
 import { BatchExportDialog } from '../../modules/media-workbench/BatchExportDialog';
@@ -44,7 +45,6 @@ import { BrandControlsPanel } from './BrandControlsPanel';
 import { selectBoardBrandState, selectBoardKey, selectBoardPreviewState } from './mediaWorkbenchSelectors';
 import { applyCropScope, updateBoardCrop } from './mediaWorkbenchActions';
 import { type MediaWorkbenchState } from './useMediaWorkbenchState';
-import { notify } from '../../components/ui/toastBus';
 import { useMediaAssetActions } from './useMediaAssetActions';
 import { useMediaSpecActions } from './useMediaSpecActions';
 import { useMediaBrandActions } from './useMediaBrandActions';
@@ -157,6 +157,7 @@ type PendingBrandScope = {
 
 export function MediaWorkbench({ active, sharedState }: { active: boolean; sharedState: MediaWorkbenchState }) {
   const [pendingModuleChange, setPendingModuleChange] = useState<AppNavigationTarget>();
+  const [pendingNavigationRisk, setPendingNavigationRisk] = useState<AppNavigationTarget>();
   const [pendingBrandScope, setPendingBrandScope] = useState<PendingBrandScope>();
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const assetsRef = useRef<MaterialAsset[]>([]);
@@ -166,7 +167,6 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
 
   const publishMessage = useCallback((text: string) => {
     setMessage(text);
-    if (text && /^(已导入|已应用|已将|已删除|已保存|已导出|失败)/.test(text)) notify('info', text);
   }, [setMessage]);
 
   const result = useMemo(() => parseSpecText(draftText), [draftText]);
@@ -290,19 +290,49 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
   const { applyParsedSpecs, restoreAppliedText, applyPresetTemplate, saveCurrentAsPreset, removeCustomPreset, confirmPendingAction } = useMediaSpecActions({ result, draftText, appliedText, specs, previewStates, brandSettings, customPresets, newPresetName, pendingConfirmation, setDraftText, setAppliedText, setSpecs, setBrandLayer, setCustomPresets, setNewPresetName, setPendingConfirmation, setMessage: publishMessage, createLogoDefaults: (spec) => createLogoGroupFromSettings(brandSettings, spec), deleteAsset });
   const { changeBrandLanguage, applyCompanyLogoReplacement } = useMediaBrandActions({ assets, specs, boardBrandStates, brandAssets, brandLayer, selectedBoardKey, focusSpec, focusPreviewKey, defaultLogoGroup, setPreviewStates, dispatchBoardBrand, setBrandLayer, setSelectedAssetId, setSelectedSpecId, setMessage: publishMessage });
 
+  const hasMediaNavigationRisk = Boolean(
+    hasPendingSpecChanges
+    || exportDialogOpen
+    || exporting
+  );
+
   useEffect(() => registerNavigationGuard((target) => {
-    if (!focusSession) return true;
-    if (focusSession.dirty) {
+    if (!active) return true;
+    if (focusSession?.dirty) {
       setPendingModuleChange(target);
       return false;
     }
+    if (hasMediaNavigationRisk) {
+      setPendingNavigationRisk(target);
+      return false;
+    }
+    if (!focusSession) return true;
     closeFocusSession();
     return true;
-  }), [focusSession, registerNavigationGuard]);
+  }), [active, closeFocusSession, exportDialogOpen, exporting, focusSession, hasMediaNavigationRisk, registerNavigationGuard]);
 
   function closeFocusSession() {
     setFocusSession(undefined);
     closeFocusEditor();
+  }
+
+  function discardMediaWorkAndLeave(target: AppNavigationTarget) {
+    for (const asset of assets) releaseMaterialAsset(asset);
+    setAssets([]);
+    setSpecs([]);
+    setPreviewStates({});
+    dispatchBoardBrand({ type: 'replace', states: {} });
+    setDraftText('');
+    setAppliedText('');
+    setSelectedAssetId(undefined);
+    setSelectedSpecId(undefined);
+    setImportFailures([]);
+    setMessage('');
+    setExportDialogOpen(false);
+    closeFocusSession();
+    setPendingNavigationRisk(undefined);
+    if (target === 'media' || target === 'custom') setActiveModule(target);
+    else setActiveTool(target);
   }
 
   function commitFocusSession(session: NonNullable<typeof focusSession>) {
@@ -450,7 +480,7 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
           />
           <div className="asset-list">
             {assets.length === 0 ? (
-              <div className="drop-zone" role="button" tabIndex={0} onClick={() => imageInputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}>
+              <div className="drop-zone pointer-highlight" role="button" tabIndex={0} onPointerMove={trackPointerHighlight} onClick={() => imageInputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}>
                 <ImageUp size={22} aria-hidden="true" />
                 <strong>上传主视觉 / 已设计图</strong>
                 <span>支持一次选择多张图片，本地读取尺寸与缩略图。</span>
@@ -459,7 +489,8 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
               assets.map((asset) => (
                 <div
                   key={asset.id}
-                  className={`asset-row ${asset.id === selectedAsset?.id ? 'active' : ''}`}
+                  className={`asset-row pointer-highlight ${asset.id === selectedAsset?.id ? 'active' : ''}`}
+                  onPointerMove={trackPointerHighlight}
                 >
                   <button type="button" className="asset-select-button" onClick={() => selectAssetAndScroll(asset.id)}>
                     <img src={asset.objectUrl} alt={asset.fileName} />
@@ -499,7 +530,7 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
           <div className="preset-section">
             <div className="preset-list">
               {PRESET_TEMPLATES.map((preset) => (
-                <button key={preset.id} type="button" className="preset-card" onClick={() => applyPresetTemplate(preset, presetApplyMode)}>
+                <button key={preset.id} type="button" className="preset-card pointer-highlight" onPointerMove={trackPointerHighlight} onClick={() => applyPresetTemplate(preset, presetApplyMode)}>
                   <strong>{preset.name}</strong>
                   <small>{preset.description}</small>
                   <span>{preset.specs.length} 个尺寸</span>
@@ -521,7 +552,7 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
               <div className="custom-preset-list">
                 {customPresets.map((preset) => (
                   <div key={preset.id} className="custom-preset-row">
-                    <button type="button" className="preset-card custom" onClick={() => applyPresetTemplate(preset, presetApplyMode)}>
+                    <button type="button" className="preset-card custom pointer-highlight" onPointerMove={trackPointerHighlight} onClick={() => applyPresetTemplate(preset, presetApplyMode)}>
                       <strong>{preset.name}</strong>
                       <small>{preset.description}</small>
                       <span>{preset.specs.length} 个尺寸</span>
@@ -665,6 +696,25 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
           onConfirm={confirmBrandScope}
         />
       )}
+      {pendingNavigationRisk && (
+        <ConfirmationDialog
+          title="放弃当前 Logo / 版式工作？"
+          message={hasPendingSpecChanges
+            ? '当前尺寸矩阵尚未应用，切换后未应用的画板与当前编辑会被清空。'
+            : exporting
+              ? '当前正在导出，切换后导出工作与未输出内容会被中断。'
+              : '当前导入的素材、画板与构图调整只保存在本机内存，切换后可能丢失。'}
+          details={[
+            hasPendingSpecChanges ? '未应用的尺寸内容不会写入当前画板。' : '已应用但未导出的内容不会生成输出文件。',
+            '部分设置仅临时保存在本机，未导出的内容仍可能丢失。'
+          ]}
+          cancelLabel="继续编辑"
+          confirmLabel="放弃并切换"
+          destructive
+          onCancel={() => setPendingNavigationRisk(undefined)}
+          onConfirm={() => discardMediaWorkAndLeave(pendingNavigationRisk)}
+        />
+      )}
       {exportDialogOpen && (
         <BatchExportDialog
           assets={assets}
@@ -675,7 +725,6 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
           brandSettings={brandSettings}
           boardBrandStates={boardBrandStates}
           onClose={() => setExportDialogOpen(false)}
-          onComplete={publishMessage}
           onExportingChange={setExporting}
         />
       )}

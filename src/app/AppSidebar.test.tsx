@@ -17,6 +17,7 @@ describe('AppSidebar', () => {
     expect(container.querySelector('button[aria-label="GIF 压缩"]')).toBeNull();
     expect(container.querySelector('button[aria-label="工具箱首页"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="批量模板 GIF"]')).toBeNull();
+    expect(container.querySelector('.app-sidebar-icon svg')?.getAttribute('width')).toBe('18');
 
     act(() => root.unmount());
   });

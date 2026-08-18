@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import type { AppPreferencesV1, StartupTool } from './appPreferences';
 import { isDesktopBridgeAvailable } from '../platform/desktopBridge';
+import { Select } from '../components/ui';
 
 const STARTUP_OPTIONS: Array<{ value: StartupTool; label: string }> = [
   { value: 'toolbox', label: '工具箱首页' },
@@ -45,12 +46,12 @@ export function ApplicationSettingsDialog({ preferences, onPreferencesChange, on
         <div className="application-settings-dialog-body">
           <label className="settings-field">
             <span>启动时打开</span>
-            <select
+            <Select
               value={selectValue}
-              onChange={(event) => onPreferencesChange({ ...preferences, startupTool: event.target.value as StartupTool })}
-            >
-              {startupOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+              options={startupOptions}
+              onChange={(value) => onPreferencesChange({ ...preferences, startupTool: value as StartupTool })}
+              aria-label="启动时打开"
+            />
           </label>
           <p>启动偏好会保存在本机，只记录工具入口，不恢复未保存的工作内容。</p>
           {desktop && (

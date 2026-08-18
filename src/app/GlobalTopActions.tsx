@@ -1,34 +1,18 @@
-import { GitBranch, ScrollText } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
+import { CnbBrandIcon, GitHubBrandIcon } from '../components/BrandIcons';
 
-export const CNB_REPO_URL = '';
+export const GITHUB_REPO_URL = 'https://github.com/ldymax34-ship-it/image-logo-gif';
+export const CNB_REPO_URL = 'https://cnb.cool/YTT_mgbox/image-logo-gif';
 
 export function GlobalTopActions({ onOpenChangelog }: { onOpenChangelog?: () => void }) {
-  const repoButton = CNB_REPO_URL ? (
-    <a
-      className="square-icon-button"
-      href={CNB_REPO_URL}
-      target="_blank"
-      rel="noreferrer"
-      aria-label="Git 仓库"
-      title="Git 仓库"
-    >
-      <GitBranch size={15} strokeWidth={1.7} aria-hidden="true" />
-    </a>
-  ) : (
-    <button
-      type="button"
-      className="square-icon-button"
-      aria-label="Git 仓库"
-      title="Git 仓库（地址待配置）"
-      aria-disabled="true"
-    >
-      <GitBranch size={15} strokeWidth={1.7} aria-hidden="true" />
-    </button>
-  );
-
   return (
     <div className="global-top-actions">
-      {repoButton}
+      <a className="square-icon-button brand-link-button" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer" aria-label="打开 GitHub 仓库" title="GitHub 仓库">
+        <GitHubBrandIcon width={16} height={16} aria-hidden="true" />
+      </a>
+      <a className="square-icon-button brand-link-button" href={CNB_REPO_URL} target="_blank" rel="noreferrer" aria-label="打开 CNB 仓库" title="CNB 仓库">
+        <CnbBrandIcon width={16} height={16} aria-hidden="true" />
+      </a>
       {onOpenChangelog ? (
         <button
           type="button"

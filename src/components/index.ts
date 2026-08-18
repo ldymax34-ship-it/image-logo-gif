@@ -5,6 +5,7 @@ export * from './ExportDialog';
 export * from './SpecPanel';
 export * from './WorkbenchHeader';
 export * from './ToolPageHeader';
+export * from './BrandIcons';
 export * from './ModuleNav';
 export * from './brand';
 export * from './canvas';

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Select from '@radix-ui/react-select';
 import { Check, Copy, Film, FolderOpen, ListPlus, LoaderCircle, Play, Sparkles, Trash2, X } from 'lucide-react';
 import { ToolPageHeader } from '../components';
+import { Select as AppSelect, trackPointerHighlight } from '../components/ui';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import { useOptionalAppRuntime, type AppNavigationTarget } from '../app/AppRuntimeProvider';
 import { notify } from '../components/ui/toastBus';
@@ -134,8 +134,14 @@ export function VideoWatermarkWorkspace({
   const [recommendation, setRecommendation] = useState<VideoWatermarkRecommendation>();
   const [recommendationState, setRecommendationState] = useState<'applied' | 'customized'>();
   const [pendingNavigation, setPendingNavigation] = useState<AppNavigationTarget>();
+  const videoQueueRunRef = useRef<{ taskIds: string[]; notified: boolean }>();
 
-  const hasPendingVideoWork = tasks.some((task) => task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled');
+  const hasPendingVideoWork = Boolean(
+    tasks.some((task) => task.status !== 'completed' && task.status !== 'failed' && task.status !== 'cancelled')
+    || assets.length
+    || outputDirectory
+    || JSON.stringify(config) !== JSON.stringify(DEFAULT_CONFIG)
+  );
   useEffect(() => {
     if (!runtime) return;
     return runtime.registerNavigationGuard((target) => {
@@ -152,6 +158,35 @@ export function VideoWatermarkWorkspace({
       return;
     }
     runtime?.setActiveTool(target);
+  }
+
+  function discardVideoWorkAndLeave(target: AppNavigationTarget) {
+    const previewTaskId = previewTaskIdRef.current;
+    if (previewTaskId && api) void api.cancelWatermarkPreview(previewTaskId).catch(() => undefined);
+    const thumbnailTaskId = thumbnailTaskRef.current?.taskId;
+    if (thumbnailTaskId && api) void api.cancelWatermarkPreview(thumbnailTaskId).catch(() => undefined);
+    for (const url of [...pinnedThumbnailUrlsRef.current, previewObjectUrlRef.current]) {
+      if (url) revokeObjectUrl(url);
+    }
+    pinnedThumbnailUrlsRef.current.clear();
+    previewObjectUrlRef.current = undefined;
+    assetFramesRef.current = {};
+    assetFrameStatusRef.current = {};
+    thumbnailQueueRef.current = [];
+    thumbnailTaskRef.current = undefined;
+    previewTaskIdRef.current = '';
+    setAssetFrames({});
+    setAssetFrameStatus({});
+    setTasks([]);
+    setAssets([]);
+    setSelectedAssetId(undefined);
+    setOutputDirectory('');
+    setConfig(DEFAULT_CONFIG);
+    setRecommendation(undefined);
+    setRecommendationState(undefined);
+    videoQueueRunRef.current = undefined;
+    setPendingNavigation(undefined);
+    leaveTo(target);
   }
   const [preview, setPreview] = useState<VideoWatermarkPreviewState>({ taskId: '', status: 'idle' });
   const [previewTimestamp, setPreviewTimestamp] = useState(0);
@@ -179,10 +214,22 @@ export function VideoWatermarkWorkspace({
   const previewAssetIdRef = useRef<string>();
   const [assetFrames, setAssetFrames] = useState<Record<string, string>>({});
   const assetFramesRef = useRef<Record<string, string>>({});
+  const [assetFrameStatus, setAssetFrameStatus] = useState<Record<string, 'loading' | 'failed'>>({});
+  const assetFrameStatusRef = useRef<Record<string, 'loading' | 'failed'>>({});
   const pinnedThumbnailUrlsRef = useRef(new Set<string>());
+  const assetsRef = useRef<VideoWatermarkAsset[]>([]);
+  const thumbnailQueueRef = useRef<VideoWatermarkAsset[]>([]);
+  const thumbnailTaskRef = useRef<{ assetId: string; taskId: string }>();
+  const thumbnailRequestSeqRef = useRef(0);
+  const previewBusyRef = useRef(false);
+  const startNextThumbnailRef = useRef<() => void>(() => undefined);
 
   // Mirror the locally-controlled queue into the shared export center. Video keeps
   // its own control surface; the store is a read-only projection for the panel.
+  useEffect(() => {
+    assetsRef.current = assets;
+  }, [assets]);
+
   useEffect(() => {
     const batchId = videoBatchIdRef.current;
     exportStatusStore.syncBatch(batchId, tasks.map((task) => videoTaskToExportTask(task, batchId)));
@@ -252,6 +299,37 @@ export function VideoWatermarkWorkspace({
         setTasks((previous) => applyVideoQueueEvent(previous, event));
       }),
       api.listenWatermarkPreviewEvents((event) => {
+        const thumbnailTask = thumbnailTaskRef.current;
+        if (thumbnailTask?.taskId === event.taskId) {
+          const assetId = thumbnailTask.assetId;
+          if (event.status === 'completed' && event.outputPath) {
+            void previewObjectUrlLoader(event.outputPath).then((objectUrl) => {
+              if (thumbnailTaskRef.current?.taskId !== event.taskId) {
+                revokeObjectUrl(objectUrl);
+                return;
+              }
+              assetFramesRef.current = { ...assetFramesRef.current, [assetId]: objectUrl };
+              pinnedThumbnailUrlsRef.current.add(objectUrl);
+              setAssetFrames((previous) => previous[assetId] ? previous : { ...previous, [assetId]: objectUrl });
+              delete assetFrameStatusRef.current[assetId];
+              setAssetFrameStatus({ ...assetFrameStatusRef.current });
+              thumbnailTaskRef.current = undefined;
+              startNextThumbnailRef.current();
+            }).catch(() => {
+              if (thumbnailTaskRef.current?.taskId !== event.taskId) return;
+              thumbnailTaskRef.current = undefined;
+              assetFrameStatusRef.current = { ...assetFrameStatusRef.current, [assetId]: 'failed' };
+              setAssetFrameStatus({ ...assetFrameStatusRef.current });
+              startNextThumbnailRef.current();
+            });
+          } else if (event.status === 'failed' || event.status === 'cancelled' || event.status === 'rejectedBusy') {
+            thumbnailTaskRef.current = undefined;
+            assetFrameStatusRef.current = { ...assetFrameStatusRef.current, [assetId]: 'failed' };
+            setAssetFrameStatus({ ...assetFrameStatusRef.current });
+            startNextThumbnailRef.current();
+          }
+          return;
+        }
         if (event.taskId !== previewTaskIdRef.current) return;
         if (event.status === 'completed' && event.outputPath) {
           const taskId = event.taskId;
@@ -290,6 +368,8 @@ export function VideoWatermarkWorkspace({
               objectUrl,
               error: undefined,
             }));
+            previewBusyRef.current = false;
+            startNextThumbnailRef.current();
           }).catch((error) => {
             if (previewTaskIdRef.current !== taskId) return;
             setPreview((previous) => ({
@@ -299,6 +379,8 @@ export function VideoWatermarkWorkspace({
               outputPath,
               error: error instanceof Error ? error.message : String(error),
             }));
+            previewBusyRef.current = false;
+            startNextThumbnailRef.current();
           });
         } else {
           setPreview((previous) => ({
@@ -308,6 +390,10 @@ export function VideoWatermarkWorkspace({
             outputPath: event.status === 'completed' ? event.outputPath : previous.outputPath,
             error: event.message,
           }));
+          if (event.status === 'failed' || event.status === 'cancelled' || event.status === 'rejectedBusy') {
+            previewBusyRef.current = false;
+            startNextThumbnailRef.current();
+          }
         }
       }),
     ]).then(([taskStop, queueStop, previewStop]) => {
@@ -326,6 +412,8 @@ export function VideoWatermarkWorkspace({
       stopPreview?.();
       const taskId = previewTaskIdRef.current;
       if (taskId) void api.cancelWatermarkPreview(taskId).catch(() => undefined);
+      const thumbnailTaskId = thumbnailTaskRef.current?.taskId;
+      if (thumbnailTaskId) void api.cancelWatermarkPreview(thumbnailTaskId).catch(() => undefined);
       // Revoke every owned object URL exactly once: pinned thumbnails plus the
       // live preview frame. `URL.revokeObjectURL` is idempotent, so a URL that
       // is both a thumbnail and the current preview is safe to list twice.
@@ -335,8 +423,50 @@ export function VideoWatermarkWorkspace({
       pinnedThumbnailUrlsRef.current.clear();
       previewObjectUrlRef.current = undefined;
       assetFramesRef.current = {};
+      assetFrameStatusRef.current = {};
+      thumbnailQueueRef.current = [];
+      thumbnailTaskRef.current = undefined;
     };
   }, [api, previewObjectUrlLoader]);
+
+  const startNextThumbnail = useCallback(() => {
+    if (!api || !engineReady || previewBusyRef.current || thumbnailTaskRef.current) return;
+    let next = thumbnailQueueRef.current.shift();
+    while (next && (assetFramesRef.current[next.id] || assetFrameStatusRef.current[next.id] === 'failed')) {
+      next = thumbnailQueueRef.current.shift();
+    }
+    if (!next || !next.metadata) return;
+
+    const taskId = `wm-thumb-${next.id}-${thumbnailRequestSeqRef.current++}`;
+    thumbnailTaskRef.current = { assetId: next.id, taskId };
+    assetFrameStatusRef.current = { ...assetFrameStatusRef.current, [next.id]: 'loading' };
+    setAssetFrameStatus({ ...assetFrameStatusRef.current });
+    const request = toVideoPreviewRequest(next, config, '', undefined, 320, 0, undefined, undefined, undefined, true);
+    void api.startWatermarkPreview({ ...request, taskId }).catch(() => {
+      if (thumbnailTaskRef.current?.taskId !== taskId) return;
+      thumbnailTaskRef.current = undefined;
+      assetFrameStatusRef.current = { ...assetFrameStatusRef.current, [next.id]: 'failed' };
+      setAssetFrameStatus(assetFrameStatusRef.current);
+      startNextThumbnailRef.current();
+    });
+  }, [api, config, engineReady]);
+
+  useEffect(() => {
+    startNextThumbnailRef.current = startNextThumbnail;
+  }, [startNextThumbnail]);
+
+  const queueMissingThumbnails = useCallback((items: VideoWatermarkAsset[] = assetsRef.current) => {
+    const queuedIds = new Set(thumbnailQueueRef.current.map((asset) => asset.id));
+    if (thumbnailTaskRef.current) queuedIds.add(thumbnailTaskRef.current.assetId);
+    for (const asset of items) {
+      if (asset.metadata && !assetFramesRef.current[asset.id] && !queuedIds.has(asset.id)) {
+        thumbnailQueueRef.current.push(asset);
+        queuedIds.add(asset.id);
+        assetFrameStatusRef.current = { ...assetFrameStatusRef.current, [asset.id]: 'loading' };
+      }
+    }
+    setAssetFrameStatus({ ...assetFrameStatusRef.current });
+  }, []);
 
   const runPreview = useCallback(async () => {
     const {
@@ -352,6 +482,10 @@ export function VideoWatermarkWorkspace({
     }
     const previousTaskId = previewTaskIdRef.current;
     if (previousTaskId) void api.cancelWatermarkPreview(previousTaskId).catch(() => undefined);
+    const thumbnailTaskId = thumbnailTaskRef.current?.taskId;
+    if (thumbnailTaskId) void api.cancelWatermarkPreview(thumbnailTaskId).catch(() => undefined);
+    thumbnailTaskRef.current = undefined;
+    previewBusyRef.current = true;
     previewAssetIdRef.current = asset.id;
     const request = toVideoPreviewRequest(
       asset,
@@ -402,7 +536,6 @@ export function VideoWatermarkWorkspace({
       recommendationStateRef.current = 'applied';
       recommendationAssetIdsRef.current.add(selectedAsset.id);
       setConfig(applyVideoWatermarkRecommendation(config, nextRecommendation));
-      notify('success', '已应用推荐');
     } catch (error) {
       notify('error', error instanceof Error ? error.message : String(error));
     }
@@ -475,6 +608,7 @@ export function VideoWatermarkWorkspace({
       }
     }));
     setAssets((previous) => previous.map((asset) => probed.find((item) => item.id === asset.id) ?? asset));
+    queueMissingThumbnails(probed);
     const firstProbed = probed[0];
     setSelectedAssetId((previous) => previous ?? firstProbed?.id);
     setPreviewTimestamp(0);
@@ -484,7 +618,7 @@ export function VideoWatermarkWorkspace({
       previewContextRef.current.asset = firstProbed;
       void prepareAssetPreview(firstProbed, 0);
     }
-  }, [api, assets, prepareAssetPreview]);
+  }, [api, assets, prepareAssetPreview, queueMissingThumbnails]);
 
   useEffect(() => {
     if (!selectedAsset?.metadata || !engineReady || !api) return;
@@ -544,6 +678,8 @@ export function VideoWatermarkWorkspace({
   const startQueue = useCallback(async () => {
     if (!api) return;
     const pending = tasks.filter((task) => !task.submitted && task.status === 'waiting');
+    if (!pending.length) return;
+    videoQueueRunRef.current = { taskIds: pending.map((task) => task.id), notified: false };
     for (const task of pending) {
       try {
         const started = await api.startWatermarkTask({ taskId: task.id, inputPath: task.inputPath, options: task.options });
@@ -553,6 +689,20 @@ export function VideoWatermarkWorkspace({
       }
     }
   }, [api, tasks]);
+
+  useEffect(() => {
+    const run = videoQueueRunRef.current;
+    if (!run || run.notified || !run.taskIds.length) return;
+    const runTasks = run.taskIds.map((taskId) => tasks.find((task) => task.id === taskId));
+    if (runTasks.some((task) => !task || !['completed', 'failed', 'cancelled'].includes(task.status))) return;
+    run.notified = true;
+    const failed = runTasks.filter((task) => task?.status === 'failed' || task?.status === 'cancelled');
+    if (failed.length) {
+      notify('error', `视频队列完成：${runTasks.length - failed.length} 个成功，${failed.length} 个失败${failed[0]?.error ? `：${failed[0].error}` : ''}`);
+    } else {
+      notify('success', `视频队列已完成：${runTasks.length} 个视频`);
+    }
+  }, [tasks]);
 
   const cancelTask = useCallback(async (taskId: string) => {
     const task = tasks.find((item) => item.id === taskId);
@@ -576,8 +726,12 @@ export function VideoWatermarkWorkspace({
   }, []);
 
   const copyOutputPath = useCallback(async (path: string) => {
-    await navigator.clipboard?.writeText(path);
-    notify('success', '已复制输出路径');
+    try {
+      if (!navigator.clipboard) throw new Error('当前环境不支持复制路径');
+      await navigator.clipboard.writeText(path);
+    } catch (error) {
+      notify('error', error instanceof Error ? error.message : String(error));
+    }
   }, []);
 
   const openOutputDirectory = useCallback(async () => {
@@ -633,11 +787,11 @@ export function VideoWatermarkWorkspace({
           </div>
           <div className="asset-list">
             {!assets.length ? (
-              <div className="drop-zone" role="button" tabIndex={api ? 0 : -1} aria-disabled={!api} onClick={() => { if (api) void chooseVideos(); }} onKeyDown={(event) => { if (api && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); void chooseVideos(); } }}><Film size={22} aria-hidden="true" /><strong>选择视频文件</strong><span>支持 MP4、MOV；路径和文件名可含中文与空格。</span></div>
+              <div className="drop-zone pointer-highlight" role="button" tabIndex={api ? 0 : -1} aria-disabled={!api} onPointerMove={trackPointerHighlight} onClick={() => { if (api) void chooseVideos(); }} onKeyDown={(event) => { if (api && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); void chooseVideos(); } }}><Film size={22} aria-hidden="true" /><strong>选择视频文件</strong><span>支持 MP4、MOV；路径和文件名可含中文与空格。</span></div>
             ) : assets.map((asset) => {
               const frameUrl = assetFrames[asset.id];
               return (
-                <div key={asset.id} className={`asset-row wm-video-asset-row ${asset.id === selectedAsset?.id ? 'active' : ''}`}>
+                <div key={asset.id} className={`asset-row pointer-highlight wm-video-asset-row ${asset.id === selectedAsset?.id ? 'active' : ''}`} onPointerMove={trackPointerHighlight}>
                   <button type="button" className="asset-select-button" onClick={() => setSelectedAssetId(asset.id)} title={asset.inputPath}>
                     {frameUrl ? (
                       <img className="wm-video-asset-thumb" src={frameUrl} alt="" aria-hidden="true" />
@@ -724,13 +878,7 @@ export function VideoWatermarkWorkspace({
           <div className="wm-section">
             <label className="wm-prop"><span>内容</span><textarea value={config.text} onChange={(event) => updateConfig('text', event.target.value)} rows={3} wrap="off" /></label>
             <label className="wm-prop"><span>排列方式</span>
-              <Select.Root value={config.pattern} onValueChange={(value) => updateConfig('pattern', value as 'single' | 'brick')}>
-                <Select.Trigger className="wm-select-trigger" aria-label="视频排列方式"><Select.Value /></Select.Trigger>
-                <Select.Portal><Select.Content className="wm-select-content" position="popper"><Select.Viewport>
-                  <Select.Item value="single"><Select.ItemText>单个</Select.ItemText></Select.Item>
-                  <Select.Item value="brick"><Select.ItemText>砖型平铺</Select.ItemText></Select.Item>
-                </Select.Viewport></Select.Content></Select.Portal>
-              </Select.Root>
+              <AppSelect value={config.pattern} onChange={(value) => updateConfig('pattern', value as 'single' | 'brick')} aria-label="视频排列方式" options={[{ value: 'single', label: '单个' }, { value: 'brick', label: '砖型平铺' }]} />
             </label>
             {config.pattern === 'single' ? (
               <div className="wm-video-anchor-grid" role="group" aria-label="视频九宫格锚点">
@@ -748,17 +896,7 @@ export function VideoWatermarkWorkspace({
             <WatermarkSlider label="角度" value={config.rotation} min={-180} max={180} step={1} onChange={(value) => updateConfig('rotation', value)} formatValue={(value) => `${value}°`} />
             {config.pattern !== 'single' ? (
               <label className="wm-prop"><span>平铺密度</span>
-                <Select.Root
-                  value={config.density}
-                  onValueChange={(value) => updateConfig('density', value as WatermarkDensity)}
-                >
-                  <Select.Trigger className="wm-select-trigger" aria-label="视频平铺密度"><Select.Value /></Select.Trigger>
-                  <Select.Portal><Select.Content className="wm-select-content" position="popper"><Select.Viewport>
-                    {(Object.keys(WATERMARK_DENSITY_LABELS) as WatermarkDensity[]).map((density) => (
-                      <Select.Item key={density} value={density}><Select.ItemText>{WATERMARK_DENSITY_LABELS[density]}</Select.ItemText></Select.Item>
-                    ))}
-                  </Select.Viewport></Select.Content></Select.Portal>
-                </Select.Root>
+                <AppSelect value={config.density} onChange={(value) => updateConfig('density', value as WatermarkDensity)} aria-label="视频平铺密度" options={(Object.keys(WATERMARK_DENSITY_LABELS) as WatermarkDensity[]).map((density) => ({ value: density, label: WATERMARK_DENSITY_LABELS[density] }))} />
               </label>
             ) : null}
           </div>
@@ -798,16 +936,9 @@ export function VideoWatermarkWorkspace({
                 </button>
               </div>
             </div>
-            <label className="wm-prop"><span>格式</span><select aria-label="视频输出格式" disabled><option value="mp4">MP4 (H.264)</option></select></label>
+            <label className="wm-prop"><span>格式</span><AppSelect aria-label="视频输出格式" disabled value="mp4" options={[{ value: 'mp4', label: 'MP4 (H.264)' }]} /></label>
             <label className="wm-prop"><span>质量预设</span>
-              <Select.Root value={quality} onValueChange={(value) => setQuality(value as VideoQualityPreset)}>
-                <Select.Trigger className="wm-select-trigger" aria-label="视频质量预设"><Select.Value /></Select.Trigger>
-                <Select.Portal><Select.Content className="wm-select-content" position="popper"><Select.Viewport>
-                  <Select.Item value="high"><Select.ItemText>{VIDEO_QUALITY_LABELS.high}</Select.ItemText></Select.Item>
-                  <Select.Item value="balanced"><Select.ItemText>{VIDEO_QUALITY_LABELS.balanced}</Select.ItemText></Select.Item>
-                  <Select.Item value="compact"><Select.ItemText>{VIDEO_QUALITY_LABELS.compact}</Select.ItemText></Select.Item>
-                </Select.Viewport></Select.Content></Select.Portal>
-              </Select.Root>
+              <AppSelect value={quality} onChange={(value) => setQuality(value as VideoQualityPreset)} aria-label="视频质量预设" options={[{ value: 'high', label: VIDEO_QUALITY_LABELS.high }, { value: 'balanced', label: VIDEO_QUALITY_LABELS.balanced }, { value: 'compact', label: VIDEO_QUALITY_LABELS.compact }]} />
             </label>
             <div className="wm-prop">
               <span>硬件编码</span>
@@ -834,7 +965,7 @@ export function VideoWatermarkWorkspace({
               const percent = Math.round(task.progress * 100);
               const showProgress = task.submitted && ['probing', 'processing', 'fallback', 'finalizing'].includes(task.status);
               return (
-                <div className="wm-video-task-row" key={task.id} data-tone={tone}>
+                <div className="wm-video-task-row pointer-highlight" key={task.id} data-tone={tone} onPointerMove={trackPointerHighlight}>
                   <div className="wm-video-task-head">
                     <strong className="wm-video-task-filename" title={task.outputPath ?? task.fileName}>{outputFileName}</strong>
                     <span className={`${statusClass(task.status)} is-${tone}`}>
@@ -876,12 +1007,14 @@ export function VideoWatermarkWorkspace({
       </section>
       {pendingNavigation && (
         <ConfirmationDialog
-          title="切换工具将中断当前视频任务"
-          message="当前仍有未完成或未输出的视频任务，切换工具后本地队列与未输出内容会被清空。"
+          title="放弃当前视频水印工作？"
+          message="当前仍有未完成或未输出的视频任务，切换后本地队列与未输出内容会被清空。"
+          details={["视频素材、队列草稿与部分设置仅临时保存在本机，未输出内容仍可能丢失。"]}
+          cancelLabel="继续编辑"
           confirmLabel="放弃并切换"
           destructive
           onCancel={() => setPendingNavigation(undefined)}
-          onConfirm={() => leaveTo(pendingNavigation)}
+          onConfirm={() => discardVideoWorkAndLeave(pendingNavigation)}
         />
       )}
     </div>

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as Select from '@radix-ui/react-select';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as Collapsible from '@radix-ui/react-collapsible';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { WatermarkSlider } from './WatermarkSlider';
 import { ImageUp, ShieldCheck } from 'lucide-react';
 import { AssetSidebar, BoardOverview, SpecPanel, ToolPageHeader } from '../components';
+import { Select as AppSelect, trackPointerHighlight } from '../components/ui';
 import { BoardCanvas } from '../components/canvas';
 import {
   createInitialCropState,
@@ -203,6 +203,7 @@ export function WatermarkWorkbench({
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const focusReturnRef = useRef<HTMLElement | null>(null);
+  const watermarkAssetIdsRef = useRef(new Set<string>());
 
   const [config, setConfig] = useState<WatermarkBusinessConfig>(DEFAULT_CONFIG);
 
@@ -228,9 +229,15 @@ export function WatermarkWorkbench({
   }, [releaseOriginal]);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<AppNavigationTarget>();
+  const logo = useWatermarkLogoAsset();
+  const logoAsset = logo.asset;
   const dirty = (Object.keys(DEFAULT_CONFIG) as (keyof WatermarkBusinessConfig)[])
     .some((key) => config[key] !== DEFAULT_CONFIG[key])
-    || Object.keys(overrides).length > 0;
+    || Object.keys(overrides).length > 0
+    || outputSize !== 'original'
+    || assets.some((asset) => watermarkAssetIdsRef.current.has(asset.id))
+    || Boolean(logoAsset)
+    || exporting;
 
   useEffect(() => {
     if (!runtime) return;
@@ -245,13 +252,22 @@ export function WatermarkWorkbench({
   const effectiveAssetId = selectedAsset?.id;
   const override = useMemo(() => effectiveAssetId ? overrides[effectiveAssetId] : undefined, [effectiveAssetId, overrides]);
 
+  const setWatermarkAssets = useCallback((update: SetStateAction<MaterialAsset[]>) => {
+    setAssets((previous) => {
+      const next = typeof update === 'function' ? update(previous) : update;
+      const previousIds = new Set(previous.map((asset) => asset.id));
+      for (const asset of next) if (!previousIds.has(asset.id)) watermarkAssetIdsRef.current.add(asset.id);
+      return next;
+    });
+  }, [setAssets]);
+
   const { handleImageFiles, requestDeleteAsset } = useMediaAssetActions({
     assets,
     selectedAssetId: effectiveAssetId,
     focusAssetId,
     imageInputRef,
     focusReturnRef,
-    setAssets,
+    setAssets: setWatermarkAssets,
     setSelectedAssetId,
     setSelectedSpecId,
     setPreviewStates,
@@ -276,8 +292,6 @@ export function WatermarkWorkbench({
     };
   }, [previewStates, selectedAsset, spec]);
 
-  const logo = useWatermarkLogoAsset();
-  const logoAsset = logo.asset;
   const handleLogoFiles = useCallback(async (files: FileList | null) => {
     const file = files?.[0];
     await logo.loadLogo(file);
@@ -386,7 +400,7 @@ export function WatermarkWorkbench({
           });
         }
       });
-      setSharedMessage(result.failures.length ? `已导出 ${result.completed} 张，${result.failures.length} 张失败` : '');
+      setSharedMessage('');
       if (result.failures.length) {
         notify('error', `已导出 ${result.completed} 张，${result.failures.length} 张失败：${result.failures[0].message}`);
       } else {
@@ -404,6 +418,27 @@ export function WatermarkWorkbench({
 
   const requestReturn = () => {
     if (dirty) setShowReturnConfirm(true); else onReturn();
+  };
+
+  const discardWatermarkWork = () => {
+    const ownedIds = new Set(watermarkAssetIdsRef.current);
+    for (const asset of assets) if (ownedIds.has(asset.id)) releaseMaterialAsset(asset);
+    setAssets((previous) => previous.filter((asset) => !ownedIds.has(asset.id)));
+    watermarkAssetIdsRef.current.clear();
+    setSelectedAssetId(undefined);
+    setSelectedSpecId(undefined);
+    setPreviewStates({});
+    setFocusAssetId(undefined);
+    setFocusSpecId(undefined);
+    setPendingConfirmation(undefined);
+    setConfig(DEFAULT_CONFIG);
+    setOverrides({});
+    setOutputSize('original');
+    setSharedMessage('');
+    setImportFailures([]);
+    logo.clearLogo();
+    setShowReturnConfirm(false);
+    setPendingNavigation(undefined);
   };
 
   function leaveTo(target: AppNavigationTarget) {
@@ -444,13 +479,13 @@ export function WatermarkWorkbench({
           />
           <div className="asset-list">
             {assets.length === 0 ? (
-              <div className="drop-zone" role="button" tabIndex={0} onClick={() => imageInputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}>
+              <div className="drop-zone pointer-highlight" role="button" tabIndex={0} onPointerMove={trackPointerHighlight} onClick={() => imageInputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}>
                 <ImageUp size={22} aria-hidden="true" />
                 <strong>上传主视觉 / 已设计图</strong>
                 <span>支持一次选择多张图片，本地读取尺寸与缩略图。</span>
               </div>
             ) : assets.map((asset) => (
-              <div key={asset.id} className={`asset-row ${asset.id === effectiveAssetId ? 'active' : ''}`}>
+              <div key={asset.id} className={`asset-row pointer-highlight ${asset.id === effectiveAssetId ? 'active' : ''}`} onPointerMove={trackPointerHighlight}>
                 <button type="button" className="asset-select-button" onClick={() => setSelectedAssetId(asset.id)}>
                   <img src={asset.objectUrl} alt={asset.fileName} />
                   <span><strong>{asset.fileName}</strong><small>{asset.width} x {asset.height} · {formatFileSize(asset.fileSize)}</small></span>
@@ -561,27 +596,12 @@ export function WatermarkWorkbench({
             <div className="wm-section-head"><h3>外观</h3></div>
             <WatermarkSlider label="透明度" value={Math.round(config.opacity * 100)} min={0} max={100} step={1} onChange={(v) => updateConfig('opacity', v / 100)} formatValue={(v) => `${v}%`} />
             <label className="wm-prop"><span>排列</span>
-              <Select.Root value={config.pattern} onValueChange={(v) => updateConfig('pattern', v as 'single' | 'brick')}>
-                <Select.Trigger className="wm-select-trigger" aria-label="排列方式"><Select.Value /><Select.Icon /></Select.Trigger>
-                <Select.Portal><Select.Content className="wm-select-content" position="popper">
-                  <Select.Viewport>
-                    <Select.Item value="single"><Select.ItemText>单个</Select.ItemText></Select.Item>
-                    <Select.Item value="brick"><Select.ItemText>砖型平铺</Select.ItemText></Select.Item>
-                  </Select.Viewport>
-                </Select.Content></Select.Portal>
-              </Select.Root>
+              <AppSelect value={config.pattern} onChange={(value) => updateConfig('pattern', value as 'single' | 'brick')} aria-label="排列方式" options={[{ value: 'single', label: '单个' }, { value: 'brick', label: '砖型平铺' }]} />
             </label>
             {config.pattern !== 'single' && (
               <>
                 <label className="wm-prop"><span>平铺密度</span>
-                  <Select.Root value={config.density} onValueChange={(v) => updateConfig('density', v as WatermarkDensity)}>
-                    <Select.Trigger className="wm-select-trigger" aria-label="平铺密度"><Select.Value /></Select.Trigger>
-                    <Select.Portal><Select.Content className="wm-select-content" position="popper"><Select.Viewport>
-                      {(Object.keys(WATERMARK_DENSITY_LABELS) as WatermarkDensity[]).map((density) => (
-                        <Select.Item key={density} value={density}><Select.ItemText>{WATERMARK_DENSITY_LABELS[density]}</Select.ItemText></Select.Item>
-                      ))}
-                    </Select.Viewport></Select.Content></Select.Portal>
-                  </Select.Root>
+                  <AppSelect value={config.density} onChange={(value) => updateConfig('density', value as WatermarkDensity)} aria-label="平铺密度" options={(Object.keys(WATERMARK_DENSITY_LABELS) as WatermarkDensity[]).map((density) => ({ value: density, label: WATERMARK_DENSITY_LABELS[density] }))} />
                 </label>
                 <WatermarkSlider label="砖型错位" value={Math.round(config.phaseOffset * 100)} min={0} max={100} step={1} onChange={(v) => updateConfig('phaseOffset', v / 100)} formatValue={(v) => `${v}%`} />
               </>
@@ -589,12 +609,10 @@ export function WatermarkWorkbench({
           </div>
           <div className="wm-section">
             <div className="wm-section-head"><h3>输出</h3></div>
-            <label className="wm-prop"><span>尺寸</span><select aria-label="输出尺寸" value={outputSize} onChange={(event) => setOutputSize(event.target.value as WatermarkOutputSize)}>
-              {(Object.keys(WATERMARK_OUTPUT_LABELS) as WatermarkOutputSize[]).map((size) => {
+            <label className="wm-prop"><span>尺寸</span><AppSelect aria-label="输出尺寸" value={outputSize} onChange={(value) => setOutputSize(value as WatermarkOutputSize)} options={(Object.keys(WATERMARK_OUTPUT_LABELS) as WatermarkOutputSize[]).map((size) => {
                 const nextSpec = selectedAsset ? createWatermarkOutputSpec(selectedAsset, size) : undefined;
-                return <option key={size} value={size}>{WATERMARK_OUTPUT_LABELS[size]}{nextSpec ? ` · ${nextSpec.width} × ${nextSpec.height}` : ''}</option>;
-              })}
-            </select></label>
+                return { value: size, label: `${WATERMARK_OUTPUT_LABELS[size]}${nextSpec ? ` · ${nextSpec.width} × ${nextSpec.height}` : ''}` };
+              })} /></label>
             <p className="wm-hint">仅等比缩放，不改变原图长宽比。</p>
           </div>
           </div>
@@ -602,22 +620,26 @@ export function WatermarkWorkbench({
       </section>
       {showReturnConfirm && (
         <ConfirmationDialog
-          title="放弃当前设置？"
-          message="当前已修改水印参数，放弃后将不会保留。"
+          title="放弃当前图片水印工作？"
+          message={exporting ? '当前正在导出，返回后导出工作与未输出内容可能被中断。' : '当前图片水印参数或素材尚未输出，返回后这些临时内容会被清空。'}
+          details={["部分设置仅临时保存在本机，未导出的内容仍可能丢失。"]}
+          cancelLabel="继续编辑"
           confirmLabel="放弃并返回"
           destructive
           onCancel={() => setShowReturnConfirm(false)}
-          onConfirm={() => onReturn()}
+          onConfirm={() => { discardWatermarkWork(); onReturn(); }}
         />
       )}
       {pendingNavigation && (
         <ConfirmationDialog
-          title="切换工具将清空当前水印设置"
-          message="当前已修改水印参数但尚未输出，切换后会清空这些内容。"
+          title="放弃当前图片水印工作？"
+          message={exporting ? '当前正在导出，切换后导出工作与未输出内容可能被中断。' : '当前图片水印参数或素材尚未输出，切换后这些临时内容会被清空。'}
+          details={["部分设置仅临时保存在本机，未导出的内容仍可能丢失。"]}
+          cancelLabel="继续编辑"
           confirmLabel="放弃并切换"
           destructive
           onCancel={() => setPendingNavigation(undefined)}
-          onConfirm={() => leaveTo(pendingNavigation)}
+          onConfirm={() => { const target = pendingNavigation; discardWatermarkWork(); leaveTo(target); }}
         />
       )}
     </div>

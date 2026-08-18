@@ -14,6 +14,7 @@ import {
 } from '../../core';
 import { BrandResourceManager } from './BrandResourceManager';
 import { DiagnosticsSection } from '../../diagnostics';
+import { Select } from '../ui';
 
 const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original' | 'custom'>; label: string }> = [
   { value: 'white', label: '白色' },
@@ -195,55 +196,39 @@ export function BrandSettingsDialog({
                 <h3>默认 Logo 组合</h3>
                 <label className="settings-field">
                   <span>组合模式</span>
-                  <select
+                  <Select
                     value={draft.defaultLogoGroupMode}
-                    onChange={(event) => patch({ defaultLogoGroupMode: event.target.value as BrandSettingsV1['defaultLogoGroupMode'] })}
-                  >
-                    {GROUP_MODE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={GROUP_MODE_OPTIONS}
+                    onChange={(value) => patch({ defaultLogoGroupMode: value as BrandSettingsV1['defaultLogoGroupMode'] })}
+                    aria-label="默认 Logo 组合"
+                  />
                 </label>
                 <label className="settings-field">
                   <span>默认语种</span>
-                  <select
+                  <Select
                     value={draft.defaultLanguage}
-                    onChange={(event) => patch({ defaultLanguage: event.target.value as BrandLanguage })}
-                  >
-                    {BRAND_LANGUAGE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={BRAND_LANGUAGE_OPTIONS}
+                    onChange={(value) => patch({ defaultLanguage: value as BrandLanguage })}
+                    aria-label="默认语种"
+                  />
                 </label>
                 <label className="settings-field">
                   <span>默认配色</span>
-                  <select
+                  <Select
                     value={draft.defaultColorMode}
-                    onChange={(event) => patch({ defaultColorMode: event.target.value as Exclude<BrandColorMode, 'original' | 'custom'> })}
-                  >
-                    {COLOR_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={COLOR_OPTIONS}
+                    onChange={(value) => patch({ defaultColorMode: value as Exclude<BrandColorMode, 'original' | 'custom'> })}
+                    aria-label="默认配色"
+                  />
                 </label>
                 <label className="settings-field">
                   <span>默认大小</span>
-                  <select
+                  <Select
                     value={draft.defaultSize}
-                    onChange={(event) => patch({ defaultSize: event.target.value as BrandSize })}
-                  >
-                    {SIZE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={SIZE_OPTIONS}
+                    onChange={(value) => patch({ defaultSize: value as BrandSize })}
+                    aria-label="默认大小"
+                  />
                 </label>
               </div>
 
@@ -252,16 +237,12 @@ export function BrandSettingsDialog({
                 {ASPECTS.map((aspect) => (
                   <label key={aspect} className="settings-field">
                     <span>{aspect === 'landscape' ? '横版' : aspect === 'portrait' ? '竖版' : '方图'}</span>
-                    <select
+                    <Select
                       value={draft.defaultPlacementByAspect[aspect]}
-                      onChange={(event) => patchPlacement(aspect, event.target.value as Exclude<BrandPlacement, 'custom'>)}
-                    >
-                      {PLACEMENT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={PLACEMENT_OPTIONS}
+                      onChange={(value) => patchPlacement(aspect, value as Exclude<BrandPlacement, 'custom'>)}
+                      aria-label={`${aspect} 默认位置`}
+                    />
                   </label>
                 ))}
               </div>
@@ -346,27 +327,15 @@ export function BrandSettingsDialog({
                 <h3>固定 CPR 默认</h3>
                 <label className="settings-field">
                   <span>聚焦滚轮缩放灵敏度</span>
-                  <select value={draft.focusWheelSensitivity ?? 'standard'} onChange={(event) => patch({ focusWheelSensitivity: event.target.value as 'low' | 'standard' | 'high' })}>
-                    <option value="low">低</option>
-                    <option value="standard">标准</option>
-                    <option value="high">高</option>
-                  </select>
+                  <Select value={draft.focusWheelSensitivity ?? 'standard'} options={[{ value: 'low', label: '低' }, { value: 'standard', label: '标准' }, { value: 'high', label: '高' }]} onChange={(value) => patch({ focusWheelSensitivity: value as 'low' | 'standard' | 'high' })} aria-label="聚焦滚轮缩放灵敏度" />
                 </label>
 <label className="settings-field">
                   <span>默认位置</span>
-                  <select value={draft.defaultCprPlacement} onChange={(event) => patch({ defaultCprPlacement: event.target.value as CprPlacement })}>
-                    <option value="bottom-left">左下</option>
-                    <option value="bottom-center">底部居中</option>
-                    <option value="bottom-right">右下</option>
-                  </select>
+                  <Select value={draft.defaultCprPlacement} options={[{ value: 'bottom-left', label: '左下' }, { value: 'bottom-center', label: '底部居中' }, { value: 'bottom-right', label: '右下' }]} onChange={(value) => patch({ defaultCprPlacement: value as CprPlacement })} aria-label="CPR 默认位置" />
                 </label>
                 <label className="settings-field">
                   <span>默认颜色</span>
-                  <select value={draft.defaultCprColorMode} onChange={(event) => patch({ defaultCprColorMode: event.target.value as BrandColorMode })}>
-                    <option value="white">白色</option>
-                    <option value="black">黑色</option>
-                    <option value="original">原始色</option>
-                  </select>
+                  <Select value={draft.defaultCprColorMode} options={[{ value: 'white', label: '白色' }, { value: 'black', label: '黑色' }, { value: 'original', label: '原始色' }]} onChange={(value) => patch({ defaultCprColorMode: value as BrandColorMode })} aria-label="CPR 默认颜色" />
                 </label>
                 <small className="cpr-sample">不提供文案、字体、字号、字重或独立坐标编辑。</small>
               </div>

@@ -19,4 +19,25 @@ describe('ConfirmationDialog', () => {
     expect(html).toContain('不影响：图片裁切、CPR');
     expect(html).toContain('aria-describedby="confirm-dialog-message confirm-dialog-details"');
   });
+
+  it('supports explicit continue, save-and-switch and discard-and-switch actions', () => {
+    const html = renderToStaticMarkup(
+      <ConfirmationDialog
+        title="放弃当前工作？"
+        message="未导出的内容可能丢失。"
+        details={["部分设置仅临时保存在本机。"]}
+        cancelLabel="继续编辑"
+        secondaryLabel="保存并切换"
+        confirmLabel="放弃并切换"
+        destructive
+        onCancel={vi.fn()}
+        onSecondary={vi.fn()}
+        onConfirm={vi.fn()}
+      />
+    );
+    expect(html).toContain('继续编辑');
+    expect(html).toContain('保存并切换');
+    expect(html).toContain('放弃并切换');
+    expect(html).toContain('部分设置仅临时保存在本机');
+  });
 });

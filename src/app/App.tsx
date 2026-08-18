@@ -96,19 +96,19 @@ function AppContent() {
   }, [activeTool]);
 
   useEffect(() => registerNavigationGuard((target) => {
-    if (activeTool !== 'logo-layout' || !activity.customWorkbenchDirty) return true;
+    if (activeTool !== 'logo-layout' || activeModule !== 'custom' || !activity.customWorkbenchDirty) return true;
     setPendingNavigation(target);
     return false;
-  }), [activeTool, activity.customWorkbenchDirty, registerNavigationGuard]);
+  }), [activeModule, activeTool, activity.customWorkbenchDirty, registerNavigationGuard]);
 
   function leaveTo(target: AppNavigationTarget) {
     setPendingNavigation(undefined);
     updateActivity({ customWorkbenchDirty: false });
+    setCustomWorkbenchEpoch((epoch) => epoch + 1);
     if (target === 'media' || target === 'custom') {
       setActiveModule(target);
       return;
     }
-    setCustomWorkbenchEpoch((epoch) => epoch + 1);
     setActiveTool(target);
   }
 
@@ -203,8 +203,10 @@ function AppContent() {
         {changelogOpen ? <ChangelogDialog onClose={() => setChangelogOpen(false)} /> : null}
         {pendingNavigation ? (
           <ConfirmationDialog
-            title="切换工具将清空自定义工作台"
+            title="放弃当前自定义构图？"
             message="当前自定义构图尚未导出，切换后画布上的调整会被清空。"
+            details={["部分设置仅临时保存在本机，未导出的内容仍可能丢失。"]}
+            cancelLabel="继续编辑"
             confirmLabel="放弃并切换"
             destructive
             onCancel={() => setPendingNavigation(undefined)}

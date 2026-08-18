@@ -1,4 +1,5 @@
 import { getBrandAssetUrl, getBrandLanguageLabel, type BrandAsset, type BrandLanguage } from '../../core';
+import { trackPointerHighlight } from '../ui';
 
 const GAME_LANGUAGES: BrandLanguage[] = ['zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'en-US'];
 
@@ -30,12 +31,12 @@ export function BrandResourceManager({
 
   return <section className="brand-resource-manager" aria-label="Logo 资源">
     <div className="brand-resource-manager-heading"><div><h3>Logo 资源</h3><small>替换后仅保存在当前工作区</small></div><button type="button" onClick={onRestore}>恢复内置资源</button></div>
-    <div className="brand-resource-row">
+    <div className="brand-resource-row pointer-highlight" onPointerMove={trackPointerHighlight}>
       <ResourcePreview asset={company} />
       <div><strong>公司 Logo</strong><small>{company?.name ?? '未设置'}</small></div>
       <button type="button" onClick={() => onReplace(company, 'custom')}>替换</button>
     </div>
-    {games.map(({ language, asset }) => <div key={language} className={`brand-resource-row ${asset?.id === selectedLogoId ? 'active' : ''}`}>
+    {games.map(({ language, asset }) => <div key={language} className={`brand-resource-row pointer-highlight ${asset?.id === selectedLogoId ? 'active' : ''}`} onPointerMove={trackPointerHighlight}>
       <button type="button" className="resource-select" onClick={() => asset && onSelect(asset)} disabled={!asset} aria-label={`选择${getBrandLanguageLabel(language)}游戏 Logo`}><ResourcePreview asset={asset} /></button>
       <div><strong>{getBrandLanguageLabel(language)}游戏 Logo</strong><small>{asset?.name ?? '未设置'}</small></div>
       <button type="button" onClick={() => onReplace(asset, language)}>替换</button>

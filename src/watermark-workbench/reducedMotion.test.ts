@@ -15,9 +15,8 @@ describe('reduced-motion CSS contract', () => {
     expect(reduced).toContain('animation: none');
   });
 
-  it('covers the Radix Select/Tooltip/Collapsible content selectors', () => {
+  it('covers the Tooltip/Collapsible content selectors', () => {
     const reduced = css.slice(css.indexOf('prefers-reduced-motion'));
-    expect(reduced).toMatch(/\.wm-select-content/);
     expect(reduced).toMatch(/\.wm-tooltip-content/);
     expect(reduced).toMatch(/\.wm-collapsible-content/);
   });

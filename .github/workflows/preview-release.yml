@@ -10,6 +10,7 @@ permissions:
 
 env:
   PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
+  PREVIEW_RELEASE_NOTES: 0.9.2：统一下拉与深色界面，修复水印选中态、视频缩略图及导出队列体验。
 
 jobs:
   prepare:
@@ -160,7 +161,7 @@ jobs:
           name: 品宣物料工作台 Preview
           prerelease: true
           overwrite_files: true
-          body: Signed Preview updater artifacts for macOS Apple Silicon and Windows x64.
+          body: ${{ env.PREVIEW_RELEASE_NOTES }}
           files: release/*
       - name: Mirror Preview manifest to CNB
         shell: bash

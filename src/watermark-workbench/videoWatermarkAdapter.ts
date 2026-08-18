@@ -263,7 +263,10 @@ export function applyVideoWatermarkRecommendation(
     rotation: recommendation.angle,
     opacity: recommendation.opacity,
     pattern: 'brick',
-    density: VIDEO_TO_DENSITY[recommendation.density] ?? 'standard',
+    // Video's product default is intentionally dense. The engine recommendation
+    // may tune geometry and typography, but must not silently make the user's
+    // first/imported video watermark sparser than the established default.
+    density: 'dense',
     phaseOffset: 0.5,
   };
 }
