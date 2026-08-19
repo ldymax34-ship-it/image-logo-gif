@@ -17,7 +17,13 @@ describe('AppSidebar', () => {
     expect(container.querySelector('button[aria-label="GIF 压缩"]')).toBeNull();
     expect(container.querySelector('button[aria-label="工具箱首页"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="批量模板 GIF"]')).toBeNull();
-    expect(container.querySelector('.app-sidebar-icon svg')?.getAttribute('width')).toBe('18');
+    const sidebarIcons = [...container.querySelectorAll('.app-sidebar-icon svg')];
+    expect(sidebarIcons.length).toBeGreaterThan(0);
+    expect(sidebarIcons.every((icon) => (
+      icon.getAttribute('width') === '18'
+      && icon.getAttribute('height') === '18'
+      && icon.getAttribute('viewBox') === '0 0 24 24'
+    ))).toBe(true);
 
     act(() => root.unmount());
   });
