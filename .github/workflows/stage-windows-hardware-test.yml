@@ -13,7 +13,7 @@ jobs:
   stage-test-package:
     runs-on: ubuntu-latest
     env:
-      SOURCE_RUN_ID: "32692125609"
+      SOURCE_RUN_ID: "32716940260"
       TEST_TAG: windows-hardware-test-0.9.2
     steps:
       - uses: actions/checkout@v4
