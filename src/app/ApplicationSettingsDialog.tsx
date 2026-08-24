@@ -12,11 +12,12 @@ const STARTUP_OPTIONS: Array<{ value: StartupTool; label: string }> = [
   { value: 'last', label: '上次使用的工具' }
 ];
 
-export function ApplicationSettingsDialog({ preferences, onPreferencesChange, onClose, isDesktop }: {
+export function ApplicationSettingsDialog({ preferences, onPreferencesChange, onClose, isDesktop, onRecheckEnvironment }: {
   preferences: AppPreferencesV1;
   onPreferencesChange: (preferences: AppPreferencesV1) => void;
   onClose: () => void;
   isDesktop?: boolean;
+  onRecheckEnvironment?: () => void;
 }) {
   const desktop = isDesktop ?? isDesktopBridgeAvailable();
   const startupOptions = desktop
@@ -57,6 +58,15 @@ export function ApplicationSettingsDialog({ preferences, onPreferencesChange, on
           {desktop && (
             <p className="inline-note">GIF / 媒体工具会在启动后打开独立窗口，且不会恢复未保存任务；水印工具会直接打开水印工作台。</p>
           )}
+          {desktop && onRecheckEnvironment ? (
+            <div className="settings-recheck">
+              <div>
+                <span>环境检测</span>
+                <p>重新检测内置转换引擎与视频编码能力。</p>
+              </div>
+              <button type="button" className="secondary-button" onClick={onRecheckEnvironment}>重新检测</button>
+            </div>
+          ) : null}
         </div>
         <div className="dialog-footer">
           <span />

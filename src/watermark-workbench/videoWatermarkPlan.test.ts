@@ -120,4 +120,28 @@ describe('video watermark plan', () => {
     expect(placements).toHaveLength(centers.length);
     expect(videoWatermarkLayers(asset, config)).toHaveLength(placements.length);
   });
+
+  it('maps white/black/outlined text styles to fill and stroke semantics', () => {
+    const source = { width: 960, height: 540 };
+
+    const whiteConfig = videoWatermarkConfigForCanvas(source, { ...DEFAULT_CONFIG, textStyle: 'white' });
+    expect(whiteConfig.kind).toBe('text');
+    if (whiteConfig.kind === 'text') expect(whiteConfig.style).toBe('white');
+
+    const blackLayers = videoWatermarkLayers(asset, { ...DEFAULT_CONFIG, textStyle: 'black' });
+    for (const layer of blackLayers) {
+      if (layer.kind !== 'text') continue;
+      expect(layer.color).toBe('#000000');
+      expect(layer.stroke).toBeUndefined();
+    }
+
+    const outlinedLayers = videoWatermarkLayers(asset, { ...DEFAULT_CONFIG, textStyle: 'outlined' });
+    for (const layer of outlinedLayers) {
+      if (layer.kind !== 'text') continue;
+      expect(layer.color).toBe('#ffffff');
+      expect(layer.stroke?.color).toBe('#000000');
+      expect(layer.stroke?.width).toBeGreaterThanOrEqual(1);
+      expect(layer.stroke?.width).toBeLessThan(layer.fontSize);
+    }
+  });
 });

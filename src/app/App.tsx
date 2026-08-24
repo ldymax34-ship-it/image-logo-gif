@@ -23,6 +23,8 @@ import { UncleanExitNotice } from '../diagnostics';
 import { ToastHost } from '../components/ui/ToastHost';
 import { ClickSpark } from '../components/ui/ClickSpark';
 import { ExportStatusPanel } from '../components/export-status/ExportStatusPanel';
+import { AppContentFrame } from './AppContentFrame';
+import { clearEnvironmentCheckRecord, shouldRunEnvironmentCheck } from './environmentCheck';
 
 function AppContent() {
   const {
@@ -58,6 +60,7 @@ function AppContent() {
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<AppNavigationTarget>();
   const [customWorkbenchEpoch, setCustomWorkbenchEpoch] = useState(0);
+  const [environmentCheckActive, setEnvironmentCheckActive] = useState(() => shouldRunEnvironmentCheck());
   const handleCustomWorkbenchDirty = useCallback((customWorkbenchDirty: boolean) => {
     updateActivity({ customWorkbenchDirty });
   }, [updateActivity]);
@@ -101,6 +104,12 @@ function AppContent() {
     return false;
   }), [activeModule, activeTool, activity.customWorkbenchDirty, registerNavigationGuard]);
 
+  const requestEnvironmentRecheck = useCallback(() => {
+    clearEnvironmentCheckRecord();
+    setApplicationSettingsOpen(false);
+    setEnvironmentCheckActive(true);
+  }, [setApplicationSettingsOpen]);
+
   function leaveTo(target: AppNavigationTarget) {
     setPendingNavigation(undefined);
     updateActivity({ customWorkbenchDirty: false });
@@ -117,106 +126,112 @@ function AppContent() {
       preferences={appPreferences}
       onPreferencesChange={setAppPreferences}
       onClose={() => setApplicationSettingsOpen(false)}
+      onRecheckEnvironment={requestEnvironmentRecheck}
     />
   ) : null;
 
   return (
-    <div className="app-layout">
-      <AppSidebar
-        activeTool={activeTool}
-        onNavigate={navigateTo}
-        onOpenSettings={() => setApplicationSettingsOpen(true)}
-      />
-      <main className="app-main">
-        <UncleanExitNotice />
+    <AppContentFrame
+      environmentCheckActive={environmentCheckActive}
+      onEnvironmentCheckComplete={() => setEnvironmentCheckActive(false)}
+    >
+      <div className="app-layout">
+        <AppSidebar
+          activeTool={activeTool}
+          onNavigate={navigateTo}
+          onOpenSettings={() => setApplicationSettingsOpen(true)}
+        />
+        <main className="app-main">
+          <UncleanExitNotice />
 
-        {/* Toolbox Home */}
-        {activeTool === 'toolbox' && (
-          <ToolboxHome
-            onOpenLogoLayout={() => navigateTo('logo-layout')}
-            onOpenWatermark={() => navigateTo('watermark')}
-            onOpenVideoWatermark={() => navigateTo('video-watermark')}
-            onOpenSettings={() => setApplicationSettingsOpen(true)}
-            onOpenChangelog={() => setChangelogOpen(true)}
-            recentTools={recentTools}
-            onOpenRecentTool={navigateTo}
-          />
-        )}
+          {/* Toolbox Home */}
+          {activeTool === 'toolbox' && (
+            <ToolboxHome
+              onOpenLogoLayout={() => navigateTo('logo-layout')}
+              onOpenWatermark={() => navigateTo('watermark')}
+              onOpenVideoWatermark={() => navigateTo('video-watermark')}
+              onOpenSettings={() => setApplicationSettingsOpen(true)}
+              onOpenChangelog={() => setChangelogOpen(true)}
+              recentTools={recentTools}
+              onOpenRecentTool={navigateTo}
+            />
+          )}
 
-        {/* Logo & Layout (existing) */}
-        <div hidden={activeTool !== 'logo-layout'}>
-          <AppShell
-            activeModule={activeModule}
-            onModuleChange={requestModuleChange}
-            header={
-              <WorkbenchHeader
-                {...mediaHeader}
-                onOpenSettings={() => setSettingsDialogOpen(true)}
-                onCheckUpdate={() => void checkForUpdate(true)}
-                onOpenChangelog={() => setChangelogOpen(true)}
-              />
-            }
-          >
-            <MediaWorkbench active={activeModule === 'media'} sharedState={sharedState} />
-            {activeModule === 'custom' ? (
-              <CustomWorkbench
-                key={customWorkbenchEpoch}
-                brandLayer={brandLayer}
-                logoAsset={selectedLogo}
-                cprAsset={selectedCpr}
-                companyLogo={companyLogo}
-                gameLogo={gameLogo}
-                gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
-                onDirtyChange={handleCustomWorkbenchDirty}
-              />
-            ) : null}
-          </AppShell>
-        </div>
+          {/* Logo & Layout (existing) */}
+          <div hidden={activeTool !== 'logo-layout'}>
+            <AppShell
+              activeModule={activeModule}
+              onModuleChange={requestModuleChange}
+              header={
+                <WorkbenchHeader
+                  {...mediaHeader}
+                  onOpenSettings={() => setSettingsDialogOpen(true)}
+                  onCheckUpdate={() => void checkForUpdate(true)}
+                  onOpenChangelog={() => setChangelogOpen(true)}
+                />
+              }
+            >
+              <MediaWorkbench active={activeModule === 'media'} sharedState={sharedState} />
+              {activeModule === 'custom' ? (
+                <CustomWorkbench
+                  key={customWorkbenchEpoch}
+                  brandLayer={brandLayer}
+                  logoAsset={selectedLogo}
+                  cprAsset={selectedCpr}
+                  companyLogo={companyLogo}
+                  gameLogo={gameLogo}
+                  gameLogos={logoAssets.filter((asset) => asset.language !== 'custom')}
+                  onDirtyChange={handleCustomWorkbenchDirty}
+                />
+              ) : null}
+            </AppShell>
+          </div>
 
-        {/* GIF Compress (embedded Vue) */}
-        {activeTool === 'gif-compress' && (
-          <VueToolWrapper mountKey="gif-compress" onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} />
-        )}
+          {/* GIF Compress (embedded Vue) */}
+          {activeTool === 'gif-compress' && (
+            <VueToolWrapper mountKey="gif-compress" onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} />
+          )}
 
-        {/* Batch Template GIF */}
-        {activeTool === 'batch-template-gif' && (
-          <BatchTemplateGif onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} />
-        )}
+          {/* Batch Template GIF */}
+          {activeTool === 'batch-template-gif' && (
+            <BatchTemplateGif onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} />
+          )}
 
-        {/* Image watermark */}
-        {activeTool === 'watermark' && (
-          <WatermarkWorkbench
-            onReturn={requestToolbox}
-            sharedState={sharedState}
-            onOpenChangelog={() => setChangelogOpen(true)}
-          />
-        )}
+          {/* Image watermark */}
+          {activeTool === 'watermark' && (
+            <WatermarkWorkbench
+              onReturn={requestToolbox}
+              sharedState={sharedState}
+              onOpenChangelog={() => setChangelogOpen(true)}
+            />
+          )}
 
-        {/* Video watermark */}
-        <div hidden={activeTool !== 'video-watermark'}>
-          {videoWorkspaceMounted ? <VideoWatermarkWorkspace onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} /> : null}
-        </div>
+          {/* Video watermark */}
+          <div hidden={activeTool !== 'video-watermark'}>
+            {videoWorkspaceMounted ? <VideoWatermarkWorkspace onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} /> : null}
+          </div>
 
-        <GlobalDialogs />
-        <UpdateDialog />
-        {appSettings}
-        {changelogOpen ? <ChangelogDialog onClose={() => setChangelogOpen(false)} /> : null}
-        {pendingNavigation ? (
-          <ConfirmationDialog
-            title="放弃当前自定义构图？"
-            message="当前自定义构图尚未导出，切换后画布上的调整会被清空。"
-            details={["部分设置仅临时保存在本机，未导出的内容仍可能丢失。"]}
-            cancelLabel="继续编辑"
-            confirmLabel="放弃并切换"
-            destructive
-            onCancel={() => setPendingNavigation(undefined)}
-            onConfirm={() => leaveTo(pendingNavigation)}
-          />
-        ) : null}
-        <ToastHost />
-        <ExportStatusPanel hiddenSources={activeTool === 'video-watermark' ? ['video-watermark'] : undefined} />
-      </main>
-    </div>
+          <GlobalDialogs />
+          <UpdateDialog />
+          {appSettings}
+          {changelogOpen ? <ChangelogDialog onClose={() => setChangelogOpen(false)} /> : null}
+          {pendingNavigation ? (
+            <ConfirmationDialog
+              title="放弃当前自定义构图？"
+              message="当前自定义构图尚未导出，切换后画布上的调整会被清空。"
+              details={["部分设置仅临时保存在本机，未导出的内容仍可能丢失。"]}
+              cancelLabel="继续编辑"
+              confirmLabel="放弃并切换"
+              destructive
+              onCancel={() => setPendingNavigation(undefined)}
+              onConfirm={() => leaveTo(pendingNavigation)}
+            />
+          ) : null}
+          <ToastHost />
+          <ExportStatusPanel hiddenSources={activeTool === 'video-watermark' ? ['video-watermark'] : undefined} />
+        </main>
+      </div>
+    </AppContentFrame>
   );
 }
 

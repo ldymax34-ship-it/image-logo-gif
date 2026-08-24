@@ -18,6 +18,7 @@ export type WatermarkVideoOptions = {
   columns?: number;
   rows?: number;
   placements?: Array<{ xPercent: number; yPercent: number }>;
+  textStyle: 'white' | 'black' | 'outlined';
   quality: 'high' | 'balanced' | 'compact';
   preferHardware: boolean;
   reservedOutputPath?: string;
@@ -42,6 +43,7 @@ export type WatermarkPreviewRequest = {
   columns?: number;
   rows?: number;
   placements?: Array<{ xPercent: number; yPercent: number }>;
+  textStyle?: 'white' | 'black' | 'outlined';
   cleanFrame?: boolean;
   timestampSeconds?: number;
   width?: number;

@@ -2,13 +2,22 @@
 
 export type WatermarkPattern = 'single' | 'brick' | 'tiled' | 'staggered';
 export type WatermarkDensity = 'dense' | 'standard' | 'sparse';
+export type WatermarkTextStyle = 'white' | 'black' | 'outlined';
+
+export type WatermarkTextStroke = {
+  color: string;
+  width: number;
+};
 
 export type WatermarkTextContent = {
   kind: 'text';
   text: string;
   fontFamily: string;
+  /** Fill color (the resolved business style's fill). */
   color: string;
   fontSize: number;
+  /** Shared business style; absent = legacy white fill with no stroke. */
+  style?: WatermarkTextStyle;
 };
 
 export type WatermarkImageContent = {
@@ -50,7 +59,10 @@ type WatermarkInstanceBase = {
   opacity: number;
 };
 
-export type WatermarkTextLayerInstance = WatermarkInstanceBase & WatermarkTextContent;
+export type WatermarkTextLayerInstance = WatermarkInstanceBase & WatermarkTextContent & {
+  /** Black outline for the `outlined` style; absent otherwise. */
+  stroke?: WatermarkTextStroke;
+};
 export type WatermarkImageLayerInstance = WatermarkInstanceBase & {
   kind: 'image';
   src: string;
@@ -334,6 +346,35 @@ export function buildWatermarkCenters(
   });
 }
 
+/** Outline stroke width as a fraction of font size (matches FFmpeg `borderw`). */
+const OUTLINED_STROKE_WIDTH_RATIO = 0.08;
+
+/**
+ * Resolves a text watermark style into its fill color and optional black
+ * stroke. `white` (the default) and `outlined` share a white fill; only
+ * `outlined` adds a black stroke whose width scales with the font size. The
+ * Canvas preview and FFmpeg drawtext both derive from this single mapping so
+ * they stay visually identical: both produce the same integer
+ * `max(1, round(fontSize * 0.08))` (FFmpeg `borderw` is an `int`, so it must
+ * round the same way the Canvas does here).
+ */
+export function resolveWatermarkTextVisual(
+  style: WatermarkTextStyle | undefined,
+  fontSize: number,
+): { fill: string; stroke?: WatermarkTextStroke } {
+  if (style === 'black') return { fill: '#000000' };
+  if (style === 'outlined') {
+    return {
+      fill: '#ffffff',
+      stroke: {
+        color: '#000000',
+        width: Math.max(1, Math.round(fontSize * OUTLINED_STROKE_WIDTH_RATIO)),
+      },
+    };
+  }
+  return { fill: '#ffffff' };
+}
+
 export function buildWatermarkRenderLayers(
   canvasSize: { width: number; height: number },
   config: WatermarkConfig,
@@ -349,6 +390,9 @@ export function buildWatermarkRenderLayers(
   const makeInstance = (id: string, cx: number, cy: number): WatermarkLayerInstance | WatermarkLayerInstance[] => {
     if (config.kind === 'text') {
       const fontSize = positiveFinite(config.fontSize, 16);
+      const visual = resolveWatermarkTextVisual(config.style, fontSize);
+      const color = config.style ? visual.fill : config.color;
+      const stroke = config.style === 'outlined' ? visual.stroke : undefined;
       if (!config.text.includes('\n')) {
         return {
           id,
@@ -358,8 +402,10 @@ export function buildWatermarkRenderLayers(
           kind: 'text',
           text: config.text,
           fontFamily: config.fontFamily,
-          color: config.color,
+          color,
           fontSize,
+          style: config.style,
+          ...(stroke ? { stroke } : {}),
         };
       }
       const lineHeight = fontSize * 1.2;
@@ -374,8 +420,10 @@ export function buildWatermarkRenderLayers(
         kind: 'text' as const,
         text: line,
         fontFamily: config.fontFamily,
-        color: config.color,
+        color,
         fontSize,
+        style: config.style,
+        ...(stroke ? { stroke } : {}),
       }));
     }
     const width = positiveFinite(config.displayWidth, 1);

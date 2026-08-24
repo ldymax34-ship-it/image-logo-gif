@@ -20,7 +20,7 @@ import {
   type MaterialAsset,
   type MaterialSpec,
 } from '../core';
-import type { WatermarkConfig, WatermarkDensity } from '../core/image/watermarkRenderPlan';
+import type { WatermarkConfig, WatermarkDensity, WatermarkTextStyle } from '../core/image/watermarkRenderPlan';
 import { ConfirmationDialog } from '../modules/media-workbench/ConfirmationDialog';
 import { useMediaAssetActions } from '../modules/media-workbench/useMediaAssetActions';
 import { useWatermarkLogoAsset } from './useWatermarkLogoAsset';
@@ -43,6 +43,8 @@ export type WatermarkBusinessConfig = {
   pattern: 'single' | 'brick';
   density: WatermarkDensity;
   phaseOffset: number;
+  /** Video text watermark style; image watermark keeps the legacy white fill. */
+  textStyle: WatermarkTextStyle;
   anchor: WatermarkAnchor;
 };
 
@@ -99,6 +101,7 @@ export const DEFAULT_CONFIG: WatermarkBusinessConfig = {
   pattern: 'brick',
   density: 'dense',
   phaseOffset: 0.5,
+  textStyle: 'white',
   anchor: 'center',
 };
 

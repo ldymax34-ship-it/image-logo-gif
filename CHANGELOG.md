@@ -1,5 +1,15 @@
 # 更新日志
 
+## Unreleased
+
+- Windows 子进程静默化：所有 FFmpeg / FFprobe / 硬件探测子进程在 Windows 发布构建统一通过 Rust 官方 `std::os::windows::process::CommandExt` + `CREATE_NO_WINDOW` 隐藏命令行/FFmpeg 控制台窗口，抽象为最薄的 `bundled_command` 统一入口；非 Windows 行为不变，测试命令保持不变。macOS 无法验证 Windows 窗口行为，需 Windows 实机验收。
+- 文字水印样式（白/黑/描边，默认白；描边 = 白填充 + 黑描边，描边宽度随字号缩放）：Canvas 预览与 FFmpeg 输出共用同一业务字段与视觉语义，贯穿队列快照、预览请求、Rust serde、队列摘要与测试；紧凑三段选择复用既有控件，无新增面板。单文字与 Logo 路径保持不变。
+- 密集文字水印性能：显式多 placement（砖型/平铺）路径由“逐帧 ~31 层叠加”改为每个导出任务预先生成一张与源分辨率一致的全透明 PNG（复用内置 FFmpeg + drawtext，不做自建字体渲染、无新依赖），主 FFmpeg 每帧只做一次 overlay；旋转/透明度/白黑描边/字号/placement 语义一致；生成失败返回显式错误，不静默回退慢路径；临时文件安全清理；单文字与 Logo 路径保持稳定。
+- 首次启动一次性应用内环境检测页：复用既有 `media_engine_status` 与 `watermark_encoder_capability`，不新增窗口；分阶段展示少数检测项，通过项不逐项弹提示，完成后自动进入原启动页；schema 版本化本地持久化，同一规则版本后续启动跳过；设置页提供「重新检测」入口；硬件候选不可用为非阻塞（CPU 可用即通过），仅真正的阻塞项在页内汇总；未触碰自动更新链路。
+- 修复 Windows 硬件编码冒烟脚本 `scripts/windows-hardware-encoder-smoke.ps1` 把 stderr 合并进 `$LASTEXITCODE` 造成的误判（先捕获进程退出码再 `Tee-Object`）。
+- 复核返工：文字描边 `borderw` 由非法表达式改为按已知源帧尺寸计算的具体整数 `max(1, round(fontPx*0.08))`（drawtext 的 `borderw` 是 int，非可求值表达式），Canvas 同步取整以保持同一公式；密集文字预渲染叠加层显式 `overlay=eof_action=repeat:repeatlast=1`；预渲染层生成失败（spawn 失败/非零退出）补全临时 text 文件与半成品 overlay 清理；环境检测改为 fixed 覆盖层，设置页重新检测不再卸载工作区状态。
+- 修复 legacy/no-placements 文字水印滤镜在 `angle==0` 时把已消费的 `text-complete` 作为最终 overlay 输入、导致 FFmpeg 报 `Invalid stream specifier text-complete` 的问题：最终 overlay 现在恒定引用 colorchannelmixer 输出（`angle!=0` → `text-rotated`，`angle==0` → `text-faded`），不改其它布局语义；新增纯字符串回归测试锁定该契约，并补一个真实集成测试（`generate_text_watermark_overlay` 生成 160x90 透明 PNG + `watermark_ffmpeg_args_with_font` overlay_asset 分支编码极短视频、确认单一 overlay）。
+
 ## 0.9.2
 
 - 视频水印默认密度固定为“密集”：导入和重新推荐仍保留推荐的字号、角度、透明度等参数，但不再把默认密度降为适中或稀疏；Preview notes 同步为简短中文说明。

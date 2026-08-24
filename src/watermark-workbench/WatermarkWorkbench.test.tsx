@@ -114,7 +114,7 @@ describe('WatermarkWorkbench', () => {
   });
 
   it('uses the configured scale in the render config', () => {
-    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, density: 'dense', pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
+    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 0, opacity: .5, offsetX: 1, offsetY: 2, density: 'dense', pattern: 'single' as const, phaseOffset: 0.5, textStyle: 'white', anchor: 'center' };
     const result = createWorkbenchWatermarkConfig({ width: 1000, height: 500 }, config, { offsetX: 11, scale: 2 })!;
     if (result.kind !== 'text') throw new Error('expected text watermark config');
     expect(result.fontSize).toBe(50);
@@ -123,7 +123,7 @@ describe('WatermarkWorkbench', () => {
   });
 
   it('keeps watermark font size proportional for smaller output presets', () => {
-    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 10, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, density: 'dense', pattern: 'single' as const, phaseOffset: 0.5, anchor: 'center' };
+    const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 10, rotation: 0, opacity: .5, offsetX: 0, offsetY: 0, density: 'dense', pattern: 'single' as const, phaseOffset: 0.5, textStyle: 'white', anchor: 'center' };
     const original = createWorkbenchWatermarkConfig({ width: 1200, height: 800 }, config)!;
     const small = createWorkbenchWatermarkConfig({ width: 300, height: 200 }, config)!;
     if (original.kind !== 'text' || small.kind !== 'text') throw new Error('expected text watermark config');
@@ -210,7 +210,7 @@ describe('WatermarkWorkbench', () => {
     expect(exportHarness.exportBoardImage).toHaveBeenCalledTimes(2);
     const exportedInput = exportHarness.exportBoardImage.mock.calls[0][0] as { watermarkConfig?: unknown; asset: MaterialAsset; spec: MaterialSpec };
     expect(exportedInput.watermarkConfig).toBeDefined();
-    const defaultConfig: WatermarkBusinessConfig = { contentKind: 'text', text: '\u00a9KURO GAMES ALL RIGHTS RESERVED', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, pattern: 'brick', density: 'dense', phaseOffset: 0.5, anchor: 'center' };
+    const defaultConfig: WatermarkBusinessConfig = { contentKind: 'text', text: '\u00a9KURO GAMES ALL RIGHTS RESERVED', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, pattern: 'brick', density: 'dense', phaseOffset: 0.5, textStyle: 'white', anchor: 'center' };
     const previewInput = buildWatermarkRenderInput({ asset: exportedInput.asset, spec: exportedInput.spec }, defaultConfig, undefined, undefined, {});
     expect(exportedInput.watermarkConfig).toEqual(previewInput.watermarkConfig);
     expect(fileSystemHarness.saveBlobToOutputTarget.mock.calls.map((call) => call[1])).toEqual([

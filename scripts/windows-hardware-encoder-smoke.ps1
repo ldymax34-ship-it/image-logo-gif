@@ -22,8 +22,12 @@ function Invoke-LoggedCommand {
     [string]$LogPath
   )
 
-  & $Executable @Arguments 2>&1 | Tee-Object -FilePath $LogPath
-  return $LASTEXITCODE
+  # Capture the executable's own exit code before piping output, otherwise the
+  # pipeline makes $LASTEXITCODE reflect Tee-Object instead of the process.
+  $output = & $Executable @Arguments 2>&1
+  $exitCode = $LASTEXITCODE
+  $output | Tee-Object -FilePath $LogPath
+  return $exitCode
 }
 
 "FFmpeg: $ffmpeg" | Set-Content "$OutputDirectory\environment.txt"

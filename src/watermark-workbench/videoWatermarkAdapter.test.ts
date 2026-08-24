@@ -36,6 +36,7 @@ const config: WatermarkBusinessConfig = {
   pattern: 'brick',
   density: 'standard',
   phaseOffset: 0.5,
+  textStyle: 'white',
   anchor: 'center',
 };
 
@@ -65,7 +66,7 @@ describe('video watermark adapter', () => {
 
   it('maps only text to the video contract without exposing logo or staggered video', () => {
     const text = toVideoWatermarkOptions(config, '/tmp/output');
-    expect(text).toMatchObject({ kind: 'text', pattern: 'tiled', sizePercent: 8, opacity: 0.6, density: 'medium', angle: 45, quality: 'high', preferHardware: true });
+    expect(text).toMatchObject({ kind: 'text', pattern: 'tiled', sizePercent: 8, opacity: 0.6, density: 'medium', angle: 45, quality: 'high', preferHardware: true, textStyle: 'white' });
     expect(text).not.toHaveProperty('phaseOffset');
     expect(text).not.toHaveProperty('spacingX');
     expect(text).not.toHaveProperty('spacingY');
@@ -84,7 +85,7 @@ describe('video watermark adapter', () => {
 
   it('freezes options in preview requests and task snapshots', () => {
     const request = toVideoPreviewRequest(asset, config, '/tmp/output', undefined, 960);
-    expect(request).toMatchObject({ inputPath: asset.inputPath, width: 960, duration: 4, timestampSeconds: 0, pattern: 'tiled' });
+    expect(request).toMatchObject({ inputPath: asset.inputPath, width: 960, duration: 4, timestampSeconds: 0, pattern: 'tiled', textStyle: 'white' });
 
     const options = toVideoWatermarkOptions(config, '/tmp/output');
     const task = createVideoTask(asset, options);
@@ -279,7 +280,9 @@ describe('video watermark adapter', () => {
 
   it('renders a concise non-sensitive frozen summary for queue rows', () => {
     expect(videoWatermarkRenderSummary(toVideoWatermarkOptions({ ...config, opacity: 0.56 }, '/tmp/output')))
-      .toBe('砖型 · 45° · 8% · 56% · 适中');
+      .toBe('砖型 · 45° · 8% · 56% · 适中 · 白色');
+    expect(videoWatermarkRenderSummary(toVideoWatermarkOptions({ ...config, textStyle: 'outlined' }, '/tmp/output')))
+      .toBe('砖型 · 45° · 8% · 60% · 适中 · 描边');
   });
 
   it('labels the concrete hardware backend and CPU fallback for the encoder switch', () => {

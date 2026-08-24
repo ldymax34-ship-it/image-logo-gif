@@ -7,7 +7,7 @@ function asset(name: string, w: number, h: number): MaterialAsset {
   return { id: name, fileName: name, objectUrl: `blob:${name}`, width: w, height: h, fileSize: 1, mimeType: name.endsWith('.jpg') ? 'image/jpeg' : 'image/png' };
 }
 
-const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, pattern: 'brick', density: 'dense', phaseOffset: 0.5, anchor: 'center' };
+const config: WatermarkBusinessConfig = { contentKind: 'text', text: '水印', fontSize: 5, rotation: 45, opacity: 0.5, offsetX: 0, offsetY: 0, pattern: 'brick', density: 'dense', phaseOffset: 0.5, textStyle: 'white', anchor: 'center' };
 
 describe('watermark export orchestration', () => {
   it('maps PNG→PNG, JPEG→JPG, WebP→PNG', () => {

@@ -16,9 +16,32 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 const MEDIA_EVENT: &str = "gif-media://task";
 const WATERMARK_QUEUE_STATUS_EVENT: &str = "watermark-queue://status";
 const WATERMARK_PREVIEW_STATUS_EVENT: &str = "watermark-preview://status";
+
+/// `CREATE_NO_WINDOW` (Windows console API constant, `0x08000000`) prevents the
+/// bundled FFmpeg/FFprobe sidecars from flashing a console window on release
+/// builds. The standard library does not re-export the flag, so we declare the
+/// documented value once and apply it through `std::os::windows::process::CommandExt`.
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Thin, unified spawn helper for every bundled FFmpeg/FFprobe subprocess
+/// (encode, probe, hardware-capability check, preview, version read). On
+/// Windows it adds `CREATE_NO_WINDOW` so no cmd/PowerShell/FFmpeg console window
+/// appears; on all other platforms it returns the default `Command` unchanged.
+/// Production sites must route through here; test fixtures may keep using
+/// `std::process::Command` directly.
+fn bundled_command(program: impl AsRef<Path>) -> Command {
+    let mut command = Command::new(program.as_ref());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +108,11 @@ pub struct WatermarkOptions {
     pub quality: Option<String>,
     #[serde(default)]
     pub prefer_hardware: Option<bool>,
+    /// Text watermark style: `white` (default), `black`, or `outlined`
+    /// (white fill + black stroke). Kept as an optional string so legacy queue
+    /// snapshots and older callers default to the existing white behaviour.
+    #[serde(default)]
+    pub text_style: Option<String>,
     #[serde(default)]
     pub reserved_output_path: Option<String>,
     pub output_directory: String,
@@ -360,7 +388,7 @@ pub fn sidecar_path(_app: &AppHandle, tool: &str) -> Result<PathBuf, String> {
 }
 
 fn read_sidecar_version(path: &Path) -> Result<String, String> {
-    let output = Command::new(path)
+    let output = bundled_command(path)
         .arg("-version")
         .output()
         .map_err(|error| format!("无法启动内置工具：{error}"))?;
@@ -531,7 +559,7 @@ fn validate_watermark_request(request: &WatermarkMediaTaskRequest) -> Result<(),
 /// included so a future render can be reconstructed and compared.
 fn watermark_render_diagnostics(options: &WatermarkOptions) -> String {
     format!(
-        "kind={} pattern={} density={} size_percent={} opacity={} angle={} placements={}",
+        "kind={} pattern={} density={} size_percent={} opacity={} angle={} placements={} text_style={}",
         options.kind,
         options.pattern.as_deref().unwrap_or("single"),
         options.density.as_deref().unwrap_or("none"),
@@ -539,6 +567,7 @@ fn watermark_render_diagnostics(options: &WatermarkOptions) -> String {
         options.opacity,
         options.angle.unwrap_or(0),
         options.placements.as_ref().map(Vec::len).unwrap_or(0),
+        options.text_style.as_deref().unwrap_or("white"),
     )
 }
 
@@ -615,7 +644,7 @@ fn watermark_reserved_preferred_name(
 
 fn duration_seconds(app: &AppHandle, input: &Path) -> Result<f64, String> {
     let ffprobe = sidecar_path(app, "ffprobe")?;
-    let output = Command::new(ffprobe)
+    let output = bundled_command(ffprobe)
         .args([
             "-v",
             "error",
@@ -643,7 +672,7 @@ pub fn probe_media(app: AppHandle, input_path: String) -> Result<MediaProbeResul
         return Err("输入文件不存在或不可访问".into());
     }
     let ffprobe = sidecar_path(&app, "ffprobe")?;
-    let output = Command::new(ffprobe)
+    let output = bundled_command(ffprobe)
         .args([
             "-v",
             "error",
@@ -769,7 +798,7 @@ pub fn preview_gif_frame(
         output.as_os_str().to_owned(),
     ]);
 
-    let child = Command::new(ffmpeg)
+    let child = bundled_command(ffmpeg)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1366,7 +1395,7 @@ fn run_command_bounded(mut command: Command, timeout: Duration) -> Result<Bounde
 fn encoder_is_compiled_in(ffmpeg: &Path, encoder: &str) -> bool {
     static COMPILED_ENCODERS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     let encoders = COMPILED_ENCODERS.get_or_init(|| {
-        let mut command = Command::new(ffmpeg);
+        let mut command = bundled_command(ffmpeg);
         command.args(["-hide_banner", "-encoders"]);
         run_command_bounded(command, ENCODER_LIST_TIMEOUT)
             .ok()
@@ -1427,7 +1456,7 @@ fn probe_encoder(ffmpeg: &Path, ffprobe: &Path, backend: EncoderBackend) -> Enco
     ]);
     args.push(temp.as_os_str().to_owned());
 
-    let mut command = Command::new(ffmpeg);
+    let mut command = bundled_command(ffmpeg);
     command
         .args(&args)
         .stdout(Stdio::null())
@@ -1479,7 +1508,7 @@ fn probe_encoder(ffmpeg: &Path, ffprobe: &Path, backend: EncoderBackend) -> Enco
 /// as H.264, 1280x720, yuv420p with a readable frame count. A zero FFmpeg exit
 /// status alone is never trusted as "available".
 fn validate_encoder_probe_output(ffprobe: &Path, path: &Path) -> Result<(), String> {
-    let mut command = Command::new(ffprobe);
+    let mut command = bundled_command(ffprobe);
     command
         .args([
             "-v",
@@ -1868,6 +1897,31 @@ fn video_encoder_args(backend: EncoderBackend, quality: Option<&str>) -> Vec<OsS
     args
 }
 
+/// Concrete integer drawtext `borderw` for the outlined style. The Canvas
+/// preview (`resolveWatermarkTextVisual`) and FFmpeg share this single formula:
+/// `round(font_px * 0.08)`, floored at 1px. `font_px` is the effective font
+/// height in pixels, which must be resolved from the known source frame size
+/// before the filter is built (drawtext `borderw` is an `int`, not an
+/// expression — see FFmpeg `vf_drawtext.c`'s `AV_OPT_TYPE_INT` `borderw`).
+fn outlined_border_width(font_px: f64) -> u32 {
+    (font_px * 0.08).round().max(1.0) as u32
+}
+
+/// Maps the shared text watermark style to a drawtext `fontcolor` and any
+/// extra options. `white` is the default (unchanged); `black` switches the
+/// fill; `outlined` keeps a white fill and adds a black outline whose width is
+/// the concrete integer resolved by the caller via `outlined_border_width`.
+fn text_style_drawtext(style: Option<&str>, border_width: Option<u32>) -> (String, String) {
+    match style.unwrap_or("white") {
+        "black" => ("black".to_string(), String::new()),
+        "outlined" => (
+            "white".to_string(),
+            format!(":bordercolor=black:borderw={}", border_width.unwrap_or(1)),
+        ),
+        _ => ("white".to_string(), String::new()),
+    }
+}
+
 /// Builds the FFmpeg text watermark graph for the render-plan path, where
 /// `placements` are absolute pre-rotated brick centers (percentages of the
 /// source frame). The text is drawn once, centered on a transparent layer,
@@ -1880,17 +1934,20 @@ fn text_watermark_sprite_filter(
     text_file_value: &str,
     font_size: &str,
     alpha: &str,
+    style: Option<&str>,
+    border_width: Option<u32>,
     angle: i32,
     angle_radians: f64,
     angle_sin: f64,
     angle_cos: f64,
     cleanup: Vec<PathBuf>,
 ) -> (String, Vec<PathBuf>) {
+    let (font_color, style_extra) = text_style_drawtext(style, border_width);
     let mut graph = vec![
         "[0:v]split[base][text-source]".to_string(),
         "[text-source]format=rgba,colorchannelmixer=aa=0[text-base]".to_string(),
         format!(
-            "[text-base]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2[text-centered]"
+            "[text-base]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor={font_color}{style_extra}:fontsize={font_size}:x=(w-text_w)/2:y=(h-text_h)/2[text-centered]"
         ),
     ];
     // Draw the glyphs fully opaque first, then scale the sprite's alpha
@@ -1952,6 +2009,7 @@ fn text_watermark_sprite_filter(
 fn watermark_filter_with_font(
     font_path: Option<&Path>,
     request: &WatermarkMediaTaskRequest,
+    source_size: Option<(u32, u32)>,
 ) -> Result<(String, Vec<PathBuf>), String> {
     let options = &request.options;
     // Effective opacity is the user-visible config opacity. The legacy
@@ -1984,12 +2042,23 @@ fn watermark_filter_with_font(
             // no-placements path keeps its frozen `h`-based rule for the older
             // media tools.
             let sprite_font_size = format!("min(w\\,h)*{}/100", options.size_percent);
+            let border_width = source_size.map(|(width, height)| {
+                outlined_border_width(
+                    width.min(height) as f64 * options.size_percent as f64 / 100.0,
+                )
+            });
+            if options.text_style.as_deref() == Some("outlined") && border_width.is_none() {
+                let _ = fs::remove_file(&text_file);
+                return Err("描边文字水印需要源视频尺寸".into());
+            }
             return Ok(text_watermark_sprite_filter(
                 placements,
                 &font,
                 &text_file_value,
                 &sprite_font_size,
                 &alpha,
+                options.text_style.as_deref(),
+                border_width,
                 angle,
                 angle_radians,
                 angle_sin,
@@ -2013,6 +2082,15 @@ fn watermark_filter_with_font(
             "[0:v]split[base][text-source]".to_string(),
             "[text-source]format=rgba,colorchannelmixer=aa=0[text-base]".to_string(),
         ];
+        let border_width = source_size.map(|(_, height)| {
+            outlined_border_width(height as f64 * options.size_percent as f64 / 100.0)
+        });
+        if options.text_style.as_deref() == Some("outlined") && border_width.is_none() {
+            let _ = fs::remove_file(&text_file);
+            return Err("描边文字水印需要源视频尺寸".into());
+        }
+        let (font_color, style_extra) =
+            text_style_drawtext(options.text_style.as_deref(), border_width);
         let mut previous = "text-base".to_string();
         for (index, (x, y)) in positions.iter().enumerate() {
             let next = if index + 1 == positions.len() {
@@ -2020,7 +2098,7 @@ fn watermark_filter_with_font(
             } else {
                 format!("text{index}")
             };
-            graph.push(format!("[{previous}]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor=white:fontsize={font_size}:x={x}:y={y}[{next}]"));
+            graph.push(format!("[{previous}]drawtext=fontfile='{font}':textfile='{text_file_value}':fontcolor={font_color}{style_extra}:fontsize={font_size}:x={x}:y={y}[{next}]"));
             previous = next;
         }
         graph.push(format!(
@@ -2032,7 +2110,11 @@ fn watermark_filter_with_font(
             ));
             "text-rotated"
         } else {
-            &previous
+            // The final overlay must always reference the colorchannelmixer
+            // output (`text-faded`), never `text-complete`: the latter was
+            // already consumed as the colorchannelmixer input, so reusing it
+            // makes FFmpeg fail with "Invalid stream specifier text-complete".
+            "text-faded"
         };
         graph.push(format!(
             "[base][{text_layer}]overlay=(W-w)/2:(H-h)/2:format=auto[watermarked]"
@@ -2110,7 +2192,7 @@ fn watermark_ffmpeg_args(
     } else {
         None
     };
-    watermark_ffmpeg_args_with_font(font_path.as_deref(), request, output, backend)
+    watermark_ffmpeg_args_with_font(font_path.as_deref(), request, output, backend, None, None)
 }
 
 fn watermark_ffmpeg_args_with_font(
@@ -2118,7 +2200,50 @@ fn watermark_ffmpeg_args_with_font(
     request: &WatermarkMediaTaskRequest,
     output: &Path,
     backend: EncoderBackend,
+    overlay_asset: Option<&Path>,
+    source_size: Option<(u32, u32)>,
 ) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
+    // Dense text-placements path: the caller already pre-rendered a single
+    // full-resolution transparent PNG containing every static placement, so the
+    // video encode overlays it once per frame instead of chaining N overlays.
+    if let Some(overlay) = overlay_asset {
+        if request.options.kind == "text" && !is_static_image(Path::new(&request.input_path)) {
+            let mut args = vec![
+                OsString::from("-hide_banner"),
+                OsString::from("-nostdin"),
+                OsString::from("-y"),
+                OsString::from("-i"),
+                OsString::from(&request.input_path),
+                OsString::from("-i"),
+                overlay.as_os_str().to_owned(),
+                OsString::from("-filter_complex"),
+                OsString::from(
+                    "[0:v][1:v]overlay=0:0:format=auto:eof_action=repeat:repeatlast=1[watermarked]",
+                ),
+                OsString::from("-map"),
+                OsString::from("[watermarked]"),
+                OsString::from("-map"),
+                OsString::from("0:a?"),
+            ];
+            args.extend(video_encoder_args(
+                backend,
+                request.options.quality.as_deref(),
+            ));
+            args.extend([
+                OsString::from("-pix_fmt"),
+                OsString::from(encoder_pixel_format(backend)),
+                OsString::from("-movflags"),
+                OsString::from("+faststart"),
+                OsString::from("-c:a"),
+                OsString::from("aac"),
+                OsString::from("-progress"),
+                OsString::from("pipe:1"),
+                OsString::from("-nostats"),
+                output.as_os_str().to_owned(),
+            ]);
+            return Ok((args, Vec::new()));
+        }
+    }
     let mut args = vec![
         OsString::from("-hide_banner"),
         OsString::from("-nostdin"),
@@ -2131,7 +2256,7 @@ fn watermark_ffmpeg_args_with_font(
             OsString::from(request.options.image_path.clone().unwrap_or_default()),
         ]);
     }
-    let (filter, cleanup) = watermark_filter_with_font(font_path, request)?;
+    let (filter, cleanup) = watermark_filter_with_font(font_path, request, source_size)?;
     args.extend([
         OsString::from("-filter_complex"),
         OsString::from(filter),
@@ -2199,6 +2324,109 @@ fn video_watermark_temp_path(final_output_path: &Path) -> PathBuf {
     dir.join(format!(".{stem}.{nonce}.mp4"))
 }
 
+/// Unique temp path for the pre-rendered text watermark overlay PNG. Kept in
+/// the OS temp dir so it never pollutes the user's chosen output directory and
+/// can be removed safely after the encode.
+fn text_watermark_overlay_temp_path() -> PathBuf {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    std::env::temp_dir().join(format!(
+        ".bmw-watermark-overlay-{}-{nonce}.png",
+        std::process::id()
+    ))
+}
+
+/// Pre-renders every static text placement into one transparent, full-source-
+/// resolution PNG using the bundled FFmpeg `drawtext`/`rotate`/`overlay`
+/// filters (no self-built font rendering, no new dependency). The main video
+/// encode then overlays this asset once per frame, removing the ~N chained
+/// overlay cost from the old sprite path. Reuses `watermark_filter_with_font`,
+/// so rotation, opacity, white/black/outlined style, font size and placement
+/// geometry stay byte-for-byte identical to the Canvas preview and the legacy
+/// single-frame preview. A failed generation returns a clear error instead of
+/// silently falling back to the slow N-overlay path.
+fn generate_text_watermark_overlay(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    request: &WatermarkMediaTaskRequest,
+    font_path: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let probe = probe_video(ffprobe, Path::new(&request.input_path))?;
+    if probe.width == 0 || probe.height == 0 {
+        return Err("无法读取视频尺寸以生成水印图层".into());
+    }
+    let (filter, mut cleanup) =
+        watermark_filter_with_font(font_path, request, Some((probe.width, probe.height)))?;
+    let overlay = text_watermark_overlay_temp_path();
+    let color_source = format!(
+        "color=c=black@0:size={}x{}:rate=1,format=rgba",
+        probe.width, probe.height
+    );
+    let args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-f"),
+        OsString::from("lavfi"),
+        OsString::from("-i"),
+        OsString::from(color_source),
+        OsString::from("-frames:v"),
+        OsString::from("1"),
+        OsString::from("-filter_complex"),
+        OsString::from(filter),
+        OsString::from("-map"),
+        OsString::from("[watermarked]"),
+        OsString::from("-f"),
+        OsString::from("image2"),
+        overlay.as_os_str().to_owned(),
+    ];
+    let spawn_result = bundled_command(ffmpeg)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output();
+    // The intermediate `textfile` temp file must be removed on every path:
+    // successful spawn, non-zero exit, and spawn failure alike. Only the
+    // generated overlay PNG survives on success (it is the caller's asset).
+    for path in cleanup.drain(..) {
+        let _ = fs::remove_file(path);
+    }
+    let result = match spawn_result {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = fs::remove_file(&overlay);
+            return Err(format!("无法生成文字水印图层：{error}"));
+        }
+    };
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr).into_owned();
+        let _ = fs::remove_file(&overlay);
+        return Err(format!(
+            "水印图层生成失败：{}",
+            ffmpeg_failure_message(&stderr)
+        ));
+    }
+    if !overlay.is_file() || overlay.metadata().map(|m| m.len()).unwrap_or(0) == 0 {
+        let _ = fs::remove_file(&overlay);
+        return Err("水印图层生成失败：未找到输出文件".into());
+    }
+    Ok(overlay)
+}
+
+/// True when a text watermark ships more than one explicit placement, i.e. the
+/// render-plan brick/tiled path where the old sprite filter chained one overlay
+/// per placement (≈31 overlays on dense 1920×1080 frames). Single text and Logo
+/// paths use one overlay already, so they keep the existing filter graph.
+fn uses_dense_text_overlay(options: &WatermarkOptions) -> bool {
+    options.kind == "text"
+        && options
+            .placements
+            .as_ref()
+            .is_some_and(|placements| placements.len() > 1)
+}
+
 /// Post-encode CPU validation. The exact video codec is `h264`, pixel format
 /// `yuv420p`, and the format must be `mp4`; audio is optional and reported.
 /// Lightweight ffprobe summary used by the CPU watermark validator.
@@ -2213,7 +2441,7 @@ struct VideoProbe {
 }
 
 fn probe_video(ffprobe: &Path, path: &Path) -> Result<VideoProbe, String> {
-    let out = Command::new(ffprobe)
+    let out = bundled_command(ffprobe)
         .args([
             "-v",
             "error",
@@ -2425,7 +2653,7 @@ fn recommendation_grids(width: u32, height: u32) -> Vec<RecommendationGrid> {
 
 fn first_frame_edge_density(ffmpeg: &Path, input: &Path, duration: f64) -> Option<f64> {
     let timestamp = (duration * 0.1).clamp(0.0, 1.0);
-    let output = Command::new(ffmpeg)
+    let output = bundled_command(ffmpeg)
         .args(["-hide_banner", "-nostdin", "-ss"])
         .arg(timestamp.to_string())
         .args(["-i"])
@@ -2743,7 +2971,7 @@ fn run_watermark_process_with_hooks(
     on_progress: &mut dyn FnMut(f64),
     before_finalize: &mut dyn FnMut(),
 ) -> (MediaTerminal, String) {
-    let mut command = Command::new(ffmpeg);
+    let mut command = bundled_command(ffmpeg);
     command
         .args(args)
         .stdout(Stdio::piped())
@@ -3045,7 +3273,7 @@ fn spawn_media_task(
             output_path: output_name,
         });
     }
-    let mut command = Command::new(ffmpeg);
+    let mut command = bundled_command(ffmpeg);
     command
         .args(args)
         .stdout(Stdio::piped())
@@ -3299,7 +3527,7 @@ fn run_gif_encode_with_progress(
     args_temp.push(OsString::from("-y"));
     args_temp.push(temp_output.as_os_str().to_owned());
 
-    let mut child = Command::new(ffmpeg)
+    let mut child = bundled_command(ffmpeg)
         .args(&args_temp)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -4249,6 +4477,8 @@ pub struct WatermarkPreviewRequest {
     #[serde(default)]
     pub placements: Option<Vec<WatermarkPlacement>>,
     #[serde(default)]
+    pub text_style: Option<String>,
+    #[serde(default)]
     pub clean_frame: Option<bool>,
     pub timestamp_seconds: Option<f64>,
     pub width: Option<u32>,
@@ -4667,6 +4897,7 @@ fn watermark_preview_args(
     font_path: Option<&Path>,
     request: &WatermarkPreviewRequest,
     output: &Path,
+    source_size: Option<(u32, u32)>,
 ) -> Result<(Vec<OsString>, Vec<PathBuf>), String> {
     if request.clean_frame == Some(true) {
         let mut args = vec![
@@ -4725,11 +4956,12 @@ fn watermark_preview_args(
             placements: request.placements.clone(),
             quality: None,
             prefer_hardware: None,
+            text_style: request.text_style.clone(),
             reserved_output_path: None,
             output_directory: request.temp_directory.clone(),
         },
     };
-    let (filter, cleanup) = watermark_filter_with_font(font_path, &watermark_request)?;
+    let (filter, cleanup) = watermark_filter_with_font(font_path, &watermark_request, source_size)?;
     let mut args = vec![
         OsString::from("-hide_banner"),
         OsString::from("-nostdin"),
@@ -4798,11 +5030,26 @@ fn run_watermark_preview_job(job: FrozenWatermarkPreviewJob) -> WatermarkPreview
     } else {
         None
     };
-    let (args, cleanup) =
-        match watermark_preview_args(font.as_deref(), &job.payload, &job.output_path) {
-            Ok(value) => value,
-            Err(message) => return WatermarkPreviewTerminal::Failed { message },
-        };
+    // Resolve the source frame size so the outlined text style can emit a
+    // concrete integer drawtext `borderw` (drawtext `borderw` is an int, not an
+    // expression). A probe failure keeps the preview working for the legacy
+    // white/black styles, which need no border width.
+    let source_size = if job.payload.kind == "text" {
+        probe_video(&ffprobe, &input)
+            .ok()
+            .map(|probe| (probe.width, probe.height))
+    } else {
+        None
+    };
+    let (args, cleanup) = match watermark_preview_args(
+        font.as_deref(),
+        &job.payload,
+        &job.output_path,
+        source_size,
+    ) {
+        Ok(value) => value,
+        Err(message) => return WatermarkPreviewTerminal::Failed { message },
+    };
     let (terminal, _stderr) = run_watermark_process_with_hooks(
         &ffmpeg,
         &ffprobe,
@@ -4821,7 +5068,7 @@ fn run_watermark_preview_job(job: FrozenWatermarkPreviewJob) -> WatermarkPreview
         MediaTerminal::Cancelled => WatermarkPreviewTerminal::Cancelled,
         MediaTerminal::Failed { message } => WatermarkPreviewTerminal::Failed { message },
         MediaTerminal::Completed { .. } => {
-            let probe = Command::new(&ffprobe)
+            let probe = bundled_command(&ffprobe)
                 .args([
                     "-v",
                     "error",
@@ -4966,6 +5213,46 @@ fn run_watermark_production_job(
     let mut collected_cleanup: Vec<PathBuf> = Vec::new();
     let mut last_progress: f64 = 0.0;
 
+    // Resolve the source frame size once so the outlined text style can emit a
+    // concrete integer drawtext `borderw` (drawtext `borderw` is an int, not an
+    // expression). The dense path pre-renders through
+    // `generate_text_watermark_overlay`, which probes internally; this probe
+    // covers the single/legacy text encodes that still build the filter graph
+    // directly.
+    let source_size = if payload.request.options.kind == "text"
+        && !uses_dense_text_overlay(&payload.request.options)
+    {
+        probe_video(&payload.ffprobe, &payload.input_path)
+            .ok()
+            .map(|probe| (probe.width, probe.height))
+    } else {
+        None
+    };
+
+    // Dense text placements (brick/tiled, >1 placement) previously chained one
+    // overlay per placement for every frame. Pre-render them once into a single
+    // transparent PNG, then overlay it once per frame. Single text and Logo
+    // paths stay on the existing filter graph. A failed pre-render is a hard
+    // error — we never silently fall back to the N-overlay slow path.
+    let overlay_asset = if uses_dense_text_overlay(&payload.request.options) {
+        match generate_text_watermark_overlay(
+            &payload.ffmpeg,
+            &payload.ffprobe,
+            &payload.request,
+            payload.font_path.as_deref(),
+        ) {
+            Ok(path) => {
+                collected_cleanup.push(path.clone());
+                Some(path)
+            }
+            Err(message) => {
+                return WatermarkTerminal::Failed { message };
+            }
+        }
+    } else {
+        None
+    };
+
     let terminal = orchestrate_watermark_encode_chain(
         &payload.fallback,
         |backend| {
@@ -4978,6 +5265,8 @@ fn run_watermark_production_job(
                 &payload.request,
                 &temp,
                 backend,
+                overlay_asset.as_deref(),
+                source_size,
             ) {
                 Ok((args, cleanup)) => {
                     collected_cleanup.extend(cleanup);
@@ -5225,7 +5514,7 @@ fn compose_single_template_gif(
     let template_h: u32;
     // Probe template dimensions
     {
-        let output = Command::new(ffmpeg)
+        let output = bundled_command(ffmpeg)
             .args([
                 "-hide_banner",
                 "-v",
@@ -5282,7 +5571,7 @@ fn compose_single_template_gif(
             output_path.as_os_str().to_owned(),
         ];
 
-        let output = Command::new(ffmpeg)
+        let output = bundled_command(ffmpeg)
             .args(&args)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -5592,7 +5881,7 @@ pub fn preview_template_frame(
     }
 
     // Probe template size
-    let probe_out = Command::new(&ffmpeg)
+    let probe_out = bundled_command(&ffmpeg)
         .args([
             "-hide_banner",
             "-v",
@@ -5638,7 +5927,7 @@ pub fn preview_template_frame(
         OsString::from(output_path.clone()),
     ];
 
-    let result = Command::new(&ffmpeg)
+    let result = bundled_command(&ffmpeg)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -5747,7 +6036,7 @@ pub fn preview_watermark_frame(
         OsString::from(output_path.clone()),
     ]);
 
-    let result = Command::new(&ffmpeg)
+    let result = bundled_command(&ffmpeg)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -6131,6 +6420,7 @@ mod tests {
                 placements: None,
                 quality: None,
                 prefer_hardware: None,
+                text_style: None,
                 reserved_output_path: None,
                 output_directory: tmp_dir.to_string_lossy().into_owned(),
             },
@@ -7092,9 +7382,12 @@ mod tests {
         let mut request =
             watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, true);
         request.options.pattern = Some("tiled".into());
-        let (filter, cleanup) =
-            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
-                .expect("production filter");
+        let (filter, cleanup) = super::watermark_filter_with_font(
+            Some(Path::new("/tmp/test-font.otf")),
+            &request,
+            None,
+        )
+        .expect("production filter");
         for path in cleanup {
             let _ = fs::remove_file(path);
         }
@@ -7143,9 +7436,12 @@ mod tests {
         ]);
         request.options.columns = Some(9);
         request.options.rows = Some(9);
-        let (filter, cleanup) =
-            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
-                .expect("production filter");
+        let (filter, cleanup) = super::watermark_filter_with_font(
+            Some(Path::new("/tmp/test-font.otf")),
+            &request,
+            None,
+        )
+        .expect("production filter");
         for path in cleanup {
             let _ = fs::remove_file(path);
         }
@@ -7179,9 +7475,12 @@ mod tests {
             },
         ]);
         request.options.angle = Some(45);
-        let (filter, cleanup) =
-            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
-                .expect("production filter");
+        let (filter, cleanup) = super::watermark_filter_with_font(
+            Some(Path::new("/tmp/test-font.otf")),
+            &request,
+            None,
+        )
+        .expect("production filter");
         for path in cleanup {
             let _ = fs::remove_file(path);
         }
@@ -7214,9 +7513,12 @@ mod tests {
             y_percent: 50.0,
         }]);
         request.options.dark_mode = Some(true);
-        let (filter, cleanup) =
-            super::watermark_filter_with_font(Some(Path::new("/tmp/test-font.otf")), &request)
-                .expect("production filter");
+        let (filter, cleanup) = super::watermark_filter_with_font(
+            Some(Path::new("/tmp/test-font.otf")),
+            &request,
+            None,
+        )
+        .expect("production filter");
         for path in cleanup {
             let _ = fs::remove_file(path);
         }
@@ -7332,8 +7634,9 @@ mod tests {
             watermark_request(&tmp, "text", "旋转水印", None, "center", 10, 0.5, true);
         request.options.pattern = Some("single".into());
         request.options.angle = Some(45);
-        let text = super::watermark_filter_with_font(Some(Path::new("/tmp/font.otf")), &request)
-            .expect("text filter");
+        let text =
+            super::watermark_filter_with_font(Some(Path::new("/tmp/font.otf")), &request, None)
+                .expect("text filter");
         assert!(text.0.contains("rotate=0.78539816"));
         assert!(!text.0.contains("[0:v]rotate="));
         assert!(text
@@ -7342,11 +7645,237 @@ mod tests {
 
         request.options.kind = "image".into();
         request.options.image_path = Some("/tmp/logo.png".into());
-        let logo = super::watermark_filter_with_font(None, &request).expect("logo filter");
+        let logo = super::watermark_filter_with_font(None, &request, None).expect("logo filter");
         let filter = logo.0;
         assert!(filter.contains("[watermark]rotate=0.78539816"));
         assert!(filter.contains("ow=iw*0.70710678+ih*0.70710678"));
         assert!(filter.contains("[watermark-rotated]overlay="));
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn legacy_text_filter_overlay_always_references_colorchannelmixer_output() {
+        let tmp = std::env::temp_dir().join(format!(
+            "brand-media-wm-overlay-label-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+
+        let build = |angle: i32| {
+            let mut request =
+                watermark_request(&tmp, "text", "水印", None, "bottom-right", 10, 0.5, true);
+            request.options.pattern = Some("single".into());
+            request.options.angle = Some(angle);
+            let (filter, cleanup) =
+                super::watermark_filter_with_font(Some(Path::new("/tmp/font.otf")), &request, None)
+                    .expect("text filter");
+            for path in cleanup {
+                let _ = fs::remove_file(path);
+            }
+            filter
+        };
+
+        // angle == 0: the colorchannelmixer consumes `text-complete` and emits
+        // `text-faded`; the final overlay must reference `text-faded`. The bug
+        // this locks in made the overlay consume `text-complete` a second time,
+        // which FFmpeg rejects with "Invalid stream specifier text-complete".
+        let zero = build(0);
+        assert!(
+            zero.contains("[text-complete]colorchannelmixer=aa=0.5[text-faded]"),
+            "colorchannelmixer must consume text-complete and emit text-faded: {zero}"
+        );
+        assert!(
+            zero.contains("[base][text-faded]overlay=(W-w)/2:(H-h)/2"),
+            "angle==0 overlay must reference text-faded, the colorchannelmixer output: {zero}"
+        );
+        assert!(
+            !zero.contains("[base][text-complete]overlay"),
+            "text-complete must not be consumed twice: {zero}"
+        );
+        assert_eq!(
+            zero.matches("text-complete").count(),
+            2,
+            "text-complete appears exactly once as a drawtext output and once as the colorchannelmixer input: {zero}"
+        );
+
+        // angle != 0: the overlay references the rotate output instead.
+        let rotated = build(45);
+        assert!(
+            rotated.contains("[base][text-rotated]overlay=(W-w)/2:(H-h)/2"),
+            "angle!=0 overlay must reference text-rotated: {rotated}"
+        );
+        assert!(
+            !rotated.contains("[base][text-complete]overlay"),
+            "text-complete must never be the overlay input: {rotated}"
+        );
+
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn text_style_drawtext_maps_white_black_and_outlined() {
+        assert_eq!(
+            super::text_style_drawtext(None, None),
+            ("white".to_string(), String::new())
+        );
+        assert_eq!(
+            super::text_style_drawtext(Some("white"), None),
+            ("white".to_string(), String::new())
+        );
+        assert_eq!(
+            super::text_style_drawtext(Some("black"), None),
+            ("black".to_string(), String::new())
+        );
+        let (color, extra) = super::text_style_drawtext(Some("outlined"), Some(4));
+        assert_eq!(color, "white");
+        assert!(extra.contains("bordercolor=black"), "extra: {extra}");
+        // `borderw` must be the concrete integer passed in — never a
+        // `max(1, ...)` / `min(w,h)` expression, because drawtext `borderw` is
+        // an `int` and cannot evaluate filter expressions.
+        assert_eq!(extra, ":bordercolor=black:borderw=4", "extra: {extra}");
+    }
+
+    #[test]
+    fn outlined_border_width_rounds_and_floors_at_one() {
+        // Matches the Canvas `max(1, round(fontPx * 0.08))` formula.
+        assert_eq!(super::outlined_border_width(54.0), 4); // 4.32 -> 4
+        assert_eq!(super::outlined_border_width(10.0), 1); // 0.80 -> 1
+        assert_eq!(super::outlined_border_width(0.0), 1); // 0 -> floored at 1
+        assert_eq!(super::outlined_border_width(13.0), 1); // 1.04 -> 1
+        assert_eq!(super::outlined_border_width(60.0), 5); // 4.80 -> 5
+    }
+
+    #[test]
+    fn outlined_text_watermark_filter_includes_scaled_border() {
+        let tmp =
+            std::env::temp_dir().join(format!("brand-media-wm-outline-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request = watermark_request(&tmp, "text", "描边水印", None, "center", 5, 0.5, true);
+        request.options.placements = Some(vec![
+            super::WatermarkPlacement {
+                x_percent: 20.0,
+                y_percent: 20.0,
+            },
+            super::WatermarkPlacement {
+                x_percent: 80.0,
+                y_percent: 80.0,
+            },
+        ]);
+        request.options.text_style = Some("outlined".into());
+        // 1920x1080 → short edge 1080 → font 1080*5/100 = 54 → border 4.
+        let filter = super::watermark_filter_with_font(
+            Some(Path::new("/tmp/font.otf")),
+            &request,
+            Some((1920, 1080)),
+        )
+        .expect("outlined filter")
+        .0;
+        assert!(
+            filter.contains("bordercolor=black:borderw=4"),
+            "outlined filter must carry a concrete integer border width: {filter}"
+        );
+        assert!(
+            !filter.contains("borderw=max") && !filter.contains("borderw=min"),
+            "borderw must be a literal integer, not an expression: {filter}"
+        );
+        assert!(
+            !filter.contains("fontcolor=white:fontsize"),
+            "outlined filter must not leave a bare white fontcolor: {filter}"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn outlined_text_watermark_requires_source_size() {
+        let tmp = std::env::temp_dir().join(format!(
+            "brand-media-wm-outline-nosize-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request = watermark_request(&tmp, "text", "描边水印", None, "center", 5, 0.5, true);
+        request.options.placements = Some(vec![
+            super::WatermarkPlacement {
+                x_percent: 20.0,
+                y_percent: 20.0,
+            },
+            super::WatermarkPlacement {
+                x_percent: 80.0,
+                y_percent: 80.0,
+            },
+        ]);
+        request.options.text_style = Some("outlined".into());
+        let result =
+            super::watermark_filter_with_font(Some(Path::new("/tmp/font.otf")), &request, None);
+        assert!(
+            result.is_err(),
+            "outlined text without a source size must fail"
+        );
+        assert!(
+            result.unwrap_err().contains("源视频尺寸"),
+            "error must name the missing source size"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn dense_text_watermark_args_use_a_single_overlay_input() {
+        let tmp = std::env::temp_dir().join(format!("brand-media-wm-dense-{}", std::process::id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let mut request = watermark_request(&tmp, "text", "密集水印", None, "center", 5, 0.5, true);
+        request.input_path = tmp.join("source.mp4").to_string_lossy().into_owned();
+        request.options.placements = Some(vec![
+            super::WatermarkPlacement {
+                x_percent: 10.0,
+                y_percent: 10.0,
+            },
+            super::WatermarkPlacement {
+                x_percent: 50.0,
+                y_percent: 50.0,
+            },
+            super::WatermarkPlacement {
+                x_percent: 90.0,
+                y_percent: 90.0,
+            },
+        ]);
+        let overlay = tmp.join("overlay.png");
+        let (args, cleanup) = super::watermark_ffmpeg_args_with_font(
+            Some(Path::new("/tmp/font.otf")),
+            &request,
+            &tmp.join("out.mp4"),
+            super::EncoderBackend::Cpu,
+            Some(&overlay),
+            None,
+        )
+        .unwrap();
+        assert!(
+            cleanup.is_empty(),
+            "overlay path must be managed by the caller"
+        );
+        let values: Vec<String> = args
+            .iter()
+            .map(|v| v.to_string_lossy().into_owned())
+            .collect();
+        let input_count = values.iter().filter(|v| *v == "-i").count();
+        assert_eq!(
+            input_count, 2,
+            "overlay path must use two inputs: {values:?}"
+        );
+        assert!(
+            values.contains(&overlay.to_string_lossy().into_owned()),
+            "overlay input missing: {values:?}"
+        );
+        let filter = extract_filter(&args);
+        // The single-frame overlay PNG must repeat across the whole video via
+        // the explicit overlay EOF defaults, so the dense path still applies
+        // exactly one overlay (no sprite split, no chained overlays).
+        assert_eq!(
+            filter, "[0:v][1:v]overlay=0:0:format=auto:eof_action=repeat:repeatlast=1[watermarked]",
+            "dense text path must collapse to a single repeating overlay"
+        );
+        assert!(
+            !filter.contains("split="),
+            "dense text path must not split the sprite"
+        );
         fs::remove_dir_all(&tmp).unwrap();
     }
 
@@ -7385,12 +7914,13 @@ mod tests {
                     placements: None,
                     quality: None,
                     prefer_hardware: None,
+                    text_style: None,
                     reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             };
             let (filter, cleanup) =
-                super::watermark_filter_with_font(Some(&font), &request).unwrap();
+                super::watermark_filter_with_font(Some(&font), &request, None).unwrap();
             let result = std::process::Command::new(&ffmpeg)
                 .args(["-hide_banner", "-nostdin", "-ss", "0", "-i"])
                 .arg(&input)
@@ -7508,12 +8038,13 @@ mod tests {
                 ]),
                 quality: None,
                 prefer_hardware: None,
+                text_style: None,
                 reserved_output_path: None,
                 output_directory: dir.to_string_lossy().into_owned(),
             },
         };
         let (filter, cleanup) =
-            super::watermark_filter_with_font(Some(&font), &request).expect("sprite filter");
+            super::watermark_filter_with_font(Some(&font), &request, None).expect("sprite filter");
         let output = dir.join("watermarked.png");
         let result = std::process::Command::new(&ffmpeg)
             .args(["-hide_banner", "-nostdin", "-i"])
@@ -7546,6 +8077,122 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn generate_text_watermark_overlay_makes_alpha_png_and_single_overlay_video_encode() {
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let dir = std::env::temp_dir().join(format!("品牌文字图层资产 {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("source.mp4");
+        create_mp4_fixture(&ffmpeg, &input, false);
+        let font = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources/fonts/SourceHanSansSC-Regular.otf");
+        let request = WatermarkMediaTaskRequest {
+            task_id: "overlay-asset".into(),
+            input_path: input.to_string_lossy().into_owned(),
+            options: WatermarkOptions {
+                kind: "text".into(),
+                text: "图层验证".into(),
+                image_path: None,
+                position: "center".into(),
+                size_percent: 8,
+                opacity: 0.6,
+                pattern: Some("tiled".into()),
+                density: None,
+                angle: Some(45),
+                dark_mode: None,
+                offset_x: None,
+                offset_y: None,
+                columns: None,
+                rows: None,
+                placements: Some(vec![
+                    super::WatermarkPlacement {
+                        x_percent: 25.0,
+                        y_percent: 30.0,
+                    },
+                    super::WatermarkPlacement {
+                        x_percent: 75.0,
+                        y_percent: 70.0,
+                    },
+                ]),
+                quality: None,
+                prefer_hardware: Some(false),
+                text_style: Some("outlined".into()),
+                reserved_output_path: None,
+                output_directory: dir.to_string_lossy().into_owned(),
+            },
+        };
+
+        // 1) Real generation through the production helper (runs bundled FFmpeg).
+        let overlay =
+            super::generate_text_watermark_overlay(&ffmpeg, &ffprobe, &request, Some(&font))
+                .expect("overlay generation");
+        assert!(overlay.is_file(), "overlay PNG was not produced");
+        let probe =
+            super::probe_video(&ffprobe, &overlay).expect("overlay must be ffprobe-readable");
+        assert_eq!(
+            (probe.width, probe.height),
+            (160, 90),
+            "overlay must match the source frame size"
+        );
+        assert_eq!(probe.codec, "png", "overlay must be a real PNG");
+        assert!(
+            ["rgba", "bgra", "argb", "abgr", "gbrap"].contains(&probe.pix_fmt.as_str()),
+            "overlay must carry an alpha channel, got pix_fmt={}",
+            probe.pix_fmt
+        );
+
+        // 2) Encode a short video through the overlay_asset branch and confirm it
+        // collapses to exactly one overlay filter.
+        let output = dir.join("watermarked.mp4");
+        let (args, cleanup) = super::watermark_ffmpeg_args_with_font(
+            Some(&font),
+            &request,
+            &output,
+            super::EncoderBackend::Cpu,
+            Some(&overlay),
+            None,
+        )
+        .unwrap();
+        assert!(
+            cleanup.is_empty(),
+            "overlay asset is owned by the caller, not the args builder"
+        );
+        let filter = extract_filter(&args);
+        assert_eq!(
+            filter, "[0:v][1:v]overlay=0:0:format=auto:eof_action=repeat:repeatlast=1[watermarked]",
+            "dense text path must stay a single overlay"
+        );
+        assert_eq!(
+            filter.matches("overlay").count(),
+            1,
+            "exactly one overlay filter expected: {filter}"
+        );
+        let result = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "overlay encode failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(output.is_file(), "encoded video was not produced");
+        let encoded = super::probe_video(&ffprobe, &output).expect("encoded video must probe");
+        assert_eq!(
+            (encoded.width, encoded.height),
+            (160, 90),
+            "encoded video geometry changed"
+        );
+        assert!(!encoded.has_audio, "fixture is silent");
+
+        let _ = fs::remove_file(&overlay);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn text_watermark_parameters_change_real_pixels_without_changing_frame_geometry() {
         let ffmpeg = bundled_test_sidecar("ffmpeg");
         let dir = std::env::temp_dir().join(format!("品牌文字参数像素 {}", std::process::id()));
@@ -7573,6 +8220,7 @@ mod tests {
             placements: None,
             quality: None,
             prefer_hardware: None,
+            text_style: None,
             reserved_output_path: None,
             output_directory: dir.to_string_lossy().into_owned(),
         };
@@ -7689,6 +8337,7 @@ mod tests {
             placements: None,
             quality: None,
             prefer_hardware: None,
+            text_style: None,
             reserved_output_path: None,
             output_directory: dir.to_string_lossy().into_owned(),
         };
@@ -7781,6 +8430,7 @@ mod tests {
             placements: None,
             quality: Some("high".into()),
             prefer_hardware: Some(false),
+            text_style: None,
             reserved_output_path: None,
             output_directory: dir.to_string_lossy().into_owned(),
         };
@@ -7796,6 +8446,8 @@ mod tests {
             &formal_request,
             &temp,
             EncoderBackend::Cpu,
+            None,
+            None,
         )
         .unwrap();
         let finalize = super::MediaFinalize {
@@ -7852,6 +8504,7 @@ mod tests {
             columns: None,
             rows: None,
             placements: None,
+            text_style: None,
             clean_frame: None,
             timestamp_seconds: Some(0.0),
             width: Some(160),
@@ -7865,6 +8518,7 @@ mod tests {
             preview_request.font_path.as_deref(),
             &preview_request,
             &preview_output,
+            None,
         )
         .unwrap();
         let preview_result = std::process::Command::new(&ffmpeg)
@@ -8018,6 +8672,7 @@ mod tests {
             placements: None,
             quality: None,
             prefer_hardware: None,
+            text_style: None,
             reserved_output_path: None,
             output_directory: dir.to_string_lossy().into_owned(),
         };
@@ -8429,8 +9084,8 @@ mod tests {
             input_path: input.to_string_lossy().into_owned(),
             options: options.clone(),
         };
-        let (filter, cleanup) =
-            super::watermark_filter_with_font(Some(font), &request).expect("production filter");
+        let (filter, cleanup) = super::watermark_filter_with_font(Some(font), &request, None)
+            .expect("production filter");
         let mut command = std::process::Command::new(ffmpeg);
         command
             .args(["-hide_banner", "-nostdin", "-ss", "0", "-i"])
@@ -8919,6 +9574,7 @@ mod tests {
                     placements: None,
                     quality: Some(quality.into()),
                     prefer_hardware: Some(false),
+                    text_style: None,
                     reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
@@ -8930,6 +9586,8 @@ mod tests {
                 &request,
                 &temp,
                 super::EncoderBackend::Cpu,
+                None,
+                None,
             )
             .unwrap();
             let finalize = super::MediaFinalize {
@@ -9545,6 +10203,7 @@ mod tests {
             columns: None,
             rows: None,
             placements: None,
+            text_style: None,
             clean_frame: None,
             timestamp_seconds: Some(0.2),
             width: Some(160),
@@ -9578,7 +10237,7 @@ mod tests {
         request.clean_frame = Some(true);
         let output = dir.join("clean.png");
         let (args, cleanup) =
-            super::watermark_preview_args(None, &request, &output).expect("clean frame args");
+            super::watermark_preview_args(None, &request, &output, None).expect("clean frame args");
         assert!(cleanup.is_empty());
         let values: Vec<_> = args
             .iter()
@@ -10452,6 +11111,7 @@ mod tests {
                     placements: None,
                     quality: None,
                     prefer_hardware: None,
+                    text_style: None,
                     reserved_output_path: None,
                     output_directory: "/tmp".into(),
                 },
@@ -10546,6 +11206,7 @@ mod tests {
                     placements: None,
                     quality: None,
                     prefer_hardware: None,
+                    text_style: None,
                     reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
@@ -10579,6 +11240,7 @@ mod tests {
                     placements: None,
                     quality: None,
                     prefer_hardware: None,
+                    text_style: None,
                     reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
@@ -10717,6 +11379,7 @@ mod tests {
                     placements: None,
                     quality: None,
                     prefer_hardware: None,
+                    text_style: None,
                     reserved_output_path: None,
                     output_directory: dir.to_string_lossy().into_owned(),
                 },

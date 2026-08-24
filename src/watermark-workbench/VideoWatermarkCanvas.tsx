@@ -81,9 +81,15 @@ function drawLayers(context: CanvasRenderingContext2D, layers: WatermarkLayerIns
     context.translate(layer.cx, layer.cy);
     context.rotate(layer.rotation * Math.PI / 180);
     context.font = `500 ${layer.fontSize}px "Source Han Sans SC", sans-serif`;
-    context.fillStyle = layer.color;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
+    if (layer.stroke) {
+      context.strokeStyle = layer.stroke.color;
+      context.lineWidth = layer.stroke.width;
+      context.lineJoin = 'round';
+      context.strokeText(layer.text, 0, 0);
+    }
+    context.fillStyle = layer.color;
     context.fillText(layer.text, 0, 0);
     context.restore();
   }

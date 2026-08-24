@@ -42,6 +42,7 @@ export function videoWatermarkConfigForCanvas(
     text: config.text,
     fontFamily: 'Source Han Sans SC',
     color: '#ffffff',
+    style: config.textStyle,
     fontSize: Math.max(1, short * config.fontSize / 100),
     pattern: config.pattern === 'single' ? 'single' : 'brick',
     rotation: config.rotation,

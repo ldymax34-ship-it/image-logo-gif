@@ -9,7 +9,7 @@ import { WatermarkSlider } from './WatermarkSlider';
 import { createExportBatchId, exportStatusStore, formatExportSize } from '../components/export-status/exportStatusStore';
 import type { ExportTask } from '../components/export-status/ExportStatus';
 import { DEFAULT_CONFIG, WATERMARK_DENSITY_LABELS, type WatermarkAnchor, type WatermarkBusinessConfig } from './WatermarkWorkbench';
-import type { WatermarkDensity } from '../core/image/watermarkRenderPlan';
+import type { WatermarkDensity, WatermarkTextStyle } from '../core/image/watermarkRenderPlan';
 import { VideoWatermarkCanvas } from './VideoWatermarkCanvas';
 import { videoCanvasSize, videoWatermarkLayers, videoWatermarkPlacements } from './videoWatermarkPlan';
 import {
@@ -28,6 +28,7 @@ import {
   toVideoPreviewRequest,
   toVideoWatermarkOptions,
   VIDEO_QUALITY_LABELS,
+  VIDEO_TEXT_STYLE_LABELS,
   videoWatermarkRenderSummary,
   type VideoQualityPreset,
   type VideoWatermarkAsset,
@@ -878,6 +879,9 @@ export function VideoWatermarkWorkspace({
           </p>
           <div className="wm-section">
             <label className="wm-prop"><span>内容</span><textarea value={config.text} onChange={(event) => updateConfig('text', event.target.value)} rows={3} wrap="off" /></label>
+            <label className="wm-prop"><span>文字样式</span>
+              <AppSelect value={config.textStyle} onChange={(value) => updateConfig('textStyle', value as WatermarkTextStyle)} aria-label="文字水印样式" options={[{ value: 'white', label: VIDEO_TEXT_STYLE_LABELS.white }, { value: 'black', label: VIDEO_TEXT_STYLE_LABELS.black }, { value: 'outlined', label: VIDEO_TEXT_STYLE_LABELS.outlined }]} />
+            </label>
             <label className="wm-prop"><span>排列方式</span>
               <AppSelect value={config.pattern} onChange={(value) => updateConfig('pattern', value as 'single' | 'brick')} aria-label="视频排列方式" options={[{ value: 'single', label: '单个' }, { value: 'brick', label: '砖型平铺' }]} />
             </label>

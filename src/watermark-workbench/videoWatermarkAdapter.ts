@@ -8,7 +8,7 @@ import type {
   WatermarkVideoOptions,
 } from '../gif-media/mediaDesktop';
 import type { MediaProbeResult, MediaTaskEvent } from '../gif-media/mediaTypes';
-import type { WatermarkDensity } from '../core/image/watermarkRenderPlan';
+import type { WatermarkDensity, WatermarkTextStyle } from '../core/image/watermarkRenderPlan';
 import type { WatermarkAnchor, WatermarkBusinessConfig } from './WatermarkWorkbench';
 
 export type VideoWatermarkStatus =
@@ -126,6 +126,12 @@ export const VIDEO_WATERMARK_DENSITY_LABELS: Record<VideoWatermarkDensity, strin
   low: '稀疏',
 };
 
+export const VIDEO_TEXT_STYLE_LABELS: Record<WatermarkTextStyle, string> = {
+  white: '白色',
+  black: '黑色',
+  outlined: '描边',
+};
+
 /**
  * Concise, non-sensitive render summary for a frozen queue draft. Used to show
  * the user exactly which parameters were snapshotted at enqueue time, so live
@@ -135,7 +141,8 @@ export function videoWatermarkRenderSummary(options: WatermarkVideoOptions): str
   const pattern = options.pattern === 'single' ? '单个' : '砖型';
   const density = VIDEO_WATERMARK_DENSITY_LABELS[options.density] ?? options.density;
   const opacity = `${Math.round(options.opacity * 100)}%`;
-  return `${pattern} · ${options.angle}° · ${options.sizePercent}% · ${opacity} · ${density}`;
+  const style = VIDEO_TEXT_STYLE_LABELS[options.textStyle] ?? '白色';
+  return `${pattern} · ${options.angle}° · ${options.sizePercent}% · ${opacity} · ${density} · ${style}`;
 }
 
 /** Maps the shared `WatermarkDensity` to the legacy FFmpeg density wire value. */
@@ -179,6 +186,7 @@ export function toVideoWatermarkOptions(
     columns,
     rows,
     placements,
+    textStyle: config.textStyle,
     quality,
     preferHardware,
     reservedOutputPath,
@@ -246,6 +254,7 @@ export function toVideoPreviewRequest(
     columns: options.columns,
     rows: options.rows,
     placements: options.placements,
+    textStyle: options.textStyle,
     cleanFrame,
     timestampSeconds: resolvedTimestamp,
     width: width ?? asset.metadata?.width,

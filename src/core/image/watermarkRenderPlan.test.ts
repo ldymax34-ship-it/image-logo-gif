@@ -4,6 +4,7 @@ import {
   buildWatermarkCenters,
   buildWatermarkRenderLayers,
   measureWatermarkTextContent,
+  resolveWatermarkTextVisual,
   rotatedBoundingBox,
   WATERMARK_DENSITY_GAPS,
   type WatermarkConfig,
@@ -240,6 +241,22 @@ describe('content measurement and geometry helpers', () => {
     const box = rotatedBoundingBox(100, 40, 90);
     expect(box.width).toBeCloseTo(40);
     expect(box.height).toBeCloseTo(100);
+  });
+
+  it('resolves the outlined stroke as the same rounded integer FFmpeg borderw uses', () => {
+    expect(resolveWatermarkTextVisual(undefined, 54)).toEqual({ fill: '#ffffff' });
+    expect(resolveWatermarkTextVisual('white', 54)).toEqual({ fill: '#ffffff' });
+    expect(resolveWatermarkTextVisual('black', 54)).toEqual({ fill: '#000000' });
+    // 54 * 0.08 = 4.32 → round → 4; matches Rust `outlined_border_width(54.0)`.
+    expect(resolveWatermarkTextVisual('outlined', 54)).toEqual({
+      fill: '#ffffff',
+      stroke: { color: '#000000', width: 4 },
+    });
+    // Floored at 1 for very small fonts.
+    expect(resolveWatermarkTextVisual('outlined', 10)).toEqual({
+      fill: '#ffffff',
+      stroke: { color: '#000000', width: 1 },
+    });
   });
 
   it('exposes density gaps as height units', () => {
