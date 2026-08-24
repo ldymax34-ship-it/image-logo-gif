@@ -79,6 +79,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: Install audited Windows FFmpeg sidecars
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/install-windows-ffmpeg.ps1
       - run: npm run verify:core && npm test -- --run && npm run build
       - name: Build signed updater artifacts
         env:

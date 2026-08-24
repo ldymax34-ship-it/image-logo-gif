@@ -45,7 +45,16 @@ function createApi(overrides: Partial<MediaDesktopApi> = {}) {
       ? options.reservedOutputPath
       : `/tmp/${taskId}.mp4`,
   }));
-  const capability: WatermarkEncoderCapability = { hardwareAvailable: false, backendName: 'CPU', reason: '当前随包 FFmpeg 未通过硬件编码探测' };
+  const capability: WatermarkEncoderCapability = {
+    hardwareAvailable: false,
+    backendName: 'CPU',
+    reason: 'NVENC：Cannot load nvenc library；AMF：Failed to create AMF context；QSV：Failed to create MFX session',
+    candidates: [
+      { backend: 'nvenc', backendName: 'NVENC', encoder: 'h264_nvenc', available: false, reason: 'Cannot load nvenc library' },
+      { backend: 'amf', backendName: 'AMF', encoder: 'h264_amf', available: false, reason: 'Failed to create AMF context' },
+      { backend: 'qsv', backendName: 'QSV', encoder: 'h264_qsv', available: false, reason: 'Failed to create MFX session' },
+    ],
+  };
   const api: MediaDesktopApi = {
     getEngineStatus: async () => ({ ready: true, message: '', ffmpegVersion: 'test', ffprobeVersion: 'test' }),
     getWatermarkEncoderCapability: async () => capability,
@@ -459,14 +468,40 @@ describe('VideoWatermarkWorkspace independent page', () => {
     container.remove();
   });
 
-  it('disables the GPU switch and explains CPU fallback when hardware is unavailable', async () => {
+  it('disables the GPU switch and lists each unavailable backend with its reason', async () => {
     const harness = createApi();
     const { container, root } = mount(<VideoWatermarkWorkspace onReturn={() => undefined} injectedApi={harness.api} previewObjectUrlLoader={fakePreviewLoader} />);
     await flush();
     const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(checkbox.disabled).toBe(true);
     expect(checkbox.checked).toBe(false);
-    expect(container.textContent).toContain('当前系统不支持硬件编码');
+    expect(container.textContent).toContain('硬件编码不可用');
+    expect(container.textContent).toContain('NVENC');
+    expect(container.textContent).toContain('AMF');
+    expect(container.textContent).toContain('QSV');
+    expect(container.textContent).toContain('Cannot load nvenc library');
+    expect(container.textContent).toContain('将使用 CPU 兼容模式');
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('enables the GPU switch and names the selected hardware backend', async () => {
+    const harness = createApi({
+      getWatermarkEncoderCapability: async () => ({
+        hardwareAvailable: true,
+        backendName: 'NVENC',
+        reason: 'NVENC 已通过 720p/30fps/120 帧实机编码探测',
+        candidates: [
+          { backend: 'nvenc', backendName: 'NVENC', encoder: 'h264_nvenc', available: true, reason: '已通过 720p/30fps/120 帧实机编码探测' },
+        ],
+      }),
+    });
+    const { container, root } = mount(<VideoWatermarkWorkspace onReturn={() => undefined} injectedApi={harness.api} previewObjectUrlLoader={fakePreviewLoader} />);
+    await flush();
+    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.disabled).toBe(false);
+    expect(checkbox.checked).toBe(true);
+    expect(container.textContent).toContain('硬件优先（NVENC）');
     act(() => root.unmount());
     container.remove();
   });

@@ -4,12 +4,13 @@ use std::{
     fs,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex,
     },
     thread,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -140,10 +141,21 @@ pub struct MediaEngineStatus {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EncoderCapabilityEntry {
+    pub backend: String,
+    pub backend_name: String,
+    pub encoder: String,
+    pub available: bool,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WatermarkEncoderCapability {
     pub hardware_available: bool,
     pub backend_name: String,
     pub reason: String,
+    pub candidates: Vec<EncoderCapabilityEntry>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1127,26 +1139,80 @@ fn brick_coordinates(density: &str, count: usize) -> Vec<(&'static str, &'static
     tiled_coordinates().to_vec()
 }
 
-/// Public hardware encoder selection. Only the platform's default public
-/// encoder is ever considered; QSV/AMF are intentionally out of scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Explicit video encoder backend. Mirrors HandBrake/Jellyfin's separation of
+/// concrete hardware encoders (NVENC/AMF/QSV/VideoToolbox) from software x264:
+/// each backend maps to exactly one public FFmpeg encoder and carries its own
+/// probe cache, never a single global "hardware available" bool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EncoderBackend {
-    Hardware,
+    Nvenc,
+    Amf,
+    Qsv,
+    VideoToolbox,
     Cpu,
 }
 
-/// Map a platform + backend to the exact public FFmpeg video encoder name.
-/// Hardware video encoders only change the video codec; filters stay on CPU.
-fn video_encoder_name(platform: &str, backend: EncoderBackend) -> &'static str {
-    match (platform, backend) {
-        (_, EncoderBackend::Cpu) => "libx264",
-        ("windows", EncoderBackend::Hardware) => "h264_nvenc",
-        ("macos", EncoderBackend::Hardware) => "h264_videotoolbox",
-        (_, EncoderBackend::Hardware) => "libx264",
+impl EncoderBackend {
+    /// The public FFmpeg encoder name for this backend.
+    fn encoder_name(self) -> &'static str {
+        match self {
+            EncoderBackend::Nvenc => "h264_nvenc",
+            EncoderBackend::Amf => "h264_amf",
+            EncoderBackend::Qsv => "h264_qsv",
+            EncoderBackend::VideoToolbox => "h264_videotoolbox",
+            EncoderBackend::Cpu => "libx264",
+        }
+    }
+
+    /// Human-readable backend label surfaced to the capability UI.
+    fn display_name(self) -> &'static str {
+        match self {
+            EncoderBackend::Nvenc => "NVENC",
+            EncoderBackend::Amf => "AMF",
+            EncoderBackend::Qsv => "QSV",
+            EncoderBackend::VideoToolbox => "VideoToolbox",
+            EncoderBackend::Cpu => "CPU",
+        }
+    }
+
+    /// Wire identifier for the serialized capability entry.
+    fn wire_name(self) -> &'static str {
+        match self {
+            EncoderBackend::Nvenc => "nvenc",
+            EncoderBackend::Amf => "amf",
+            EncoderBackend::Qsv => "qsv",
+            EncoderBackend::VideoToolbox => "videotoolbox",
+            EncoderBackend::Cpu => "cpu",
+        }
+    }
+
+    fn is_hardware(self) -> bool {
+        !matches!(self, EncoderBackend::Cpu)
+    }
+
+    fn is_cpu(self) -> bool {
+        matches!(self, EncoderBackend::Cpu)
     }
 }
 
-/// Build the `-c:v <encoder>` arguments for the selected backend.
+/// Map a backend to the exact public FFmpeg video encoder name. Hardware video
+/// encoders only change the video codec; filters stay on CPU.
+fn video_encoder_name(backend: EncoderBackend) -> &'static str {
+    backend.encoder_name()
+}
+
+/// The backend's input pixel format accepted by the selected encoder. The
+/// Windows hardware encoders (NVENC/AMF/QSV) accept NV12 natively — QSV requires
+/// it (`CODEC_PIXFMTS(AV_PIX_FMT_NV12, AV_PIX_FMT_QSV)` in FFmpeg's
+/// `qsvenc_h264.c`) — while the bundled macOS VideoToolbox (FFmpeg 4.4) and
+/// libx264 keep `yuv420p`. The produced H.264 stream still probes as `yuv420p`.
+fn encoder_pixel_format(backend: EncoderBackend) -> &'static str {
+    match backend {
+        EncoderBackend::Nvenc | EncoderBackend::Amf | EncoderBackend::Qsv => "nv12",
+        EncoderBackend::VideoToolbox | EncoderBackend::Cpu => "yuv420p",
+    }
+}
+
 fn current_platform() -> &'static str {
     if cfg!(target_os = "windows") {
         "windows"
@@ -1157,126 +1223,541 @@ fn current_platform() -> &'static str {
     }
 }
 
+/// Ordered candidate backends for a platform. Windows probes NVENC, then AMF,
+/// then QSV, always ending on libx264; macOS has VideoToolbox + libx264; other
+/// platforms are software-only. This order is the sole source of truth for
+/// both selection and runtime fallback.
+fn ordered_candidates(platform: &str) -> &'static [EncoderBackend] {
+    match platform {
+        "windows" => &[
+            EncoderBackend::Nvenc,
+            EncoderBackend::Amf,
+            EncoderBackend::Qsv,
+            EncoderBackend::Cpu,
+        ],
+        "macos" => &[EncoderBackend::VideoToolbox, EncoderBackend::Cpu],
+        _ => &[EncoderBackend::Cpu],
+    }
+}
+
+/// Respect an explicit CPU preference; otherwise use the already-selected
+/// first-available backend (which is `Cpu` when no hardware candidate passed).
 fn encoder_backend_for_request(
     prefer_hardware: Option<bool>,
-    hardware_available: bool,
+    selected: EncoderBackend,
 ) -> EncoderBackend {
     if prefer_hardware == Some(false) {
         EncoderBackend::Cpu
-    } else if hardware_available {
-        EncoderBackend::Hardware
     } else {
-        EncoderBackend::Cpu
+        selected
     }
 }
 
-/// Session-scoped hardware probe result (never persisted to disk). The probe
-/// runs a very short real encode and validates the output with FFprobe.
-fn probe_hardware_encoder(ffmpeg: &Path, ffprobe: &Path, platform: &str) -> bool {
-    let encoder = video_encoder_name(platform, EncoderBackend::Hardware);
-    if encoder == "libx264" {
-        return false;
-    }
-    let temp = std::env::temp_dir().join(format!(".bmw-hw-probe-{}.mp4", std::process::id()));
-    let status = Command::new(ffmpeg)
-        .args([
-            "-hide_banner",
-            "-nostdin",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=64x64:r=1",
-            "-frames:v",
-            "1",
-            "-c:v",
-            encoder,
-            "-pix_fmt",
-            "yuv420p",
-            "-f",
-            "mp4",
-            "-y",
-        ])
-        .arg(&temp)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    let ok = match status {
-        Ok(status) if status.success() => {
-            let probe = Command::new(ffprobe)
-                .args([
-                    "-v",
-                    "error",
-                    "-show_entries",
-                    "stream=codec_name,pix_fmt",
-                    "-of",
-                    "json",
-                ])
-                .arg(&temp)
-                .output();
-            matches!(probe, Ok(out) if out.status.success() && String::from_utf8_lossy(&out.stdout).contains("\"codec_name\": \"h264\""))
-        }
-        _ => false,
+/// Per-backend probe result (never persisted to disk). `reason` is either the
+/// success note or the stderr summary of the failure, so callers can surface an
+/// exact unavailable reason instead of swallowing the error.
+#[derive(Clone, Debug)]
+struct EncoderProbeResult {
+    backend: EncoderBackend,
+    available: bool,
+    reason: String,
+}
+
+/// Concise, bounded tail of FFmpeg stderr: the last few non-empty lines joined,
+/// truncated so the capability payload never balloons from a verbose failure.
+fn stderr_summary(stderr: &str, max_chars: usize) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let tail = if lines.len() > 3 {
+        &lines[lines.len() - 3..]
+    } else {
+        &lines[..]
     };
-    let _ = fs::remove_file(&temp);
-    ok
+    let summary = tail.join(" | ");
+    let summary: String = summary.chars().take(max_chars).collect();
+    if summary.is_empty() {
+        "无错误输出".to_string()
+    } else {
+        summary
+    }
 }
 
-/// Cached session probe. `OnceLock` guarantees concurrent callers share one
-/// probe and it runs at most once per process lifetime.
-fn hardware_encoder_available(ffmpeg: &Path, ffprobe: &Path) -> bool {
-    static CACHE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    cached_probe(&CACHE, || {
-        probe_hardware_encoder(ffmpeg, ffprobe, current_platform())
+/// Bounded hardware-probe subprocess timeouts. OBS probes each encoder with its
+/// own finite deadline so a wedged driver init can never hang the whole
+/// capability check or first video task; we mirror that with std-only polling.
+const ENCODER_LIST_TIMEOUT: Duration = Duration::from_secs(10);
+const ENCODER_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+const ENCODER_VALIDATE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Captured output of a bounded subprocess. `status` is always `Some`; timeouts
+/// and spawn failures surface as `Err` from `run_command_bounded`.
+#[derive(Debug)]
+struct BoundedOutput {
+    status: Option<ExitStatus>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// Run a child process with a bounded wall-clock deadline using only `std`.
+/// Both pipes are drained on dedicated threads (so a full pipe can never
+/// deadlock the child) while the parent polls `try_wait`. On timeout the child
+/// is killed and reaped so no orphan remains, and a concrete reason is returned.
+fn run_command_bounded(mut command: Command, timeout: Duration) -> Result<BoundedOutput, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("无法启动进程：{error}"))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let stdout_handle = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(mut pipe) = stdout {
+            let _ = pipe.read_to_end(&mut buffer);
+        }
+        buffer
+    });
+    let stderr_handle = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(mut pipe) = stderr {
+            let _ = pipe.read_to_end(&mut buffer);
+        }
+        buffer
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_handle.join();
+                    let _ = stderr_handle.join();
+                    return Err(format!("探测超时（超过 {} 秒）", timeout.as_secs()));
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
+                return Err(format!("等待进程退出失败：{error}"));
+            }
+        }
+    };
+    let stdout = stdout_handle.join().unwrap_or_default();
+    let stderr = stderr_handle.join().unwrap_or_default();
+    Ok(BoundedOutput {
+        status: Some(status),
+        stdout,
+        stderr,
     })
+}
+
+/// Compile-capability layer (Jellyfin `EncoderValidator` style): an encoder is
+/// a candidate only when the bundled FFmpeg actually lists it in `-encoders`.
+/// This runs once per process and gates the expensive runtime probe.
+fn encoder_is_compiled_in(ffmpeg: &Path, encoder: &str) -> bool {
+    static COMPILED_ENCODERS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let encoders = COMPILED_ENCODERS.get_or_init(|| {
+        let mut command = Command::new(ffmpeg);
+        command.args(["-hide_banner", "-encoders"]);
+        run_command_bounded(command, ENCODER_LIST_TIMEOUT)
+            .ok()
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| line.split_whitespace().nth(1).map(str::to_owned))
+            .collect()
+    });
+    encoders.iter().any(|name| name == encoder)
+}
+
+/// Runtime-capability probe: a real 1280x720 @ 30fps, 120-frame encode using
+/// the same encoder, quality arguments and pixel format as production export.
+/// Every subprocess runs under a bounded deadline so a wedged driver init can
+/// never hang the caller; the temp artifact is always cleaned up; and a zero
+/// exit status is only trusted after the output is re-validated by FFprobe.
+fn probe_encoder(ffmpeg: &Path, ffprobe: &Path, backend: EncoderBackend) -> EncoderProbeResult {
+    let encoder = video_encoder_name(backend);
+    if !encoder_is_compiled_in(ffmpeg, encoder) {
+        return EncoderProbeResult {
+            backend,
+            available: false,
+            reason: format!("内置 FFmpeg 未编译 {encoder} 编码器"),
+        };
+    }
+
+    let temp = std::env::temp_dir().join(format!(
+        ".bmw-hw-probe-{}-{}.mp4",
+        std::process::id(),
+        encoder
+    ));
+    let mut args = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-f"),
+        OsString::from("lavfi"),
+        OsString::from("-i"),
+        OsString::from("testsrc2=size=1280x720:rate=30"),
+        OsString::from("-frames:v"),
+        OsString::from("120"),
+    ];
+    // Reuse the production quality arguments and pixel format so the probe
+    // exercises the same encoder path as a real export. Hardware backends feed
+    // NV12 explicitly (matching the validated Windows smoke harness) so the
+    // synthetic yuv420p lavfi source is converted before the encoder.
+    let pixel_format = encoder_pixel_format(backend);
+    if pixel_format == "nv12" {
+        args.extend([OsString::from("-vf"), OsString::from("format=nv12")]);
+    }
+    args.extend(video_encoder_args(backend, Some("balanced")));
+    args.extend([
+        OsString::from("-pix_fmt"),
+        OsString::from(pixel_format),
+        OsString::from("-f"),
+        OsString::from("mp4"),
+    ]);
+    args.push(temp.as_os_str().to_owned());
+
+    let mut command = Command::new(ffmpeg);
+    command
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let encode = run_command_bounded(command, ENCODER_PROBE_TIMEOUT);
+
+    let encode_output = match encode {
+        Ok(output) => output,
+        Err(reason) => {
+            let _ = fs::remove_file(&temp);
+            return EncoderProbeResult {
+                backend,
+                available: false,
+                reason: format!("{encoder} 编码探测失败：{reason}"),
+            };
+        }
+    };
+
+    if !encode_output.status.as_ref().is_some_and(|s| s.success()) {
+        let stderr = String::from_utf8_lossy(&encode_output.stderr).into_owned();
+        let _ = fs::remove_file(&temp);
+        return EncoderProbeResult {
+            backend,
+            available: false,
+            reason: stderr_summary(&stderr, 320),
+        };
+    }
+
+    // Encode succeeded; a zero exit status is not enough — re-validate the
+    // artifact decodes as the exact probe contract (h264 1280x720 yuv420p with
+    // a readable frame count).
+    let validation = validate_encoder_probe_output(ffprobe, &temp);
+    let _ = fs::remove_file(&temp);
+    match validation {
+        Ok(()) => EncoderProbeResult {
+            backend,
+            available: true,
+            reason: "已通过 720p/30fps/120 帧实机编码探测".to_string(),
+        },
+        Err(reason) => EncoderProbeResult {
+            backend,
+            available: false,
+            reason,
+        },
+    }
+}
+
+/// FFprobe-validate a probe artifact under a bounded deadline: it must decode
+/// as H.264, 1280x720, yuv420p with a readable frame count. A zero FFmpeg exit
+/// status alone is never trusted as "available".
+fn validate_encoder_probe_output(ffprobe: &Path, path: &Path) -> Result<(), String> {
+    let mut command = Command::new(ffprobe);
+    command
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,codec_name,pix_fmt,width,height,nb_frames",
+            "-of",
+            "json",
+        ])
+        .arg(path);
+    let output = run_command_bounded(command, ENCODER_VALIDATE_TIMEOUT)
+        .map_err(|reason| format!("验证探测产物失败：{reason}"))?;
+    if !output.status.as_ref().is_some_and(|s| s.success()) {
+        return Err("验证探测产物失败：FFprobe 无法解析输出".into());
+    }
+    validate_probe_json(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// Pure validation of the FFprobe JSON contract, factored out so tests can
+/// exercise exact codec/size/pixel-format/frame-count mismatches without a
+/// subprocess. `nb_frames` is the mp4 container frame count and must be
+/// readable and non-zero, not merely present in a codec-name string.
+fn validate_probe_json(json: &str) -> Result<(), String> {
+    let value: serde_json::Value = serde_json::from_str(json)
+        .map_err(|_| "验证探测产物失败：FFprobe 返回数据无法解析".to_string())?;
+    let streams = value["streams"].as_array().cloned().unwrap_or_default();
+    let video = streams
+        .iter()
+        .find(|stream| stream["codec_type"] == "video")
+        .ok_or_else(|| "验证探测产物失败：没有视频流".to_string())?;
+
+    let codec = video["codec_name"].as_str().unwrap_or("");
+    if codec != "h264" {
+        return Err(format!("探测输出不是 H.264：{codec}"));
+    }
+    let width = video["width"].as_u64().unwrap_or(0) as u32;
+    let height = video["height"].as_u64().unwrap_or(0) as u32;
+    if width != 1280 || height != 720 {
+        return Err(format!("探测输出尺寸 {width}x{height} 不是 1280x720"));
+    }
+    let pix_fmt = video["pix_fmt"].as_str().unwrap_or("");
+    if pix_fmt != "yuv420p" {
+        return Err(format!("探测输出像素格式 {pix_fmt} 不是 yuv420p"));
+    }
+    let nb_frames = video["nb_frames"]
+        .as_str()
+        .and_then(|v| v.parse::<u64>().ok())
+        .or_else(|| video["nb_frames"].as_u64());
+    if nb_frames.unwrap_or(0) == 0 {
+        return Err("探测输出无法读取有效帧数".into());
+    }
+    Ok(())
 }
 
 /// Minimal injectable OnceLock wrapper so tests can assert a probe executor
 /// runs exactly once across concurrent callers without touching disk state.
-fn cached_probe<F: FnOnce() -> bool>(cache: &std::sync::OnceLock<bool>, probe: F) -> bool {
-    *cache.get_or_init(probe)
-}
-
-/// Conservative whitelist of hardware encoder failures that justify a single
-/// automatic CPU fallback. Unknown errors never fall back.
-fn is_hardware_fallback_error(stderr: &str) -> bool {
-    let patterns = ["nvenc", "videotoolbox", "device", "encoder not found"];
-    let lower = stderr.to_ascii_lowercase();
-    patterns
-        .iter()
-        .any(|p| lower.contains(&p.to_ascii_lowercase()))
-}
-
-/// Attempt orchestration: try the selected backend, and on a hardware
-/// initialization/device failure only, retry once with the CPU encoder. All
-/// other failures and cancellation are terminal without fallback.
-fn orchestrate_watermark_encode<F>(backend: EncoderBackend, run_attempt: F) -> MediaTerminal
+fn cached_probe<T, F>(cache: &std::sync::OnceLock<T>, probe: F) -> T
 where
-    F: FnMut(EncoderBackend) -> (MediaTerminal, String),
+    T: Clone,
+    F: FnOnce() -> T,
 {
-    orchestrate_watermark_encode_with_fallback(backend, run_attempt, &mut || {})
+    cache.get_or_init(probe).clone()
 }
 
-fn orchestrate_watermark_encode_with_fallback<F>(
+/// Per-backend probe cache. Each backend gets its own `OnceLock`, so a passing
+/// NVENC probe never masks an independent AMF/QSV result and a failed probe is
+/// remembered per backend (never a single global bool).
+#[derive(Default)]
+struct EncoderProbeCache {
+    nvenc: std::sync::OnceLock<EncoderProbeResult>,
+    amf: std::sync::OnceLock<EncoderProbeResult>,
+    qsv: std::sync::OnceLock<EncoderProbeResult>,
+    videotoolbox: std::sync::OnceLock<EncoderProbeResult>,
+    cpu: std::sync::OnceLock<EncoderProbeResult>,
+}
+
+impl EncoderProbeCache {
+    fn cell(&self, backend: EncoderBackend) -> &std::sync::OnceLock<EncoderProbeResult> {
+        match backend {
+            EncoderBackend::Nvenc => &self.nvenc,
+            EncoderBackend::Amf => &self.amf,
+            EncoderBackend::Qsv => &self.qsv,
+            EncoderBackend::VideoToolbox => &self.videotoolbox,
+            EncoderBackend::Cpu => &self.cpu,
+        }
+    }
+}
+
+fn cached_encoder_probe(
+    ffmpeg: &Path,
+    ffprobe: &Path,
     backend: EncoderBackend,
+) -> EncoderProbeResult {
+    static CACHE: std::sync::OnceLock<EncoderProbeCache> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(EncoderProbeCache::default);
+    cached_probe(cache.cell(backend), || {
+        probe_encoder(ffmpeg, ffprobe, backend)
+    })
+}
+
+/// The selected backend plus the per-candidate probe results (used to surface
+/// concrete backend names and unavailable reasons in the capability API).
+#[derive(Clone, Debug)]
+struct EncoderSelection {
+    selected: EncoderBackend,
+    results: Vec<EncoderProbeResult>,
+}
+
+/// Probe every hardware candidate (never stopping at the first pass), record
+/// each pass/fail result, and select the first passing hardware backend (or
+/// `Cpu` when none passes). Probing all candidates lets the runtime fallback
+/// chain reuse the exact pass/fail set instead of blindly retrying backends
+/// that were never verified. Results are reused from the per-backend cache, so
+/// this is idempotent and cheap after the first call.
+fn select_encoder(ffmpeg: &Path, ffprobe: &Path, platform: &str) -> EncoderSelection {
+    let mut results = Vec::new();
+    let mut selected = EncoderBackend::Cpu;
+    for &candidate in ordered_candidates(platform) {
+        if candidate.is_cpu() {
+            break;
+        }
+        let result = cached_encoder_probe(ffmpeg, ffprobe, candidate);
+        if result.available && selected.is_cpu() {
+            selected = candidate;
+        }
+        results.push(result);
+    }
+    EncoderSelection { selected, results }
+}
+
+/// Errors that are never hardware device/driver/init failures. These guard the
+/// fallback whitelist so a filter/path/disk/parameter failure can never trigger
+/// a silent CPU retry even when the same stderr also mentions a device keyword.
+///
+/// `invalid argument` is deliberately NOT listed here: it is the generic EINVAL
+/// string that NVENC (`OpenEncodeSessionEx failed: invalid argument`), AMF
+/// (`AMF_ERROR_INVALID_ARG`) and QSV/MFX all surface for genuine device/session
+/// init failures, so it must not blanket-block a real hardware fallback. A bare
+/// "invalid argument" with no backend/device marker still does not fall back
+/// because the backend whitelist below requires an explicit device/driver/init
+/// context; specific parameter errors are caught by the other patterns here.
+const NON_HARDWARE_FAILURE_PATTERNS: &[&str] = &[
+    "no such filter",
+    "error initializing filter",
+    "filtergraph",
+    "drawtext",
+    "font",
+    "no such file or directory",
+    "permission denied",
+    "error opening output",
+    "error opening input",
+    "is a directory",
+    "no space left",
+    "read-only",
+    "read only",
+    "does not exist",
+    "option not found",
+    "unrecognized option",
+    "error parsing",
+    "failed to set value",
+    "unable to parse",
+    "invalid option",
+    "unknown option",
+    "codec mismatch",
+    "error validating",
+    "finalize",
+];
+
+/// Backend-aware conservative whitelist of hardware device/driver/init errors
+/// that justify falling back to the next candidate. Non-hardware failures are
+/// terminal; a CPU backend never falls back.
+fn is_hardware_fallback_error(stderr: &str, backend: EncoderBackend) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    if NON_HARDWARE_FAILURE_PATTERNS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
+        return false;
+    }
+    let patterns: &[&str] = match backend {
+        EncoderBackend::Nvenc => &[
+            "nvenc",
+            "cuda",
+            "libcuda",
+            "d3d11",
+            "d3d12",
+            "device",
+            "driver",
+            "openencodesession",
+            "nvencodeapi",
+            "cuinit",
+            "failed to initialize",
+            "encoder session",
+            "could not create",
+        ],
+        EncoderBackend::Amf => &[
+            "amf",
+            "d3d11",
+            "d3d12",
+            "dxgi",
+            "device",
+            "driver",
+            "amf_error",
+            "amfcontext",
+            "failed to initialize",
+            "failed to create",
+        ],
+        EncoderBackend::Qsv => &[
+            "qsv",
+            "mfx",
+            "vpl",
+            "d3d11",
+            "dxva2",
+            "device",
+            "driver",
+            "mfxinit",
+            "mfxsession",
+            "failed to initialize",
+            "session",
+        ],
+        EncoderBackend::VideoToolbox => &["videotoolbox", "device", "failed to initialize"],
+        EncoderBackend::Cpu => &[],
+    };
+    patterns.iter().any(|pattern| lower.contains(pattern))
+}
+
+/// Build the runtime fallback chain from a completed selection: every hardware
+/// backend that actually passed the startup probe (preserving platform order)
+/// followed by the CPU encoder. A backend that failed — or was never probed —
+/// is never retried at runtime, so a first-preference hardware failure falls
+/// back to the other *verified* hardware backends and finally CPU.
+fn fallback_chain_from_selection(selection: &EncoderSelection) -> Vec<EncoderBackend> {
+    let mut chain: Vec<EncoderBackend> = selection
+        .results
+        .iter()
+        .filter(|result| result.available && result.backend.is_hardware())
+        .map(|result| result.backend)
+        .collect();
+    chain.push(EncoderBackend::Cpu);
+    chain
+}
+
+/// Resolve the request's runtime chain. When the caller forced CPU (while a
+/// hardware backend was selected), the chain is CPU-only; otherwise it is the
+/// passed-hardware-plus-CPU chain from the selection.
+fn runtime_fallback_chain(
+    selection: &EncoderSelection,
+    backend: EncoderBackend,
+) -> Vec<EncoderBackend> {
+    if backend.is_cpu() && selection.selected.is_hardware() {
+        vec![EncoderBackend::Cpu]
+    } else {
+        fallback_chain_from_selection(selection)
+    }
+}
+
+/// Attempt orchestration over an explicit candidate chain: try each backend in
+/// order, and only on a hardware device/driver/init error fall through to the
+/// next candidate (eventually the CPU encoder). Cancellation, success and every
+/// non-hardware failure are terminal without fallback.
+fn orchestrate_watermark_encode_chain<F>(
+    candidates: &[EncoderBackend],
     mut run_attempt: F,
     on_fallback: &mut dyn FnMut(),
 ) -> MediaTerminal
 where
     F: FnMut(EncoderBackend) -> (MediaTerminal, String),
 {
-    let mut current = backend;
-    let mut attempt = 0;
-    loop {
-        let (terminal, stderr) = run_attempt(current);
-        attempt += 1;
+    let last_index = candidates.len() - 1;
+    for (index, &backend) in candidates.iter().enumerate() {
+        let (terminal, stderr) = run_attempt(backend);
         match terminal {
             MediaTerminal::Completed { .. } | MediaTerminal::Cancelled => return terminal,
             MediaTerminal::Failed { message } => {
-                if current == EncoderBackend::Hardware
-                    && attempt == 1
-                    && is_hardware_fallback_error(&stderr)
+                if backend.is_hardware()
+                    && index < last_index
+                    && is_hardware_fallback_error(&stderr, backend)
                 {
-                    current = EncoderBackend::Cpu;
                     on_fallback();
                     continue;
                 }
@@ -1284,17 +1765,24 @@ where
             }
         }
     }
+    // Unreachable: `Cpu` is always the final candidate and never falls back.
+    MediaTerminal::Failed {
+        message: "所有可用编码后端均失败".into(),
+    }
 }
 
-fn video_encoder_args(
-    platform: &str,
-    backend: EncoderBackend,
-    quality: Option<&str>,
-) -> Vec<OsString> {
-    let encoder = video_encoder_name(platform, backend);
+/// Build the `-c:v <encoder>` plus backend-specific quality arguments for the
+/// selected backend. Quality presets map to public, version-compatible FFmpeg
+/// parameters verified against the bundled FFmpeg 9.x build:
+/// - NVENC: HandBrake-style CQ (`-rc vbr -cq <v> -b:v 0`).
+/// - AMF:   constant QP (`-rc cqp -qp_i/-qp_p/-qp_b <v>`).
+/// - QSV:   intelligent constant quality (`-global_quality <v>`).
+/// - VideoToolbox: bitrate-based (FFmpeg 4.4 sidecar has no CQ mode).
+fn video_encoder_args(backend: EncoderBackend, quality: Option<&str>) -> Vec<OsString> {
+    let encoder = video_encoder_name(backend);
     let mut args = vec![OsString::from("-c:v"), OsString::from(encoder)];
-    match (backend, encoder) {
-        (EncoderBackend::Cpu, "libx264") => {
+    match backend {
+        EncoderBackend::Cpu => {
             let (crf, preset) = match quality.unwrap_or("high") {
                 "compact" => ("28", "faster"),
                 "balanced" => ("23", "medium"),
@@ -1307,15 +1795,68 @@ fn video_encoder_args(
                 OsString::from(preset),
             ]);
         }
-        (EncoderBackend::Hardware, "h264_nvenc") => {
-            let cq = match quality.unwrap_or("high") {
+        EncoderBackend::Nvenc => {
+            let (cq, preset) = match quality.unwrap_or("high") {
+                "compact" => ("28", "p2"),
+                "balanced" => ("23", "p4"),
+                _ => ("18", "p6"),
+            };
+            args.extend([
+                OsString::from("-rc"),
+                OsString::from("vbr"),
+                OsString::from("-cq"),
+                OsString::from(cq),
+                OsString::from("-b:v"),
+                OsString::from("0"),
+                OsString::from("-preset"),
+                OsString::from(preset),
+            ]);
+        }
+        EncoderBackend::Amf => {
+            let qp = match quality.unwrap_or("high") {
                 "compact" => "28",
                 "balanced" => "23",
                 _ => "18",
             };
-            args.extend([OsString::from("-cq"), OsString::from(cq)]);
+            let amf_quality = match quality.unwrap_or("high") {
+                "compact" => "speed",
+                "balanced" => "balanced",
+                _ => "quality",
+            };
+            args.extend([
+                OsString::from("-usage"),
+                OsString::from("transcoding"),
+                OsString::from("-rc"),
+                OsString::from("cqp"),
+                OsString::from("-qp_i"),
+                OsString::from(qp),
+                OsString::from("-qp_p"),
+                OsString::from(qp),
+                OsString::from("-qp_b"),
+                OsString::from(qp),
+                OsString::from("-quality"),
+                OsString::from(amf_quality),
+            ]);
         }
-        (EncoderBackend::Hardware, "h264_videotoolbox") => {
+        EncoderBackend::Qsv => {
+            let global_quality = match quality.unwrap_or("high") {
+                "compact" => "28",
+                "balanced" => "23",
+                _ => "18",
+            };
+            let preset = match quality.unwrap_or("high") {
+                "compact" => "veryfast",
+                "balanced" => "medium",
+                _ => "veryslow",
+            };
+            args.extend([
+                OsString::from("-global_quality"),
+                OsString::from(global_quality),
+                OsString::from("-preset"),
+                OsString::from(preset),
+            ]);
+        }
+        EncoderBackend::VideoToolbox => {
             let bitrate = match quality.unwrap_or("high") {
                 "compact" => "2000k",
                 "balanced" => "4000k",
@@ -1323,7 +1864,6 @@ fn video_encoder_args(
             };
             args.extend([OsString::from("-b:v"), OsString::from(bitrate)]);
         }
-        _ => {}
     }
     args
 }
@@ -1601,17 +2141,16 @@ fn watermark_ffmpeg_args_with_font(
     if is_static_image(Path::new(&request.input_path)) {
         args.extend([OsString::from("-frames:v"), OsString::from("1")]);
     } else {
-        // Video watermark CPU closure: fixed libx264 + AAC, yuv420p, faststart,
-        // and optional audio mapping so silent sources never fail.
+        // Video watermark closure: backend encoder + AAC, backend pixel format,
+        // faststart, and optional audio mapping so silent sources never fail.
         args.extend([OsString::from("-map"), OsString::from("0:a?")]);
         args.extend(video_encoder_args(
-            current_platform(),
             backend,
             request.options.quality.as_deref(),
         ));
         args.extend([
             OsString::from("-pix_fmt"),
-            OsString::from("yuv420p"),
+            OsString::from(encoder_pixel_format(backend)),
             OsString::from("-movflags"),
             OsString::from("+faststart"),
             OsString::from("-c:a"),
@@ -2334,10 +2873,12 @@ struct MediaFinalize {
 }
 
 /// Legacy immediate-spawn context for GIF watermark (kept distinct from the
-/// FIFO queue so GIF/static behavior does not regress).
+/// FIFO queue so GIF/static behavior does not regress). Carries the resolved
+/// fallback chain (verified hardware backends + CPU) so the runtime never
+/// retries a backend that already failed the startup probe.
 struct WatermarkEncodeContext {
     request: WatermarkMediaTaskRequest,
-    backend: EncoderBackend,
+    fallback: Vec<EncoderBackend>,
 }
 
 /// AppHandle-free finalize used by both the production spawn path and tests.
@@ -2423,45 +2964,49 @@ fn spawn_media_task(
             .to_string();
         let finalize_for_task = finalize;
         let request_for_task = encode.request;
-        let backend = encode.backend;
+        let fallback_for_task = encode.fallback;
         let progress_window_for_task = progress_window;
         thread::spawn(move || {
             let mut collected_cleanup: Vec<PathBuf> = Vec::new();
-            let terminal = orchestrate_watermark_encode(backend, |attempt_backend| {
-                if token.load(std::sync::atomic::Ordering::SeqCst) {
-                    return (MediaTerminal::Cancelled, String::new());
-                }
-                let temp = video_watermark_temp_path(&finalize_for_task.final_output);
-                match watermark_ffmpeg_args(
-                    &app_for_task,
-                    &request_for_task,
-                    &temp,
-                    attempt_backend,
-                ) {
-                    Ok((args, cleanup)) => {
-                        collected_cleanup.extend(cleanup);
-                        run_watermark_process_with_progress(
-                            &ffmpeg,
-                            &ffprobe,
-                            &args,
-                            &temp,
-                            Some(&finalize_for_task),
-                            &token,
-                            progress_window_for_task,
-                            &mut |progress| {
-                                emit(
-                                    &app_for_task,
-                                    MediaTaskEvent::Progress {
-                                        task_id: task_id_for_thread.clone(),
-                                        progress,
-                                    },
-                                );
-                            },
-                        )
+            let terminal = orchestrate_watermark_encode_chain(
+                &fallback_for_task,
+                |attempt_backend| {
+                    if token.load(std::sync::atomic::Ordering::SeqCst) {
+                        return (MediaTerminal::Cancelled, String::new());
                     }
-                    Err(message) => (MediaTerminal::Failed { message }, String::new()),
-                }
-            });
+                    let temp = video_watermark_temp_path(&finalize_for_task.final_output);
+                    match watermark_ffmpeg_args(
+                        &app_for_task,
+                        &request_for_task,
+                        &temp,
+                        attempt_backend,
+                    ) {
+                        Ok((args, cleanup)) => {
+                            collected_cleanup.extend(cleanup);
+                            run_watermark_process_with_progress(
+                                &ffmpeg,
+                                &ffprobe,
+                                &args,
+                                &temp,
+                                Some(&finalize_for_task),
+                                &token,
+                                progress_window_for_task,
+                                &mut |progress| {
+                                    emit(
+                                        &app_for_task,
+                                        MediaTaskEvent::Progress {
+                                            task_id: task_id_for_thread.clone(),
+                                            progress,
+                                        },
+                                    );
+                                },
+                            )
+                        }
+                        Err(message) => (MediaTerminal::Failed { message }, String::new()),
+                    }
+                },
+                &mut || {},
+            );
             for path in collected_cleanup {
                 let _ = fs::remove_file(path);
             }
@@ -2641,26 +3186,37 @@ pub fn watermark_encoder_capability(app: AppHandle) -> Result<WatermarkEncoderCa
     let ffmpeg = sidecar_path(&app, "ffmpeg")?;
     let ffprobe = sidecar_path(&app, "ffprobe")?;
     let platform = current_platform();
-    let available = hardware_encoder_available(&ffmpeg, &ffprobe);
-    let encoder = video_encoder_name(platform, EncoderBackend::Hardware);
-    let backend_name = if available {
-        match encoder {
-            "h264_nvenc" => "NVENC",
-            "h264_videotoolbox" => "VideoToolbox",
-            _ => "CPU",
-        }
+    let selection = select_encoder(&ffmpeg, &ffprobe, platform);
+    let backend_name = selection.selected.display_name().to_string();
+    let hardware_available = selection.selected.is_hardware();
+    let reason = if hardware_available {
+        format!("{backend_name} 已通过 720p/30fps/120 帧实机编码探测")
+    } else if selection.results.is_empty() {
+        "当前平台未提供硬件编码候选，使用 CPU 兼容模式".to_string()
     } else {
-        "CPU"
+        selection
+            .results
+            .iter()
+            .map(|result| format!("{}：{}", result.backend.display_name(), result.reason))
+            .collect::<Vec<_>>()
+            .join("；")
     };
-    let reason = if available {
-        "随包 FFmpeg 已通过硬件编码探测".to_string()
-    } else {
-        "当前随包 FFmpeg 未通过硬件编码探测".to_string()
-    };
+    let candidates = selection
+        .results
+        .iter()
+        .map(|result| EncoderCapabilityEntry {
+            backend: result.backend.wire_name().to_string(),
+            backend_name: result.backend.display_name().to_string(),
+            encoder: video_encoder_name(result.backend).to_string(),
+            available: result.available,
+            reason: result.reason.clone(),
+        })
+        .collect();
     Ok(WatermarkEncoderCapability {
-        hardware_available: available,
-        backend_name: backend_name.to_string(),
+        hardware_available,
+        backend_name,
         reason,
+        candidates,
     })
 }
 
@@ -3112,10 +3668,10 @@ pub fn start_watermark_media_task(
     if is_video {
         let ffmpeg = sidecar_path(&app, "ffmpeg")?;
         let ffprobe = sidecar_path(&app, "ffprobe")?;
-        let backend = encoder_backend_for_request(
-            request.options.prefer_hardware,
-            hardware_encoder_available(&ffmpeg, &ffprobe),
-        );
+        let selection = select_encoder(&ffmpeg, &ffprobe, current_platform());
+        let backend =
+            encoder_backend_for_request(request.options.prefer_hardware, selection.selected);
+        let fallback = runtime_fallback_chain(&selection, backend);
         let font_path = if request.options.kind == "text" {
             Some(watermark_font_path(&app)?)
         } else {
@@ -3127,7 +3683,7 @@ pub fn start_watermark_media_task(
         let input_path = PathBuf::from(&request.input_path);
         let payload = WatermarkEncodePayload {
             request,
-            backend,
+            fallback,
             font_path,
             ffmpeg,
             ffprobe,
@@ -3157,16 +3713,16 @@ pub fn start_watermark_media_task(
     // validate/finalize branch. Static images (PNG/JPG/WebP) use the plain
     // child path with a single frame.
     let legacy_is_video = !is_static_image(Path::new(&request.input_path));
-    let backend = if legacy_is_video {
+    let (backend, fallback) = if legacy_is_video {
         let ffmpeg = sidecar_path(&app, "ffmpeg")?;
         let ffprobe = sidecar_path(&app, "ffprobe")?;
-        if hardware_encoder_available(&ffmpeg, &ffprobe) {
-            EncoderBackend::Hardware
-        } else {
-            EncoderBackend::Cpu
-        }
+        let selection = select_encoder(&ffmpeg, &ffprobe, current_platform());
+        (
+            selection.selected,
+            fallback_chain_from_selection(&selection),
+        )
     } else {
-        EncoderBackend::Cpu
+        (EncoderBackend::Cpu, vec![EncoderBackend::Cpu])
     };
     if legacy_is_video {
         let progress = duration_seconds(&app, Path::new(&request.input_path))
@@ -3185,7 +3741,7 @@ pub fn start_watermark_media_task(
                 input: PathBuf::from(&request.input_path),
                 validate: true,
             }),
-            Some(WatermarkEncodeContext { request, backend }),
+            Some(WatermarkEncodeContext { request, fallback }),
         )
     } else {
         let (args, cleanup_paths) = watermark_ffmpeg_args(&app, &request, &final_output, backend)?;
@@ -3295,13 +3851,14 @@ pub struct FrozenWatermarkJob<T> {
 
 /// Frozen production payload for one queued watermark video job. It carries
 /// everything the worker needs to run FFmpeg without holding an `AppHandle`:
-/// the full request (frozen), the selected backend, the resolved sidecar and
-/// font paths, the input duration progress window, and the input path used for
-/// output validation.
+/// the full request (frozen), the resolved fallback chain (the selected backend
+/// first, then the other verified hardware backends, then CPU), the resolved
+/// sidecar and font paths, the input duration progress window, and the input
+/// path used for output validation.
 #[derive(Clone, Debug)]
 pub struct WatermarkEncodePayload {
     pub request: WatermarkMediaTaskRequest,
-    pub backend: EncoderBackend,
+    pub fallback: Vec<EncoderBackend>,
     pub font_path: Option<PathBuf>,
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
@@ -4409,8 +4966,8 @@ fn run_watermark_production_job(
     let mut collected_cleanup: Vec<PathBuf> = Vec::new();
     let mut last_progress: f64 = 0.0;
 
-    let terminal = orchestrate_watermark_encode_with_fallback(
-        payload.backend,
+    let terminal = orchestrate_watermark_encode_chain(
+        &payload.fallback,
         |backend| {
             if job.cancel.load(std::sync::atomic::Ordering::SeqCst) {
                 return (MediaTerminal::Cancelled, String::new());
@@ -5814,37 +6371,150 @@ mod tests {
     }
 
     #[test]
-    fn encoder_selection_maps_public_backends_without_qsv_or_amf() {
+    fn encoder_selection_maps_concrete_backends_to_public_ffmpeg_encoders() {
         assert_eq!(
-            super::video_encoder_name("windows", super::EncoderBackend::Hardware),
+            super::video_encoder_name(super::EncoderBackend::Nvenc),
             "h264_nvenc"
         );
         assert_eq!(
-            super::video_encoder_name("macos", super::EncoderBackend::Hardware),
+            super::video_encoder_name(super::EncoderBackend::Amf),
+            "h264_amf"
+        );
+        assert_eq!(
+            super::video_encoder_name(super::EncoderBackend::Qsv),
+            "h264_qsv"
+        );
+        assert_eq!(
+            super::video_encoder_name(super::EncoderBackend::VideoToolbox),
             "h264_videotoolbox"
         );
         assert_eq!(
-            super::video_encoder_name("linux", super::EncoderBackend::Hardware),
+            super::video_encoder_name(super::EncoderBackend::Cpu),
             "libx264"
+        );
+    }
+
+    #[test]
+    fn ordered_candidates_probe_nvenc_amf_qsv_then_cpu_on_windows() {
+        assert_eq!(
+            super::ordered_candidates("windows"),
+            &[
+                super::EncoderBackend::Nvenc,
+                super::EncoderBackend::Amf,
+                super::EncoderBackend::Qsv,
+                super::EncoderBackend::Cpu,
+            ]
         );
         assert_eq!(
-            super::video_encoder_name("windows", super::EncoderBackend::Cpu),
-            "libx264"
+            super::ordered_candidates("macos"),
+            &[
+                super::EncoderBackend::VideoToolbox,
+                super::EncoderBackend::Cpu
+            ]
         );
-        for (platform, backend) in [
-            ("windows", super::EncoderBackend::Hardware),
-            ("macos", super::EncoderBackend::Hardware),
-            ("linux", super::EncoderBackend::Hardware),
-        ] {
-            let args = super::video_encoder_args(platform, backend, Some("high"));
-            let joined = args
-                .iter()
-                .map(|a| a.to_string_lossy())
-                .collect::<Vec<_>>()
-                .join(" ");
-            assert!(!joined.contains("qsv"), "no QSV: {joined}");
-            assert!(!joined.contains("amf"), "no AMF: {joined}");
-        }
+        assert_eq!(
+            super::ordered_candidates("linux"),
+            &[super::EncoderBackend::Cpu]
+        );
+    }
+
+    #[test]
+    fn fallback_chain_from_selection_only_includes_verified_hardware_then_cpu() {
+        use super::EncoderBackend::*;
+        let selection = super::EncoderSelection {
+            selected: Nvenc,
+            results: vec![
+                super::EncoderProbeResult {
+                    backend: Nvenc,
+                    available: true,
+                    reason: "ok".into(),
+                },
+                super::EncoderProbeResult {
+                    backend: Amf,
+                    available: false,
+                    reason: "no".into(),
+                },
+                super::EncoderProbeResult {
+                    backend: Qsv,
+                    available: true,
+                    reason: "ok".into(),
+                },
+            ],
+        };
+        // AMF failed the startup probe and is never retried at runtime.
+        assert_eq!(
+            super::fallback_chain_from_selection(&selection),
+            vec![Nvenc, Qsv, Cpu]
+        );
+    }
+
+    #[test]
+    fn fallback_chain_from_selection_is_cpu_only_when_no_hardware_passes() {
+        use super::EncoderBackend::*;
+        let selection = super::EncoderSelection {
+            selected: Cpu,
+            results: vec![
+                super::EncoderProbeResult {
+                    backend: Nvenc,
+                    available: false,
+                    reason: "no".into(),
+                },
+                super::EncoderProbeResult {
+                    backend: Amf,
+                    available: false,
+                    reason: "no".into(),
+                },
+                super::EncoderProbeResult {
+                    backend: Qsv,
+                    available: false,
+                    reason: "no".into(),
+                },
+            ],
+        };
+        assert_eq!(super::fallback_chain_from_selection(&selection), vec![Cpu]);
+    }
+
+    #[test]
+    fn runtime_fallback_chain_forces_cpu_only_when_hardware_was_selected() {
+        use super::EncoderBackend::*;
+        let selection = super::EncoderSelection {
+            selected: Nvenc,
+            results: vec![super::EncoderProbeResult {
+                backend: Nvenc,
+                available: true,
+                reason: "ok".into(),
+            }],
+        };
+        // Forced CPU (prefer_hardware = false) must not retry any hardware.
+        assert_eq!(super::runtime_fallback_chain(&selection, Cpu), vec![Cpu]);
+        assert_eq!(
+            super::runtime_fallback_chain(&selection, Nvenc),
+            vec![Nvenc, Cpu]
+        );
+    }
+
+    #[test]
+    fn encoder_pixel_format_is_nv12_for_windows_hardware_and_yuv420p_elsewhere() {
+        assert_eq!(
+            super::encoder_pixel_format(super::EncoderBackend::Nvenc),
+            "nv12"
+        );
+        assert_eq!(
+            super::encoder_pixel_format(super::EncoderBackend::Amf),
+            "nv12"
+        );
+        assert_eq!(
+            super::encoder_pixel_format(super::EncoderBackend::Qsv),
+            "nv12"
+        );
+        assert_eq!(
+            super::encoder_pixel_format(super::EncoderBackend::VideoToolbox),
+            "yuv420p"
+        );
+        assert_eq!(
+            super::encoder_pixel_format(super::EncoderBackend::Cpu),
+            "yuv420p"
+        );
     }
 
     #[test]
@@ -5901,21 +6571,36 @@ mod tests {
 
     #[test]
     fn encoder_quality_args_use_backend_specific_public_parameters() {
-        let cpu_high = super::video_encoder_args("macos", super::EncoderBackend::Cpu, Some("high"));
-        let cpu_compact =
-            super::video_encoder_args("macos", super::EncoderBackend::Cpu, Some("compact"));
+        let cpu_high = super::video_encoder_args(super::EncoderBackend::Cpu, Some("high"));
+        let cpu_compact = super::video_encoder_args(super::EncoderBackend::Cpu, Some("compact"));
         assert!(cpu_high
             .iter()
             .any(|arg| arg == "-crf" && cpu_high.iter().any(|value| value == "18")));
         assert!(cpu_compact.iter().any(|value| value == "28"));
 
-        let nvenc_high =
-            super::video_encoder_args("windows", super::EncoderBackend::Hardware, Some("high"));
+        // NVENC constant quality: -rc vbr -cq <v> -b:v 0.
+        let nvenc_high = super::video_encoder_args(super::EncoderBackend::Nvenc, Some("high"));
+        assert!(nvenc_high.iter().any(|arg| arg == "-rc"));
+        assert!(nvenc_high.iter().any(|value| value == "vbr"));
         assert!(nvenc_high.iter().any(|arg| arg == "-cq"));
         assert!(nvenc_high.iter().any(|value| value == "18"));
+        assert!(nvenc_high.iter().any(|arg| arg == "-b:v"));
+        assert!(nvenc_high.iter().any(|value| value == "0"));
+
+        // AMF constant QP: -rc cqp + per-frame QP.
+        let amf_balanced = super::video_encoder_args(super::EncoderBackend::Amf, Some("balanced"));
+        assert!(amf_balanced.iter().any(|arg| arg == "-rc"));
+        assert!(amf_balanced.iter().any(|value| value == "cqp"));
+        assert!(amf_balanced.iter().any(|arg| arg == "-qp_i"));
+        assert!(amf_balanced.iter().any(|value| value == "23"));
+
+        // QSV ICQ constant quality: -global_quality <v>.
+        let qsv_compact = super::video_encoder_args(super::EncoderBackend::Qsv, Some("compact"));
+        assert!(qsv_compact.iter().any(|arg| arg == "-global_quality"));
+        assert!(qsv_compact.iter().any(|value| value == "28"));
 
         let videotoolbox_balanced =
-            super::video_encoder_args("macos", super::EncoderBackend::Hardware, Some("balanced"));
+            super::video_encoder_args(super::EncoderBackend::VideoToolbox, Some("balanced"));
         assert!(videotoolbox_balanced.iter().any(|arg| arg == "-b:v"));
         assert!(videotoolbox_balanced.iter().any(|value| value == "4000k"));
     }
@@ -5923,84 +6608,227 @@ mod tests {
     #[test]
     fn encoder_backend_request_respects_explicit_cpu_preference() {
         assert_eq!(
-            super::encoder_backend_for_request(Some(false), true),
+            super::encoder_backend_for_request(Some(false), super::EncoderBackend::Nvenc),
             super::EncoderBackend::Cpu
         );
         assert_eq!(
-            super::encoder_backend_for_request(None, true),
-            super::EncoderBackend::Hardware
+            super::encoder_backend_for_request(None, super::EncoderBackend::Nvenc),
+            super::EncoderBackend::Nvenc
         );
         assert_eq!(
-            super::encoder_backend_for_request(Some(true), false),
+            super::encoder_backend_for_request(Some(true), super::EncoderBackend::Cpu),
             super::EncoderBackend::Cpu
         );
     }
 
     #[test]
-    fn hardware_fallback_classifier_uses_conservative_whitelist() {
+    fn hardware_fallback_classifier_uses_conservative_backend_whitelist() {
+        use super::EncoderBackend::*;
         assert!(super::is_hardware_fallback_error(
-            "Cannot load nvenc library"
+            "Cannot load nvenc library",
+            Nvenc
         ));
         assert!(super::is_hardware_fallback_error(
-            "Failed to initialize videotoolbox encoder"
+            "Failed to initialize videotoolbox encoder",
+            VideoToolbox
         ));
-        assert!(super::is_hardware_fallback_error("device is not available"));
-        assert!(!super::is_hardware_fallback_error("Invalid argument"));
+        assert!(super::is_hardware_fallback_error(
+            "Failed to create MFX session",
+            Qsv
+        ));
+        assert!(super::is_hardware_fallback_error(
+            "Failed to create AMF context",
+            Amf
+        ));
+        assert!(super::is_hardware_fallback_error(
+            "device is not available",
+            Nvenc
+        ));
+        assert!(super::is_hardware_fallback_error(
+            "Cannot load nvcuda.dll",
+            Nvenc
+        ));
+    }
+
+    #[test]
+    fn hardware_fallback_classifier_rejects_filter_path_disk_and_param_errors() {
+        use super::EncoderBackend::*;
+        for (stderr, backend) in [
+            ("Invalid argument", Nvenc),
+            ("Option not found", Nvenc),
+            ("Unrecognized option 'preset'", Amf),
+            ("No such file or directory", Qsv),
+            ("Permission denied", Nvenc),
+            ("Error opening output file denied.mp4", Amf),
+            ("No space left on device", Qsv),
+            ("No such filter: 'drawtext'", Nvenc),
+            ("Error initializing filter 'scale'", VideoToolbox),
+            ("Cannot open font file", Nvenc),
+            ("Error validating output: codec mismatch", Nvenc),
+            ("Failed to finalize output", Nvenc),
+            (
+                "Failed to set value 'x' for option 'preset': Invalid argument",
+                Nvenc,
+            ),
+        ] {
+            assert!(
+                !super::is_hardware_fallback_error(stderr, backend),
+                "must not fall back for: {stderr}"
+            );
+        }
+    }
+
+    #[test]
+    fn hardware_fallback_classifier_does_not_let_generic_invalid_argument_mask_device_errors() {
+        use super::EncoderBackend::*;
+        // A generic EINVAL string must not override an explicit device/session
+        // init failure for the same backend (public NVENC/AMF/QSV semantics).
+        assert!(super::is_hardware_fallback_error(
+            "[h264_nvenc @ 0x0] OpenEncodeSessionEx failed: invalid argument (4)",
+            Nvenc
+        ));
+        assert!(super::is_hardware_fallback_error(
+            "AMF_ERROR_INVALID_ARG creating encoder context",
+            Amf
+        ));
+        assert!(super::is_hardware_fallback_error(
+            "MFX init failed: invalid argument",
+            Qsv
+        ));
+        // Without any backend/device marker a bare EINVAL stays terminal.
         assert!(!super::is_hardware_fallback_error(
-            "No such file or directory"
+            "invalid argument",
+            Nvenc
         ));
+    }
+
+    #[test]
+    fn validate_probe_json_accepts_exact_h264_1280x720_yuv420p_with_frames() {
+        assert!(super::validate_probe_json(
+            r#"{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":1280,"height":720,"nb_frames":"120"}]}"#
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_probe_json_rejects_mismatched_codec_size_pix_fmt_or_frames() {
+        let cases = [
+            r#"{"streams":[{"codec_type":"video","codec_name":"hevc","pix_fmt":"yuv420p","width":1280,"height":720,"nb_frames":"120"}]}"#,
+            r#"{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":1920,"height":1080,"nb_frames":"120"}]}"#,
+            r#"{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"nv12","width":1280,"height":720,"nb_frames":"120"}]}"#,
+            r#"{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":1280,"height":720,"nb_frames":"0"}]}"#,
+            r#"{"streams":[{"codec_type":"video","codec_name":"h264","pix_fmt":"yuv420p","width":1280,"height":720}]}"#,
+        ];
+        for json in cases {
+            assert!(
+                super::validate_probe_json(json).is_err(),
+                "must reject: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_probe_json_rejects_missing_or_non_video_streams() {
+        assert!(super::validate_probe_json(r#"{"streams":[]}"#).is_err());
+        assert!(super::validate_probe_json(
+            r#"{"streams":[{"codec_type":"audio","codec_name":"aac"}]}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn bounded_command_captures_output_and_succeeds_within_the_deadline() {
+        #[cfg(windows)]
+        let mut command = std::process::Command::new("cmd");
+        #[cfg(not(windows))]
+        let mut command = std::process::Command::new("echo");
+        #[cfg(windows)]
+        command.args(["/C", "echo ok"]);
+        #[cfg(not(windows))]
+        command.arg("ok");
+        let out = super::run_command_bounded(command, std::time::Duration::from_secs(5)).unwrap();
+        assert!(out.status.is_some_and(|s| s.success()));
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("ok"), "stdout was: {stdout}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn bounded_command_kills_and_reports_a_timeout() {
+        let start = std::time::Instant::now();
+        let mut command = std::process::Command::new("sleep");
+        command.arg("30");
+        let result = super::run_command_bounded(command, std::time::Duration::from_millis(200));
+        assert!(result.is_err(), "expected a timeout error");
+        assert!(
+            result.unwrap_err().contains("超时"),
+            "timeout reason must be specific"
+        );
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "bounded command did not terminate promptly"
+        );
     }
 
     #[test]
     #[cfg(target_os = "macos")]
-    fn session_hardware_probe_reports_macos_videotoolbox_availability() {
+    fn session_probe_reports_videotoolbox_availability_without_temp_files() {
         let ffmpeg = bundled_test_sidecar("ffmpeg");
         let ffprobe = bundled_test_sidecar("ffprobe");
         // Real probe; on CI without VideoToolbox this legitimately returns false.
-        let available = super::probe_hardware_encoder(&ffmpeg, &ffprobe, "macos");
+        let result = super::probe_encoder(&ffmpeg, &ffprobe, super::EncoderBackend::VideoToolbox);
+        assert_eq!(result.backend, super::EncoderBackend::VideoToolbox);
         // Probe must not leave any temp file behind.
         let leftovers = std::fs::read_dir(std::env::temp_dir())
             .unwrap()
             .filter_map(Result::ok)
             .any(|e| e.file_name().to_string_lossy().contains("bmw-hw-probe"));
         assert!(!leftovers, "hardware probe left a temp file");
-        // Cache must be stable across repeated calls.
-        let cached = super::hardware_encoder_available(&ffmpeg, &ffprobe);
-        assert_eq!(cached, super::hardware_encoder_available(&ffmpeg, &ffprobe));
-        let _ = available;
+        // Cache must be stable across repeated calls (same result object).
+        let cached =
+            super::cached_encoder_probe(&ffmpeg, &ffprobe, super::EncoderBackend::VideoToolbox);
+        assert_eq!(cached.available, result.available);
+        let _ = result;
+    }
+
+    fn run_chain(
+        chain: &[super::EncoderBackend],
+        run: impl FnMut(super::EncoderBackend) -> (super::MediaTerminal, String),
+    ) -> super::MediaTerminal {
+        super::orchestrate_watermark_encode_chain(chain, run, &mut || {})
     }
 
     #[test]
     fn orchestrate_watermark_encode_falls_back_once_only_for_hardware_errors() {
+        use super::EncoderBackend::*;
         let attempts = std::cell::RefCell::new(Vec::new());
         let run = |backend: super::EncoderBackend| {
             attempts.borrow_mut().push(backend);
             match backend {
-                super::EncoderBackend::Hardware => (
+                Nvenc => (
                     super::MediaTerminal::Failed {
                         message: "nvenc init failed".into(),
                     },
                     "Cannot load nvenc library".to_string(),
                 ),
-                super::EncoderBackend::Cpu => (
+                Cpu => (
                     super::MediaTerminal::Completed {
                         output_path: "out.mp4".into(),
                         output_bytes: 1,
                     },
                     String::new(),
                 ),
+                _ => unreachable!(),
             }
         };
-        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        let outcome = run_chain(&[Nvenc, Cpu], run);
         assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
-        assert_eq!(
-            *attempts.borrow(),
-            vec![super::EncoderBackend::Hardware, super::EncoderBackend::Cpu]
-        );
+        assert_eq!(*attempts.borrow(), vec![Nvenc, Cpu]);
     }
 
     #[test]
     fn orchestrate_watermark_encode_does_not_fallback_for_unknown_or_non_hardware_errors() {
+        use super::EncoderBackend::*;
         for (stderr, expected_attempts) in [
             ("Invalid argument".to_string(), 1),
             ("Error opening output file denied.mp4".to_string(), 1),
@@ -6022,7 +6850,7 @@ mod tests {
                     stderr.clone(),
                 )
             };
-            let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+            let outcome = run_chain(&[Nvenc, Cpu], run);
             assert!(matches!(outcome, super::MediaTerminal::Failed { .. }));
             assert_eq!(*count.borrow(), expected_attempts, "stderr={stderr}");
         }
@@ -6030,18 +6858,20 @@ mod tests {
 
     #[test]
     fn orchestrate_watermark_encode_cancelled_does_not_fallback() {
+        use super::EncoderBackend::*;
         let count = std::cell::RefCell::new(0);
         let run = |_: super::EncoderBackend| {
             *count.borrow_mut() += 1;
             (super::MediaTerminal::Cancelled, String::new())
         };
-        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        let outcome = run_chain(&[Nvenc, Cpu], run);
         assert_eq!(outcome, super::MediaTerminal::Cancelled);
         assert_eq!(*count.borrow(), 1);
     }
 
     #[test]
     fn orchestrate_watermark_encode_hardware_success_runs_once() {
+        use super::EncoderBackend::*;
         let attempts = std::cell::RefCell::new(Vec::new());
         let run = |backend: super::EncoderBackend| {
             attempts.borrow_mut().push(backend);
@@ -6053,70 +6883,69 @@ mod tests {
                 String::new(),
             )
         };
-        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        let outcome = run_chain(&[Nvenc, Cpu], run);
         assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
-        assert_eq!(*attempts.borrow(), vec![super::EncoderBackend::Hardware]);
+        assert_eq!(*attempts.borrow(), vec![Nvenc]);
     }
 
     #[test]
     fn orchestrate_watermark_encode_hardware_then_cpu_failure_runs_twice_and_fails_once() {
+        use super::EncoderBackend::*;
         let attempts = std::cell::RefCell::new(Vec::new());
         let run = |backend: super::EncoderBackend| {
             attempts.borrow_mut().push(backend);
             match backend {
-                super::EncoderBackend::Hardware => (
+                Nvenc => (
                     super::MediaTerminal::Failed {
                         message: "nvenc init failed".into(),
                     },
                     "Cannot load nvenc library".to_string(),
                 ),
-                super::EncoderBackend::Cpu => (
+                Cpu => (
                     super::MediaTerminal::Failed {
                         message: "cpu failed".into(),
                     },
                     String::new(),
                 ),
+                _ => unreachable!(),
             }
         };
-        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        let outcome = run_chain(&[Nvenc, Cpu], run);
         assert!(matches!(outcome, super::MediaTerminal::Failed { .. }));
-        assert_eq!(
-            *attempts.borrow(),
-            vec![super::EncoderBackend::Hardware, super::EncoderBackend::Cpu]
-        );
+        assert_eq!(*attempts.borrow(), vec![Nvenc, Cpu]);
     }
 
     #[test]
     fn orchestrate_watermark_encode_device_loss_whitelist_falls_back() {
+        use super::EncoderBackend::*;
         let attempts = std::cell::RefCell::new(Vec::new());
         let run = |backend: super::EncoderBackend| {
             attempts.borrow_mut().push(backend);
             match backend {
-                super::EncoderBackend::Hardware => (
+                Nvenc => (
                     super::MediaTerminal::Failed {
                         message: "encoder lost".into(),
                     },
                     "device is not available".to_string(),
                 ),
-                super::EncoderBackend::Cpu => (
+                Cpu => (
                     super::MediaTerminal::Completed {
                         output_path: "out.mp4".into(),
                         output_bytes: 1,
                     },
                     String::new(),
                 ),
+                _ => unreachable!(),
             }
         };
-        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Hardware, run);
+        let outcome = run_chain(&[Nvenc, Cpu], run);
         assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
-        assert_eq!(
-            *attempts.borrow(),
-            vec![super::EncoderBackend::Hardware, super::EncoderBackend::Cpu]
-        );
+        assert_eq!(*attempts.borrow(), vec![Nvenc, Cpu]);
     }
 
     #[test]
     fn orchestrate_watermark_encode_cpu_backend_never_falls_back_even_with_device_stderr() {
+        use super::EncoderBackend::*;
         let attempts = std::cell::RefCell::new(Vec::new());
         let run = |backend: super::EncoderBackend| {
             attempts.borrow_mut().push(backend);
@@ -6127,9 +6956,49 @@ mod tests {
                 "device is not available".to_string(),
             )
         };
-        let outcome = super::orchestrate_watermark_encode(super::EncoderBackend::Cpu, run);
+        let outcome = run_chain(&[Cpu], run);
         assert!(matches!(outcome, super::MediaTerminal::Failed { .. }));
-        assert_eq!(*attempts.borrow(), vec![super::EncoderBackend::Cpu]);
+        assert_eq!(*attempts.borrow(), vec![Cpu]);
+    }
+
+    #[test]
+    fn orchestrate_watermark_encode_tries_each_windows_hardware_candidate_then_cpu() {
+        use super::EncoderBackend::*;
+        let attempts = std::cell::RefCell::new(Vec::new());
+        let run = |backend: super::EncoderBackend| {
+            attempts.borrow_mut().push(backend);
+            match backend {
+                Nvenc => (
+                    super::MediaTerminal::Failed {
+                        message: "nvenc failed".into(),
+                    },
+                    "Cannot load nvenc library".to_string(),
+                ),
+                Amf => (
+                    super::MediaTerminal::Failed {
+                        message: "amf failed".into(),
+                    },
+                    "Failed to create AMF context".to_string(),
+                ),
+                Qsv => (
+                    super::MediaTerminal::Failed {
+                        message: "qsv failed".into(),
+                    },
+                    "Failed to create MFX session".to_string(),
+                ),
+                Cpu => (
+                    super::MediaTerminal::Completed {
+                        output_path: "out.mp4".into(),
+                        output_bytes: 1,
+                    },
+                    String::new(),
+                ),
+                _ => unreachable!(),
+            }
+        };
+        let outcome = run_chain(&[Nvenc, Amf, Qsv, Cpu], run);
+        assert!(matches!(outcome, super::MediaTerminal::Completed { .. }));
+        assert_eq!(*attempts.borrow(), vec![Nvenc, Amf, Qsv, Cpu]);
     }
 
     #[test]
@@ -9228,27 +10097,28 @@ mod tests {
         // and Finalizing must commit exactly one Completed terminal, with no
         // Progress (or any other event) replayed after the terminal.
         let (sink, events, rx) = recording_sink();
-        let runner = move |job: FrozenWatermarkJob<String>,
-                           emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>| {
-            (emit)(WatermarkQueueEvent::Status {
-                task_id: job.task_id.clone(),
-                status: WatermarkJobStatus::Processing,
-                reason: None,
-            });
-            (emit)(WatermarkQueueEvent::Progress {
-                task_id: job.task_id.clone(),
-                progress: 0.99,
-            });
-            (emit)(WatermarkQueueEvent::Status {
-                task_id: job.task_id.clone(),
-                status: WatermarkJobStatus::Finalizing,
-                reason: None,
-            });
-            WatermarkTerminal::Completed {
-                output_path: "/tmp/out.mp4".into(),
-                output_bytes: 1,
-            }
-        };
+        let runner =
+            move |job: FrozenWatermarkJob<String>,
+                  emit: Arc<dyn Fn(WatermarkQueueEvent) + Send + Sync>| {
+                (emit)(WatermarkQueueEvent::Status {
+                    task_id: job.task_id.clone(),
+                    status: WatermarkJobStatus::Processing,
+                    reason: None,
+                });
+                (emit)(WatermarkQueueEvent::Progress {
+                    task_id: job.task_id.clone(),
+                    progress: 0.99,
+                });
+                (emit)(WatermarkQueueEvent::Status {
+                    task_id: job.task_id.clone(),
+                    status: WatermarkJobStatus::Finalizing,
+                    reason: None,
+                });
+                WatermarkTerminal::Completed {
+                    output_path: "/tmp/out.mp4".into(),
+                    output_bytes: 1,
+                }
+            };
         let queue = start_watermark_video_queue::<String, _>(sink, runner);
         queue
             .enqueue("job".into(), "payload".into(), PathBuf::from("/tmp/a.mp4"))
@@ -9586,7 +10456,7 @@ mod tests {
                     output_directory: "/tmp".into(),
                 },
             },
-            backend: EncoderBackend::Cpu,
+            fallback: vec![EncoderBackend::Cpu],
             font_path: Some(PathBuf::from("/nonexistent/font.otf")),
             ffmpeg: PathBuf::from("/nonexistent/ffmpeg"),
             ffprobe: PathBuf::from("/nonexistent/ffprobe"),
@@ -9680,7 +10550,7 @@ mod tests {
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             },
-            backend: EncoderBackend::Cpu,
+            fallback: vec![EncoderBackend::Cpu],
             font_path: Some(font.clone()),
             ffmpeg: ffmpeg.clone(),
             ffprobe: ffprobe.clone(),
@@ -9713,7 +10583,7 @@ mod tests {
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             },
-            backend: EncoderBackend::Cpu,
+            fallback: vec![EncoderBackend::Cpu],
             font_path: Some(font.clone()),
             ffmpeg: ffmpeg.clone(),
             ffprobe: ffprobe.clone(),
@@ -9851,7 +10721,7 @@ mod tests {
                     output_directory: dir.to_string_lossy().into_owned(),
                 },
             },
-            backend: EncoderBackend::Cpu,
+            fallback: vec![EncoderBackend::Cpu],
             font_path: Some(font.clone()),
             ffmpeg: ffmpeg.clone(),
             ffprobe: ffprobe.clone(),

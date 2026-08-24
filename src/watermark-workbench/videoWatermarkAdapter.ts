@@ -297,6 +297,26 @@ export function encoderModeLabel(capability: WatermarkEncoderCapability | undefi
   return capability.hardwareAvailable ? `硬件优先（${capability.backendName}）` : 'CPU 兼容模式';
 }
 
+/**
+ * Human-readable encoder capability summary for the workspace hint. When a
+ * hardware backend is selected it names that backend; otherwise it lists each
+ * probed backend and its unavailable reason so the user sees the concrete
+ * failure instead of a generic "unsupported" note.
+ */
+export function encoderCapabilitySummary(capability: WatermarkEncoderCapability | undefined): string {
+  if (!capability) return '自动（硬件优先）';
+  if (capability.hardwareAvailable) {
+    return `硬件编码：${capability.backendName}（已通过探测）`;
+  }
+  if (capability.candidates.length === 0) {
+    return '当前平台未提供硬件编码候选，将使用 CPU 兼容模式';
+  }
+  const reasons = capability.candidates
+    .map((entry) => `${entry.backendName}：${entry.reason}`)
+    .join('；');
+  return `硬件编码不可用（${reasons}），将使用 CPU 兼容模式`;
+}
+
 export function clampMonotonicProgress(progress: number, previous: number): number {
   if (!Number.isFinite(progress)) return previous;
   return Math.max(previous, Math.min(1, Math.max(0, progress)));

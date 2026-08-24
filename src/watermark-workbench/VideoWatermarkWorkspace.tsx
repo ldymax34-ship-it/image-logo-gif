@@ -20,6 +20,7 @@ import {
   clampTimestampSeconds,
   createDesktopFileObjectUrl,
   createVideoTask,
+  encoderCapabilitySummary,
   encoderModeLabel,
   formatTimecode,
   loadVideoWatermarkApi,
@@ -949,7 +950,7 @@ export function VideoWatermarkWorkspace({
             </div>
           </div>
           {!outputDirectory ? <p className="wm-error">尚未选择输出位置；选择目录后才能添加队列。</p> : null}
-          <p className="wm-hint">{hardwareUnavailable ? '当前系统不支持硬件编码，将使用 CPU 兼容模式。' : encoderModeLabel(capability, preferHardware)}{!desktopAvailable ? ' · 打开输出目录仅桌面端可用。' : ''}</p>
+          <p className="wm-hint">{hardwareUnavailable ? encoderCapabilitySummary(capability) : encoderModeLabel(capability, preferHardware)}{!desktopAvailable ? ' · 打开输出目录仅桌面端可用。' : ''}</p>
 
           <div className="wm-queue-actions">
             <button type="button" onClick={addSelectedToQueue} disabled={!canAddQueue || !selectedAsset} title="将当前素材加入队列" aria-label="添加当前到队列"><ListPlus size={14} aria-hidden="true" /><span>添加当前到队列</span></button>

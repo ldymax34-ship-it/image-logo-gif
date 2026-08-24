@@ -15,10 +15,12 @@
 |---|---|---|---|---|---:|
 | macOS arm64 | `ffmpeg-aarch64-apple-darwin` | `@ffmpeg-installer/darwin-arm64@4.1.5` | FFmpeg `4.4`，`92718-g092cb17983` | `a2ad6f0fc42a3c8f5183ef1d53e906d6bb35478d14a6b67175c30ce6c17e9214` | 36,766,920 B |
 | macOS arm64 | `ffprobe-aarch64-apple-darwin` | `@ffprobe-installer/darwin-arm64@5.0.1` | FFprobe `n4.4.1` | `c846d5db9d3b5bc33f987725e21f3ea14953931221c191575918e907ad6c18ff` | 18,187,448 B |
-| Windows x64 | `ffmpeg-x86_64-pc-windows-msvc.exe` | `@ffmpeg-installer/win32-x64@4.1.0` | FFmpeg `20181217-f22fcd4` | `c8abc49e7be62dde8e12972af373959e0076a7b8dc8040eb45978e0608f8781e` | 64,458,752 B |
-| Windows x64 | `ffprobe-x86_64-pc-windows-msvc.exe` | `@ffprobe-installer/win32-x64@5.1.0` | FFprobe `20230213-2296078` | `f28c4751e7367205267025aaf0fcfc921e34d9b7edaa46bd9c8abaf367fc9051` | 80,995,328 B |
+| Windows x64 | `ffmpeg-x86_64-pc-windows-msvc.exe` | `BtbN/FFmpeg-Builds` `autobuild-2026-08-23-13-03` | FFmpeg `n9.0.1-6-g9d4ca21220` | `e3a2512b56eebc3b2b8c9e435ceb0fa055e003eee075d8a960a16ddfe9e0c933` | 144,862,208 B |
+| Windows x64 | `ffprobe-x86_64-pc-windows-msvc.exe` | `BtbN/FFmpeg-Builds` `autobuild-2026-08-23-13-03` | FFprobe `n9.0.1-6-g9d4ca21220` | `5aa91156c5bc7e06b5682fc2a9ae2c52f52681ba8d951c207746739199e68d46` | 144,658,432 B |
 
-上游包元数据与二进制版本在 2026-07-23 下载后复核；本仓库未保留临时 npm 包或下载器。后续替换必须同时更新本表、SHA-256、Tauri 包体审计及 macOS/Windows 实机回归。
+Windows 压缩包于 2026-08-24 从 `BtbN/FFmpeg-Builds` 固定 GitHub Release `autobuild-2026-08-23-13-03` 下载；资产 `ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0.zip` 的 SHA-256 为 `2f388916565c44f6edcdddd7b01ccc73a2bbc7f107bd615b7247e9c9773f4a09`。二进制配置已复核包含 `--enable-gpl`、`--enable-ffnvcodec`、`--enable-amf`、`--enable-libvpl` 和 `--enable-libx264`，未包含 `--enable-nonfree`。Windows CI 在构建前运行 `scripts/install-windows-ffmpeg.ps1`，对压缩包和两个二进制分别校验 SHA-256 后注入 Tauri sidecar，避免 GitHub 普通 Git 的 100 MB 单文件限制。GPLv3 许可证文本随应用打包为 `resources/licenses/FFmpeg-GPL-3.0.txt`。
+
+上游包元数据与二进制版本已复核；本仓库未保留临时压缩包或下载器。后续替换必须同时更新本表、SHA-256、Tauri 包体审计及 macOS/Windows 实机回归。
 
 ## FFUI 前端适配
 

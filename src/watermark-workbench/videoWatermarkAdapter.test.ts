@@ -8,6 +8,8 @@ import {
   clampTimestampSeconds,
   createDesktopFileObjectUrl,
   createVideoTask,
+  encoderCapabilitySummary,
+  encoderModeLabel,
   formatTimecode,
   supportsVideoWatermarkPath,
   toVideoPreviewRequest,
@@ -278,5 +280,43 @@ describe('video watermark adapter', () => {
   it('renders a concise non-sensitive frozen summary for queue rows', () => {
     expect(videoWatermarkRenderSummary(toVideoWatermarkOptions({ ...config, opacity: 0.56 }, '/tmp/output')))
       .toBe('砖型 · 45° · 8% · 56% · 适中');
+  });
+
+  it('labels the concrete hardware backend and CPU fallback for the encoder switch', () => {
+    const nvenc = { hardwareAvailable: true, backendName: 'NVENC' as const, reason: 'ok', candidates: [] };
+    const cpu = { hardwareAvailable: false, backendName: 'CPU' as const, reason: 'n/a', candidates: [] };
+    expect(encoderModeLabel(nvenc, true)).toBe('硬件优先（NVENC）');
+    expect(encoderModeLabel(nvenc, false)).toBe('CPU 兼容模式');
+    expect(encoderModeLabel(cpu, true)).toBe('CPU 兼容模式');
+    expect(encoderModeLabel(undefined, true)).toBe('自动（硬件优先）');
+  });
+
+  it('summarizes each probed backend with its unavailable reason', () => {
+    const capability = {
+      hardwareAvailable: false,
+      backendName: 'CPU' as const,
+      reason: '',
+      candidates: [
+        { backend: 'nvenc' as const, backendName: 'NVENC' as const, encoder: 'h264_nvenc', available: false, reason: 'Cannot load nvenc library' },
+        { backend: 'amf' as const, backendName: 'AMF' as const, encoder: 'h264_amf', available: false, reason: 'Failed to create AMF context' },
+      ],
+    };
+    const summary = encoderCapabilitySummary(capability);
+    expect(summary).toContain('硬件编码不可用');
+    expect(summary).toContain('NVENC：Cannot load nvenc library');
+    expect(summary).toContain('AMF：Failed to create AMF context');
+    expect(summary).toContain('将使用 CPU 兼容模式');
+  });
+
+  it('summarizes a selected hardware backend without listing failures', () => {
+    const capability = {
+      hardwareAvailable: true,
+      backendName: 'QSV' as const,
+      reason: 'QSV 已通过 720p/30fps/120 帧实机编码探测',
+      candidates: [
+        { backend: 'qsv' as const, backendName: 'QSV' as const, encoder: 'h264_qsv', available: true, reason: '已通过 720p/30fps/120 帧实机编码探测' },
+      ],
+    };
+    expect(encoderCapabilitySummary(capability)).toBe('硬件编码：QSV（已通过探测）');
   });
 });

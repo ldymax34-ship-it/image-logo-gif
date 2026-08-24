@@ -43,7 +43,8 @@
       "binaries/ffprobe"
     ],
     "resources": [
-      "resources/fonts/SourceHanSansSC-Regular.otf"
+      "resources/fonts/SourceHanSansSC-Regular.otf",
+      "resources/licenses/FFmpeg-GPL-3.0.txt"
     ],
     "icon": [
       "icons/32x32.png",

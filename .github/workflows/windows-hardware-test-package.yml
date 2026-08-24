@@ -1,0 +1,54 @@
+name: Build Windows hardware encoder test package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - test/windows-hardware-encoder
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-test-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install audited Windows FFmpeg sidecars
+        shell: pwsh
+        run: ./scripts/install-windows-ffmpeg.ps1
+      - name: Verify source and frontend
+        run: npm run verify:core && npm test -- --run && npm run build
+      - name: Build unsigned Windows NSIS test installer
+        shell: pwsh
+        run: |
+          $config = Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+          $config.bundle.createUpdaterArtifacts = $false
+          $config | ConvertTo-Json -Depth 100 | Set-Content 'src-tauri/tauri.conf.json'
+          npm run tauri:build -- --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Stage test files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          $installer = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw 'NSIS installer was not produced' }
+          Copy-Item $installer.FullName 'release/BrandMaterialWorkbench_0.9.2_windows-x64_hardware-test.exe'
+          Copy-Item 'scripts/windows-hardware-encoder-smoke.ps1' 'release/windows-hardware-encoder-smoke.ps1'
+          Copy-Item 'docs/WINDOWS_HARDWARE_ENCODER_TEST.md' 'release/WINDOWS_HARDWARE_ENCODER_TEST.md'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-hardware-encoder-test
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7

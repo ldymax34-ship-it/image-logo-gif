@@ -61,10 +61,19 @@ export type WatermarkQueueStatusEvent = {
   reason?: string;
 };
 
+export type EncoderCapabilityEntry = {
+  backend: 'nvenc' | 'amf' | 'qsv' | 'videotoolbox' | 'cpu';
+  backendName: 'NVENC' | 'AMF' | 'QSV' | 'VideoToolbox' | 'CPU';
+  encoder: string;
+  available: boolean;
+  reason: string;
+};
+
 export type WatermarkEncoderCapability = {
   hardwareAvailable: boolean;
-  backendName: 'NVENC' | 'VideoToolbox' | 'CPU';
+  backendName: 'NVENC' | 'AMF' | 'QSV' | 'VideoToolbox' | 'CPU';
   reason: string;
+  candidates: EncoderCapabilityEntry[];
 };
 
 export type VideoWatermarkRecommendationRequest = {
