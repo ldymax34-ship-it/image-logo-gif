@@ -1,0 +1,48 @@
+name: Stage Windows hardware test package
+
+on:
+  push:
+    branches:
+      - test/windows-hardware-encoder
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  stage-test-package:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_RUN_ID: "32692125609"
+      TEST_TAG: windows-hardware-test-0.9.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the successful Windows artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name windows-x64-hardware-encoder-test \
+            --dir release
+      - name: Publish as an isolated draft prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TEST_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TEST_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Windows hardware encoder test 0.9.2" \
+              --notes "Isolated manual test package. Not used by the automatic updater." \
+              --draft \
+              --prerelease
+          fi
+          gh release upload "$TEST_TAG" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
