@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.9.3
+
+- 修复首次启动环境检测页泛白：统一使用全局深色 app / panel / muted / danger 表面，收紧运行、完成与错误状态的对比度，并修正无效间距与阴影 token。
+
 - Windows 子进程静默化：所有 FFmpeg / FFprobe / 硬件探测子进程在 Windows 发布构建统一通过 Rust 官方 `std::os::windows::process::CommandExt` + `CREATE_NO_WINDOW` 隐藏命令行/FFmpeg 控制台窗口，抽象为最薄的 `bundled_command` 统一入口；非 Windows 行为不变，测试命令保持不变。macOS 无法验证 Windows 窗口行为，需 Windows 实机验收。
 - 文字水印样式（白/黑/描边，默认白；描边 = 白填充 + 黑描边，描边宽度随字号缩放）：Canvas 预览与 FFmpeg 输出共用同一业务字段与视觉语义，贯穿队列快照、预览请求、Rust serde、队列摘要与测试；紧凑三段选择复用既有控件，无新增面板。单文字与 Logo 路径保持不变。
 - 密集文字水印性能：显式多 placement（砖型/平铺）路径由“逐帧 ~31 层叠加”改为每个导出任务预先生成一张与源分辨率一致的全透明 PNG（复用内置 FFmpeg + drawtext，不做自建字体渲染、无新依赖），主 FFmpeg 每帧只做一次 overlay；旋转/透明度/白黑描边/字号/placement 语义一致；生成失败返回显式错误，不静默回退慢路径；临时文件安全清理；单文字与 Logo 路径保持稳定。

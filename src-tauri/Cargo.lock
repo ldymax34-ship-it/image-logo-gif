@@ -314,7 +314,7 @@ dependencies = [
 
 [[package]]
 name = "brand_material_workbench"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "log",
  "regex",

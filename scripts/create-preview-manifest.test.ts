@@ -11,6 +11,6 @@ describe('Preview updater manifest', () => {
   it('rejects URLs in signature fields', () => expect(() => assertUpdaterSignature('https://example.com/file.sig')).toThrow(/not a URL/));
 
   it('uses the concise Chinese Preview release note', () => {
-    expect(previewReleaseNotes('0.9.2')).toBe('0.9.2：统一下拉与深色界面，修复水印选中态、视频缩略图及导出队列体验。');
+    expect(previewReleaseNotes('0.9.3')).toBe('0.9.3：修复首次启动环境检测页深色主题与状态可读性。');
   });
 });

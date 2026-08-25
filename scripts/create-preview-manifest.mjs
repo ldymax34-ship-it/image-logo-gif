@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 export function previewReleaseNotes(version) {
-  return `${version}：统一下拉与深色界面，修复水印选中态、视频缩略图及导出队列体验。`;
+  return `${version}：修复首次启动环境检测页深色主题与状态可读性。`;
 }
 
 export function assertUpdaterSignature(signature) {
