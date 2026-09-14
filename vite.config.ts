@@ -11,6 +11,8 @@ export default defineConfig({
   plugins: [react(), vue()],
   test: {
     setupFiles: ['./src/test/setup.ts'],
+    // Windows CI UI tests take ~9s on cold workers; retain every assertion.
+    testTimeout: process.env.CI && process.platform === 'win32' ? 15_000 : 5_000,
   },
   build: {
     rollupOptions: {
