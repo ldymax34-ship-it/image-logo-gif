@@ -73,9 +73,9 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 
 ## 0.9.4 自定义构图独立入口 macOS 验证包（2026-09-14）
 
-当前基线
+本地验证包
 
-- Windows NSIS：本轮未构建。
+- Windows NSIS：本地未构建，最终 CI 数据见下方。
 - Windows 安装后：本轮未验证。
 - macOS DMG：43,920,775 B（约 41.89 MiB）。
 - macOS `.app`：88,264 KiB（约 86.20 MiB）。
@@ -101,6 +101,24 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 修复后包内 `ffmpeg` 与 `ffprobe` 均为 `0755`，并分别实际执行 `-version` 成功；两份源 sidecar 的 Git 模式记录为 `100755`，避免后续打包再次丢失执行权限。
 - 本机没有 Apple Developer ID 与公证凭据，`spctl` 会拒绝该本地包；它仅用于本机验证，不是可直接对外分发的公证包。
 - 仓库默认开启 updater 产物，首次构建因没有 `TAURI_SIGNING_PRIVATE_KEY` 在生成 `.app`、DMG 后返回失败；随后通过命令行临时覆盖 `createUpdaterArtifacts=false` 重新构建 `.app + .dmg` 并成功退出，未修改签名、更新或发布配置。
+
+### 0.9.4 Preview 最终 CI 包体与验证
+
+构建标签 `v0.9.4-preview.3`，源码提交 `dbc809151a6ccdcd3448ae581037889312e67964`。GitHub Actions run `34825106428` 的 Windows x64 与 macOS arm64 构建均成功，两端各通过 82 个测试文件 / 533 条测试。本地 `verify:core`、生产构建以及此前的 Rust 120 条测试、格式检查和 `cargo check` 均通过。
+
+| 产物 | 大小 | 相比 0.9.3 公共包 | SHA-256 |
+|---|---:|---:|---|
+| Windows NSIS / updater `.exe`（同一文件内容） | 312,640,908 B（298.16 MiB） | 减少 291,685 B | `4113a641ebd12d82567c0deba2522dd5fda0599fc2081a145aeea8fece8b0513` |
+| macOS arm64 DMG | 43,925,294 B（41.89 MiB） | 增加 12,108 B | `c890afc220dd1991ef30aaac9d48f0ccb28197bd44201f46f7bf9c277a1ccf85` |
+| macOS arm64 updater `.tar.gz` | 45,181,869 B（43.09 MiB） | 增加 10,169 B | `fb932f8f5fa39bed36907d1133686207c0303f5ede076263a90972745d968882` |
+
+- CI macOS `.app` 解包占用 88,276 KiB；主程序为 19,083,504 B，FFmpeg 为 36,571,296 B，FFprobe 为 18,099,872 B，三者权限均为 `0755`。
+- Windows NSIS 内嵌离线 WebView2 安装器为 212,745,424 B；主程序、字体、许可证与两份 sidecar 合计 324,275,605 B。这是安装包内容审计，未在本机执行 Windows 安装，不能视作实测安装目录大小。
+- 两个 Windows sidecar 从最终 NSIS 解包后的 SHA-256 与 `MEDIA_RUNTIME_SOURCES.md` 完全一致。构建下载镜像修复不升级引擎、不增加 npm/Rust 或客户端运行时依赖。
+- 从 GitHub 下载的两个 updater 包均使用应用配置中的公钥和同版 `minisign-verify` 验证签名成功。CI Mac 包另外通过 `codesign --verify --deep --strict`、版本 `0.9.4`、sidecar 实际执行及 `hdiutil verify`。
+- CNB 的两个 updater 包已匿名完整下载，SHA-256 分别与上述 GitHub 包一致；Range 请求均返回 `206` 且总字节数匹配。Windows 主程序 PE 文件版本为 `0.9.4.0`。
+- 2026-09-14 17:35（Asia/Shanghai）确认 run `34825106428` 的 prepare、双平台 build、release、cleanup 全部成功。GitHub 与 CNB 公共 `latest-preview.json` 均为 `0.9.4`，各自包含且仅包含 `darwin-aarch64` 和 `windows-x86_64`；两个源的内联签名相同并与 `.sig` 资产匹配。CNB Windows 手动安装包也已匿名 Range 验证成功。
+- macOS 仍为 ad-hoc 签名、未 Apple 公证；Windows 交互式安装与实机硬件编码仍需 Windows 实机验收，不以 CI 构建和离线签名校验替代。
 
 ## 0.1.33 Stage 5A 工具箱启动器审计（2026-07-23）
 
