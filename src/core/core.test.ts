@@ -22,7 +22,7 @@ import {
   serializePresetSpecs,
   toPresetSpecs,
   zoomCropState
-  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect, EXPORT_LANGUAGES, migrateBoardBrandStates, applyLanguageLogoScale, getOutputLanguageCode
+  , buildBrandRenderPlan, createBrandGrid, CPR_PRESET, createDefaultLogoGroup, DEFAULT_BRAND_EFFECT, DEFAULT_BRAND_SETTINGS, DEFAULT_CPR_STATE, createDefaultCprState, snapLogoGroupPosition, DEFAULT_MAX_SIZE_KB, exportJpegWithinLimit, getEffectiveMaxSizeKb, isOverSizeLimit, PRESET_TEMPLATES, createLanguageBatchExportItems, computeCprPlacementRect, EXPORT_LANGUAGES, migrateBoardBrandStates, applyLanguageLogoScale, getOutputLanguageCode, getLogoScaleLimits, normalizeLogoGroupScale
 } from './index';
 
 describe('core 0.1.x foundation', () => {
@@ -628,5 +628,73 @@ describe('continuous custom Logo scaling', () => {
     const after = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...base, scale: 1.21 }, { gameLogo: game }).logoGroupRect!;
     expect(after.width).toBeGreaterThan(before.width);
     expect(after.width / before.width).toBeCloseTo(1.21 / 1.2, 5);
+  });
+
+  it('keeps centered preset geometry when the first drag enters custom placement', () => {
+    const game = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, aspectRatio: 2 };
+    const centered = { ...createDefaultLogoGroup('zh-CN'), sizePreset: 'xl' as const, scale: 2, placement: 'center' as const, lastExplicitPlacement: 'center' as const, constraintMode: 'canvas' as const };
+    const centerRect = buildBrandRenderPlan({ width: 1920, height: 1080 }, centered, { gameLogo: game }).logoGroupRect!;
+    const customRect = buildBrandRenderPlan({ width: 1920, height: 1080 }, { ...centered, placement: 'custom' as const, customSizingPlacement: 'center' as const, manualOffset: { x: centerRect.x + 1, y: centerRect.y } }, { gameLogo: game }).logoGroupRect!;
+
+    expect(customRect.width).toBe(centerRect.width);
+    expect(customRect.height).toBe(centerRect.height);
+    expect(customRect.x).toBe(centerRect.x + 1);
+  });
+
+  it('reports a geometry-aware scale ceiling above the old 200% cap', () => {
+    const game = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, aspectRatio: 2 };
+    const limits = getLogoScaleLimits({ width: 1920, height: 1080 }, { ...createDefaultLogoGroup(), sizePreset: 'xl', placement: 'center', constraintMode: 'canvas' }, { gameLogo: game });
+
+    expect(limits.minScale).toBe(0.1);
+    expect(limits.maxScale).toBeGreaterThan(2);
+    expect(limits.maxScale).toBeLessThanOrEqual(10);
+  });
+
+  it('keeps the Render Plan continuous near the canvas scale ceiling before and after the first drag', () => {
+    const canvas = { width: 1920, height: 1080 };
+    const game = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, aspectRatio: 2 };
+    const base = { ...createDefaultLogoGroup(), sizePreset: 'xl' as const, placement: 'center' as const, constraintMode: 'canvas' as const };
+    const limits = getLogoScaleLimits(canvas, base, { gameLogo: game });
+    const belowLimit = limits.maxScale - 0.2;
+    const centered = buildBrandRenderPlan(canvas, { ...base, scale: belowLimit }, { gameLogo: game }).logoGroupRect!;
+    const custom = buildBrandRenderPlan(canvas, { ...base, scale: belowLimit, placement: 'custom' as const, customSizingPlacement: 'center' as const, manualOffset: { x: centered.x, y: centered.y } }, { gameLogo: game }).logoGroupRect!;
+    const atLimit = buildBrandRenderPlan(canvas, { ...base, scale: limits.maxScale }, { gameLogo: game }).logoGroupRect!;
+
+    expect(centered.width).toBeCloseTo(custom.width);
+    expect(centered.width).toBeGreaterThan(1800);
+    expect(atLimit.width).toBeCloseTo(canvas.width);
+  });
+
+  it('keeps legacy custom groups at their saved 2U geometry even when last placement was center', () => {
+    const game = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, aspectRatio: 2 };
+    const plan = buildBrandRenderPlan(
+      { width: 1920, height: 1080 },
+      { ...createDefaultLogoGroup(), placement: 'custom', lastExplicitPlacement: 'center', manualOffset: { x: 240, y: 200 } },
+      { gameLogo: game }
+    );
+
+    expect(plan.logoGroupRect?.width).toBe(120);
+  });
+
+  it('normalizes the real saved scale after placement and preset changes, then stays stable on reopen', () => {
+    const canvas = { width: 1920, height: 1080 };
+    const game = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, aspectRatio: 2 };
+    let saved = normalizeLogoGroupScale(canvas, {
+      ...createDefaultLogoGroup(),
+      sizePreset: 'small',
+      placement: 'corner-right',
+      constraintMode: 'canvas',
+      scale: 5
+    }, { gameLogo: game });
+    expect(saved.scale).toBe(5);
+
+    saved = normalizeLogoGroupScale(canvas, { ...saved, placement: 'center' }, { gameLogo: game });
+    expect(saved.scale).toBe(5);
+    saved = normalizeLogoGroupScale(canvas, { ...saved, sizePreset: 'xxl' }, { gameLogo: game });
+    expect(saved.scale).toBeCloseTo(4);
+    expect(buildBrandRenderPlan(canvas, saved, { gameLogo: game }).logoGroupRect?.width).toBeCloseTo(canvas.width);
+
+    const reopened = normalizeLogoGroupScale(canvas, { ...saved }, { gameLogo: game });
+    expect(reopened.scale).toBe(saved.scale);
   });
 });

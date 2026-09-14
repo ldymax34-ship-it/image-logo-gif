@@ -42,4 +42,24 @@ describe('AppSidebar', () => {
 
     act(() => root.unmount());
   });
+
+  it('lists Logo 与版式 and 自定义构图 as separate production entries', () => {
+    const onNavigate = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    act(() => root.render(<AppSidebar activeTool="custom" onNavigate={onNavigate} onOpenSettings={vi.fn()} />));
+
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="展开侧边栏"]')?.click());
+    const logoEntry = container.querySelector<HTMLButtonElement>('button[aria-label="Logo 与版式"]');
+    const customEntry = container.querySelector<HTMLButtonElement>('button[aria-label="自定义构图"]');
+    expect(logoEntry).not.toBeNull();
+    expect(customEntry).not.toBeNull();
+    expect(customEntry?.classList.contains('active')).toBe(true);
+    expect(logoEntry?.classList.contains('active')).toBe(false);
+
+    act(() => logoEntry?.click());
+    expect(onNavigate).toHaveBeenCalledWith('logo-layout');
+
+    act(() => root.unmount());
+  });
 });

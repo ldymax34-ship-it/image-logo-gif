@@ -38,9 +38,9 @@ describe('Focus Logo Fabric coordinate mapping', () => {
   });
 
   it.each([
-    [{ width: 1920, height: 1080 }, { x: 60, y: 60, scale: 2 }],
-    [{ width: 1080, height: 1920 }, { x: 60, y: 60, scale: 2 }],
-    [{ width: 1200, height: 1200 }, { x: 66.66666666666667, y: 66.66666666666667, scale: 2 }]
+    [{ width: 1920, height: 1080 }, { x: 60, y: 60, scale: 7.5 }],
+    [{ width: 1080, height: 1920 }, { x: 60, y: 60, scale: 4 }],
+    [{ width: 1200, height: 1200 }, { x: 66.66666666666667, y: 66.66666666666667, scale: 4.444444444444444 }]
   ] as const)('clamps extreme top-left transforms for %o', (canvas, expected) => {
     const result = fromFocusLogoFabricFrame({
       left: -999,
@@ -76,6 +76,12 @@ describe('Focus Logo Fabric coordinate mapping', () => {
     const second = fromFocusLogoFabricFrame({ ...toFocusLogoFabricFrame(RECT, 1), scaleX: 1.5, scaleY: 1.5 }, frozen);
     expect(first.scale).toBe(1.2);
     expect(second.scale).toBe(1.5);
+  });
+
+  it('allows Fabric scaling beyond the former 200% ceiling while honoring geometry', () => {
+    const frozen = createFocusLogoTransformBaseline(RECT, 1, { width: 1920, height: 1080 }, 'canvas', 1, 8);
+    expect(frozen.maxScale).toBeGreaterThan(2);
+    expect(fromFocusLogoFabricFrame({ ...toFocusLogoFabricFrame(RECT, 1), scaleX: 4, scaleY: 4 }, frozen).scale).toBe(4);
   });
 
   it('restores a constrained domain write to the same Fabric frame', () => {

@@ -74,7 +74,7 @@ async function mountThenReturn(element: ReactElement) {
 describe('Fabric component lifecycle', () => {
   it('returns from Focus logo after Fabric reparents the canvas', async () => {
     await mountThenReturn(<FocusLogoFabricOverlay
-      canvas={{ width: 100, height: 100 }} rect={undefined} previewScale={1} currentScale={1}
+      canvas={{ width: 100, height: 100 }} rect={undefined} previewScale={1} currentScale={1} scaleMax={2}
       constraintMode="safe-area" selected={false} onSelectedChange={() => {}}
       onTransformChange={() => {}} onTransformingChange={() => {}}
     />);
@@ -103,7 +103,7 @@ describe('Fabric component lifecycle', () => {
     function Switcher() {
       const [tool, setTool] = useState(true);
       return tool ? <><FocusLogoFabricOverlay
-        canvas={{ width: 100, height: 100 }} rect={undefined} previewScale={1} currentScale={1}
+        canvas={{ width: 100, height: 100 }} rect={undefined} previewScale={1} currentScale={1} scaleMax={2}
         constraintMode="safe-area" selected={false} onSelectedChange={() => {}}
         onTransformChange={() => {}} onTransformingChange={() => {}}
       /><button onClick={() => setTool(false)}>返回</button></> : <main>工具箱首页</main>;

@@ -5,6 +5,17 @@ import { boardBrandReducer } from './boardBrandReducer';
 function defaults(): BoardBrandState { return { logo: createDefaultLogoGroup('zh-CN'), cpr: createDefaultCprState() }; }
 
 describe('boardBrandReducer reconcile-boards', () => {
+  it('uses the standard 100% Logo default for new boards without overwriting an existing custom size', () => {
+    const custom = { ...createDefaultLogoGroup('zh-CN'), sizePreset: 'xxl' as const, scale: 2.5 };
+    const initial = boardBrandReducer({}, { type: 'reconcile-boards', keys: ['old'], defaults: { logo: custom, cpr: createDefaultCprState() } });
+    const next = boardBrandReducer(initial, { type: 'reconcile-boards', keys: ['old', 'new'], defaults: { logo: createDefaultLogoGroup('zh-CN'), cpr: createDefaultCprState() } });
+
+    expect(next.old.logo.sizePreset).toBe('xxl');
+    expect(next.old.logo.scale).toBe(2.5);
+    expect(next.new.logo.sizePreset).toBe('standard');
+    expect(next.new.logo.scale).toBe(1);
+  });
+
   it('preserves existing values and does not apply changed defaults over them', () => {
     const current = defaults(); current.logo.placement = 'corner-left';
     const changed = defaults(); changed.logo.placement = 'center';

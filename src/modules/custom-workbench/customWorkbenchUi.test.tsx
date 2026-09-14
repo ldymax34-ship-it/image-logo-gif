@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { BrandEffectState } from '../../core';
+import { buildBrandRenderPlan, type BrandEffectState } from '../../core';
 import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
-import { CustomExportControls, CustomObjectEffectDisclosure } from './CustomWorkbench';
+import { CustomExportControls, CustomObjectEffectDisclosure, getCenteredCustomLogoOffset, resolveCustomLogoInitialOffset } from './CustomWorkbench';
 
 const effect: BrandEffectState = {
   colorEnabled: true,
@@ -22,6 +22,26 @@ const effect: BrandEffectState = {
 };
 
 describe('CustomWorkbench visible controls', () => {
+  it('centers the first game Logo from the shared Render Plan geometry', () => {
+    const canvas = { width: 1920, height: 1080 } as const;
+    const logo = { id: 'game', type: 'logo' as const, sourceKind: 'image' as const, name: 'game', language: 'zh-CN' as const, sourceUrl: '/game.png', aspectRatio: 3 };
+    const group = { mode: 'game-only' as const, gameLogoLanguage: 'zh-CN' as const, colorMode: 'white' as const, sizePreset: 'standard' as const, scale: 1, companyLogoScale: 'match' as const, gapUnits: .5, placement: 'custom' as const, constraintMode: 'canvas' as const, manualOffset: { x: 0, y: 0 } };
+    const offset = getCenteredCustomLogoOffset(canvas, group, logo)!;
+    const plan = buildBrandRenderPlan(canvas, { ...group, manualOffset: offset }, { gameLogo: logo });
+    expect(plan.logoGroupRect!.x).toBeCloseTo(offset.x);
+    expect(plan.logoGroupRect!.y).toBeCloseTo(offset.y);
+    expect(offset.x + plan.logoGroupRect!.width / 2).toBeCloseTo(canvas.width / 2);
+    expect(offset.y + plan.logoGroupRect!.height / 2).toBeCloseTo(canvas.height / 2);
+  });
+
+  it('only applies the computed center while the initial position is still eligible', () => {
+    const current = { x: 460, y: 216 };
+    const centered = { x: 900, y: 520 };
+    expect(resolveCustomLogoInitialOffset(current, centered, true)).toEqual(centered);
+    expect(resolveCustomLogoInitialOffset(current, centered, false)).toEqual(current);
+    expect(resolveCustomLogoInitialOffset(current, undefined, true)).toEqual(current);
+  });
+
   it('keeps PNG, JPG and the current-board export action in one visible control group', () => {
     const html = renderToStaticMarkup(
       <CustomExportControls format="png" disabled status="未导入图片" onFormatChange={vi.fn()} onExport={vi.fn()} />

@@ -1,7 +1,7 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { BrandEffectControls } from '../../components/brand/BrandEffectControls';
 import { Select, trackPointerHighlight } from '../../components/ui';
-import { buildBoardRenderPlan, canvasToBlob, computeCprPlacementRect, computeFitScale, createInitialCropState, createMaterialAsset, deriveBrandColorMode, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, panCropState, renderBoardToCanvas, snapLogoGroupPosition, zoomCropState, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
+import { buildBoardRenderPlan, buildBrandRenderPlan, canvasToBlob, computeCprPlacementRect, computeFitScale, createInitialCropState, createMaterialAsset, deriveBrandColorMode, drawBrandLayersToCanvas, exportBoardImageWithinLimit, exportJpegWithinLimit, panCropState, renderBoardToCanvas, snapLogoGroupPosition, zoomCropState, type BrandAsset, type BrandEffectState, type BrandLanguage, type BrandLayerState, type BoardPreviewState, type LogoGroupState, type MaterialAsset, type MaterialFormat, type MaterialSpec, getBrandLanguageLabel } from '../../core';
 import { releaseMaterialAsset } from '../../core/image/imageMeta';
 import { chooseOutputTarget, saveBlobToOutputTarget } from '../../platform/fileSystem';
 import { BoardCanvas } from '../../components/canvas';
@@ -16,6 +16,30 @@ import { CUSTOM_CANVAS_OPTION, CUSTOM_MANUAL_CANVAS_PRESETS, MAX_CUSTOM_CANVAS_E
 const CUSTOM_DEFAULT_CANVAS: MaterialSpec = { id: 'custom-source-image', name: '原图尺寸', width: 1920, height: 1080, format: 'png' };
 export type CustomWorkbenchDirtySnapshot = { canvasSelection: CustomCanvasSelection; gameEnabled: boolean; companyEnabled: boolean; gameScale: number; companyScale: number; cprScale: number; gameOffset: { x: number; y: number }; companyOffset: { x: number; y: number }; cprOffset: { x: number; y: number }; cprEnabled: boolean; gameEffect: BrandEffectState; companyEffect: BrandEffectState; cprEffect: BrandEffectState; format: MaterialFormat; gameLanguage: BrandLanguage; guidesVisible: boolean; snapEnabled: boolean };
 export function isCustomWorkbenchDirty(asset?: MaterialAsset, initial?: CustomWorkbenchDirtySnapshot, current?: CustomWorkbenchDirtySnapshot): boolean { return Boolean(asset) || Boolean(initial && current && JSON.stringify(initial) !== JSON.stringify(current)); }
+
+/** Resolves the first custom-workbench game Logo position from the shared brand geometry. */
+export function getCenteredCustomLogoOffset(
+  canvas: Pick<MaterialSpec, 'width' | 'height'>,
+  group: LogoGroupState,
+  gameLogo?: BrandAsset
+): { x: number; y: number } | undefined {
+  if (!gameLogo) return undefined;
+  const plan = buildBrandRenderPlan(
+    { width: canvas.width, height: canvas.height },
+    { ...group, placement: 'custom', manualOffset: { x: 0, y: 0 } },
+    { gameLogo }
+  );
+  const rect = plan.logoGroupRect ?? plan.logoItems.find((item) => item.kind === 'logo')?.rect;
+  return rect ? { x: (canvas.width - rect.width) / 2, y: (canvas.height - rect.height) / 2 } : undefined;
+}
+
+export function resolveCustomLogoInitialOffset(
+  current: { x: number; y: number },
+  centered: { x: number; y: number } | undefined,
+  shouldInitialize: boolean
+): { x: number; y: number } {
+  return shouldInitialize && centered ? centered : current;
+}
 
 function fmtScale(v: number): string { return `${v.toFixed(2)}×`; }
 
@@ -87,7 +111,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const [companyEnabled, setCompanyEnabled] = useState(false);
   const [gameScale, setGameScale] = useState(1);
   const [companyScale, setCompanyScale] = useState(1);
-  const [gameOffset, setGameOffset] = useState({ x: 460, y: 216 });
+  const [gameOffset, setGameOffset] = useState({ x: 0, y: 0 });
   const [companyOffset, setCompanyOffset] = useState({ x: 1036, y: 216 });
   const [cprEnabled, setCprEnabled] = useState(true);
   const [cprScale, setCprScale] = useState(1);
@@ -106,7 +130,9 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   const [selectedObjectId, setSelectedObjectId] = useState<CustomFabricObjectId>();
   const [cropEditing, setCropEditing] = useState(false);
   const cropDragRef = useRef<{ pointerId: number; x: number; y: number }>();
-  const initialDirtySnapshot = useRef<CustomWorkbenchDirtySnapshot>({ canvasSelection: resolveCustomCanvasSelection(), gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, cprScale: 1, gameOffset: { x: 460, y: 216 }, companyOffset: { x: 1036, y: 216 }, cprOffset: { x: 0, y: 0 }, cprEnabled: true, gameEffect: brandLayer.logoEffect, companyEffect: brandLayer.logoEffect, cprEffect: brandLayer.cprEffect, format: 'png', gameLanguage: gameLogo?.language ?? 'zh-CN', guidesVisible: true, snapEnabled: true });
+  const gamePositionTouchedRef = useRef(false);
+  const gameDefaultPositionInitializedRef = useRef(false);
+  const initialDirtySnapshot = useRef<CustomWorkbenchDirtySnapshot>({ canvasSelection: resolveCustomCanvasSelection(), gameEnabled: true, companyEnabled: false, gameScale: 1, companyScale: 1, cprScale: 1, gameOffset: { x: 0, y: 0 }, companyOffset: { x: 1036, y: 216 }, cprOffset: { x: 0, y: 0 }, cprEnabled: true, gameEffect: brandLayer.logoEffect, companyEffect: brandLayer.logoEffect, cprEffect: brandLayer.cprEffect, format: 'png', gameLanguage: gameLogo?.language ?? 'zh-CN', guidesVisible: true, snapEnabled: true });
 
   useEffect(() => {
     const dirty = isCustomWorkbenchDirty(asset, initialDirtySnapshot.current, { canvasSelection, gameEnabled, companyEnabled, gameScale, companyScale, cprScale, gameOffset, companyOffset, cprOffset, cprEnabled, gameEffect, companyEffect, cprEffect, format, gameLanguage, guidesVisible, snapEnabled });
@@ -201,6 +227,12 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
       setAsset(next);
       const nextSpec = resolveCustomCanvasSpec(next, canvasSelection, format) ?? CUSTOM_DEFAULT_CANVAS;
       setPreviewState({ assetId: next.id, specId: nextSpec.id, fitMode: 'contain', crop: createInitialCropState(next, nextSpec, 'contain') });
+      if (!asset) {
+        const centered = getCenteredCustomLogoOffset(nextSpec, { ...gameGroup, scale: 1 }, selectedGameLogo);
+        const nextOffset = resolveCustomLogoInitialOffset(gameOffset, centered, true);
+        if (nextOffset !== gameOffset) setGameOffset(nextOffset);
+        if (centered) gameDefaultPositionInitializedRef.current = true;
+      }
       setStatus(`已导入 ${next.fileName}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '导入失败');
@@ -350,6 +382,15 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
     cprScale: resolvedCprScale,
     canvas
   });
+
+  useEffect(() => {
+    if (!asset || gameDefaultPositionInitializedRef.current || gamePositionTouchedRef.current || !selectedGameLogo) return;
+    const centered = getCenteredCustomLogoOffset(canvas, { ...gameGroup, scale: 1 }, selectedGameLogo);
+    const nextOffset = resolveCustomLogoInitialOffset(gameOffset, centered, true);
+    if (!centered) return;
+    gameDefaultPositionInitializedRef.current = true;
+    if (nextOffset !== gameOffset) setGameOffset(nextOffset);
+  }, [asset, canvas.height, canvas.width, gameEffect, gameGroup, gameOffset, selectedGameLogo]);
   const selectedInteractionItem = selectedObjectId ? interactionItems.find((item) => item.id === selectedObjectId) : undefined;
   const selectedTransformBounds = selectedInteractionItem
     ? getCustomTransformBounds(selectedInteractionItem.rect, selectedInteractionItem.currentScale, canvas, selectedInteractionItem.currentScale)
@@ -397,6 +438,7 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
   function applyFabricTransform(id: CustomFabricObjectId, requested: CustomObjectTransform, sourceItem?: CustomFabricOverlayItem) {
     const item = sourceItem ?? interactionItems.find((candidate) => candidate.id === id);
     if (!item) return;
+    if (id === 'game') gamePositionTouchedRef.current = true;
     const transform = constrainInteractionTransform(item, requested);
     const defaultRect = computeCprPlacementRect(canvas, { placement: 'bottom-right', offsetX: 0, offsetY: 0 }, transform.scale, 'canvas');
     const patch = toCustomFabricTransformPatch(id, transform, defaultRect);
@@ -438,7 +480,9 @@ export function CustomWorkbench({ brandLayer, logoAsset, cprAsset, companyLogo, 
 
   function resetSelectedObject() {
     if (selectedObjectId === 'game') {
-      editSelectedTransform({ x: 460, y: 216, scale: 1 });
+      const centered = getCenteredCustomLogoOffset(canvas, { ...gameGroup, scale: 1 }, selectedGameLogo);
+      if (centered) editSelectedTransform({ ...centered, scale: 1 });
+      else editSelectedTransform({ x: selectedInteractionItem?.rect.x ?? 0, y: selectedInteractionItem?.rect.y ?? 0, scale: 1 });
     } else if (selectedObjectId === 'company') {
       editSelectedTransform({ x: 1036, y: 216, scale: 1 });
     } else if (selectedObjectId === 'cpr') {

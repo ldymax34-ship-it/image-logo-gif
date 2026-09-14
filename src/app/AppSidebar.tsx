@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Film,
   LayoutGrid,
+  LayoutTemplate,
   Palette,
   Settings,
   ShieldCheck,
@@ -22,6 +23,7 @@ type SidebarTool = {
 const SIDEBAR_TOOLS: SidebarTool[] = [
   { id: 'toolbox', label: '工具箱首页', icon: LayoutGrid, group: 'home' },
   { id: 'logo-layout', label: 'Logo 与版式', icon: Palette, group: 'production' },
+  { id: 'custom', label: '自定义构图', icon: LayoutTemplate, group: 'production' },
   { id: 'watermark', label: '图片水印', icon: ShieldCheck, group: 'production' },
   { id: 'video-watermark', label: '视频水印', icon: Film, group: 'production' }
 ];

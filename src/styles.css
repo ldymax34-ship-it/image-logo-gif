@@ -407,6 +407,8 @@ body {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(400px, 1fr);
   gap: 0;
+  /* 未导入底图时工作区也必须吃满模块高度，否则空状态只剩上方一小块。 */
+  height: 100%;
   min-height: 0;
 }
 
@@ -788,6 +790,30 @@ code {
 
 .range-field input {
   min-width: 0;
+}
+.logo-scale-field {
+  grid-template-columns: minmax(0, 1fr);
+}
+.logo-scale-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 68px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.logo-scale-controls input[type='range'] {
+  width: 100%;
+  min-width: 0;
+}
+.logo-scale-controls input[type='number'] {
+  width: 68px;
+  min-height: var(--control-height-compact);
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-field);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 
 .color-input {

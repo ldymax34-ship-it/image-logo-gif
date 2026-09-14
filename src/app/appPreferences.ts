@@ -1,4 +1,4 @@
-export type StartupTool = 'toolbox' | 'logo-layout' | 'gif-media' | 'watermark' | 'video-watermark' | 'gif-compress' | 'batch-template-gif' | 'last';
+export type StartupTool = 'toolbox' | 'logo-layout' | 'custom' | 'gif-media' | 'watermark' | 'video-watermark' | 'gif-compress' | 'batch-template-gif' | 'last';
 export type LastTool = Exclude<StartupTool, 'last'>;
 
 export type AppPreferencesV1 = {
@@ -7,7 +7,7 @@ export type AppPreferencesV1 = {
   lastTool: LastTool;
 };
 
-export type AvailableAppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark' | 'video-watermark';
+export type AvailableAppTool = 'toolbox' | 'logo-layout' | 'custom' | 'gif-compress' | 'batch-template-gif' | 'watermark' | 'video-watermark';
 
 export const APP_PREFERENCES_STORAGE_KEY = 'brand-material-workbench.app-preferences.v1';
 export const DEFAULT_APP_PREFERENCES: AppPreferencesV1 = {
@@ -16,8 +16,8 @@ export const DEFAULT_APP_PREFERENCES: AppPreferencesV1 = {
   lastTool: 'toolbox'
 };
 
-const STARTUP_TOOLS: StartupTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark', 'video-watermark', 'gif-compress', 'batch-template-gif', 'last'];
-const LAST_TOOLS: LastTool[] = ['toolbox', 'logo-layout', 'gif-media', 'watermark', 'video-watermark', 'gif-compress', 'batch-template-gif'];
+const STARTUP_TOOLS: StartupTool[] = ['toolbox', 'logo-layout', 'custom', 'gif-media', 'watermark', 'video-watermark', 'gif-compress', 'batch-template-gif', 'last'];
+const LAST_TOOLS: LastTool[] = ['toolbox', 'logo-layout', 'custom', 'gif-media', 'watermark', 'video-watermark', 'gif-compress', 'batch-template-gif'];
 
 // Legacy route name retained for reading old saved preferences only.
 const LEGACY_TOOL_MIGRATIONS: Record<string, StartupTool> = {
@@ -67,7 +67,7 @@ export function saveAppPreferences(preferences: AppPreferencesV1): void {
 
 export function resolveStartupTool(preferences: AppPreferencesV1): AvailableAppTool {
   const selected = preferences.startupTool === 'last' ? preferences.lastTool : preferences.startupTool;
-  return selected === 'logo-layout' || selected === 'watermark' || selected === 'video-watermark' ? selected : 'toolbox';
+  return selected === 'logo-layout' || selected === 'custom' || selected === 'watermark' || selected === 'video-watermark' ? selected : 'toolbox';
 }
 
 export function shouldLaunchGifMediaOnStartup(preferences: AppPreferencesV1): boolean {

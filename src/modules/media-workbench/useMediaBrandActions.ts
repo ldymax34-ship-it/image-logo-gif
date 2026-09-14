@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import {
   classifyAspect, getBoardPreviewKey, normalizeLogoGroup,
+  normalizeLogoGroupScale, resolveBoardBrandAssets,
   type BoardBrandStateMap, type BoardPreviewState, type BrandAsset, type BrandLanguage,
   type BrandLayerState, type LogoGroupState, type MaterialAsset, type MaterialSpec
 } from '../../core';
@@ -36,7 +37,13 @@ export function useMediaBrandActions(input: {
   }
   function applyCompanyLogoReplacement(assetId: string) {
     for (const [key, state] of Object.entries(input.boardBrandStates)) {
-      input.dispatchBoardBrand({ type: 'update-logo', key, logo: { ...normalizeLogoGroup(state.logo), companyLogoId: assetId } });
+      const nextLogo = { ...normalizeLogoGroup(state.logo), companyLogoId: assetId };
+      const spec = input.assets.flatMap((asset) => input.specs.map((candidate) => ({ asset, spec: candidate }))).find(({ asset, spec }) => getBoardPreviewKey(asset.id, spec.id) === key)?.spec;
+      const resolved = resolveBoardBrandAssets({ boardBrandState: { ...state, logo: nextLogo }, brandCatalog: input.brandAssets, brandLayer: input.brandLayer });
+      const normalized = spec
+        ? normalizeLogoGroupScale({ width: spec.width, height: spec.height }, nextLogo, { companyLogo: resolved.companyLogo, gameLogo: resolved.gameLogo })
+        : nextLogo;
+      input.dispatchBoardBrand({ type: 'update-logo', key, logo: normalized });
     }
   }
   return { applyLogoGroupToSameAspect, changeBrandLanguage, applyCompanyLogoReplacement };

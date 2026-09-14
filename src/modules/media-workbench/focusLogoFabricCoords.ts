@@ -1,4 +1,4 @@
-import { getLogoPlacementBounds, type LogoConstraintMode } from '../../core';
+import { getLogoPlacementBounds, LOGO_SCALE_MAX, LOGO_SCALE_MIN, type LogoConstraintMode } from '../../core';
 import {
   fromFabricFrame,
   toFabricFrame,
@@ -22,9 +22,6 @@ export type FocusLogoTransformBaseline = {
   previewScale: number;
 };
 
-const MIN_LOGO_SCALE = .5;
-const MAX_LOGO_SCALE = 2;
-
 const finite = (value: number, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -37,9 +34,11 @@ export function createFocusLogoTransformBaseline(
   currentScale: number,
   canvas: { width: number; height: number },
   constraintMode: LogoConstraintMode,
-  previewScale: number
+  previewScale: number,
+  maxScaleOverride?: number
 ): FocusLogoTransformBaseline {
-  const resolvedScale = clamp(finite(currentScale, 1), MIN_LOGO_SCALE, MAX_LOGO_SCALE);
+  const maxScaleLimit = Math.max(LOGO_SCALE_MIN, Math.min(LOGO_SCALE_MAX, finite(maxScaleOverride ?? LOGO_SCALE_MAX, LOGO_SCALE_MAX)));
+  const resolvedScale = clamp(finite(currentScale, 1), LOGO_SCALE_MIN, maxScaleLimit);
   const baseWidth = Math.max(Number.EPSILON, rect.width / resolvedScale);
   const baseHeight = Math.max(Number.EPSILON, rect.height / resolvedScale);
   const emptyBounds = getLogoPlacementBounds(canvas, { width: 0, height: 0 }, constraintMode);
@@ -49,12 +48,12 @@ export function createFocusLogoTransformBaseline(
     availableWidth / baseWidth,
     availableHeight / baseHeight
   );
-  const maxScale = Math.max(MIN_LOGO_SCALE, Math.min(MAX_LOGO_SCALE, geometricMax));
+  const maxScale = Math.max(LOGO_SCALE_MIN, Math.min(maxScaleLimit, geometricMax));
 
   return {
     rect: { ...rect },
     currentScale: resolvedScale,
-    minScale: Math.min(MIN_LOGO_SCALE, maxScale),
+    minScale: Math.min(LOGO_SCALE_MIN, maxScale),
     maxScale,
     canvas: { ...canvas },
     constraintMode,

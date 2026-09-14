@@ -10,6 +10,7 @@ const RECENT_TOOL_LIMIT = 6;
 
 const RECENT_TOOL_IDS: Array<Exclude<AppTool, 'toolbox'>> = [
   'logo-layout',
+  'custom',
   'watermark',
   'video-watermark'
 ];

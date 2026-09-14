@@ -11,6 +11,6 @@ describe('Preview updater manifest', () => {
   it('rejects URLs in signature fields', () => expect(() => assertUpdaterSignature('https://example.com/file.sig')).toThrow(/not a URL/));
 
   it('uses the concise Chinese Preview release note', () => {
-    expect(previewReleaseNotes('0.9.3')).toBe('0.9.3：修复首次启动环境检测页深色主题与状态可读性。');
+    expect(previewReleaseNotes('0.9.4')).toBe('0.9.4：新增自定义构图独立入口，修复首次导入布局、Logo 默认居中及 macOS FFmpeg 检测。');
   });
 });

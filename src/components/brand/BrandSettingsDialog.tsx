@@ -24,7 +24,9 @@ const COLOR_OPTIONS: Array<{ value: Exclude<BrandColorMode, 'original' | 'custom
 const SIZE_OPTIONS: Array<{ value: BrandSize; label: string }> = [
   { value: 'small', label: '小' },
   { value: 'standard', label: '标准' },
-  { value: 'large', label: '大' }
+  { value: 'large', label: '大' },
+  { value: 'xl', label: '特大（视频 / KV）' },
+  { value: 'xxl', label: '超大（KV）' }
 ];
 
 const ASPECTS: AspectFamily[] = ['landscape', 'square', 'portrait'];

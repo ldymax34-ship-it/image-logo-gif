@@ -30,7 +30,6 @@ function AppContent() {
   const {
     activeModule,
     activeTool,
-    requestModuleChange,
     requestToolbox,
     navigateToTool,
     setActiveTool,
@@ -99,7 +98,7 @@ function AppContent() {
   }, [activeTool]);
 
   useEffect(() => registerNavigationGuard((target) => {
-    if (activeTool !== 'logo-layout' || activeModule !== 'custom' || !activity.customWorkbenchDirty) return true;
+    if (activeModule !== 'custom' || !activity.customWorkbenchDirty) return true;
     setPendingNavigation(target);
     return false;
   }), [activeModule, activeTool, activity.customWorkbenchDirty, registerNavigationGuard]);
@@ -114,8 +113,14 @@ function AppContent() {
     setPendingNavigation(undefined);
     updateActivity({ customWorkbenchDirty: false });
     setCustomWorkbenchEpoch((epoch) => epoch + 1);
-    if (target === 'media' || target === 'custom') {
-      setActiveModule(target);
+    if (target === 'media') {
+      setActiveModule('media');
+      setActiveTool('logo-layout');
+      return;
+    }
+    if (target === 'custom') {
+      setActiveModule('custom');
+      setActiveTool('custom');
       return;
     }
     setActiveTool(target);
@@ -148,6 +153,7 @@ function AppContent() {
           {activeTool === 'toolbox' && (
             <ToolboxHome
               onOpenLogoLayout={() => navigateTo('logo-layout')}
+              onOpenCustom={() => navigateTo('custom')}
               onOpenWatermark={() => navigateTo('watermark')}
               onOpenVideoWatermark={() => navigateTo('video-watermark')}
               onOpenSettings={() => setApplicationSettingsOpen(true)}
@@ -157,14 +163,15 @@ function AppContent() {
             />
           )}
 
-          {/* Logo & Layout (existing) */}
-          <div hidden={activeTool !== 'logo-layout'}>
+          {/* Logo & Layout (existing) and Custom composition share the Logo workbench shell. */}
+          <div hidden={activeTool !== 'logo-layout' && activeTool !== 'custom'}>
             <AppShell
               activeModule={activeModule}
-              onModuleChange={requestModuleChange}
               header={
                 <WorkbenchHeader
                   {...mediaHeader}
+                  title={activeModule === 'custom' ? '自定义构图' : 'Logo 与版式'}
+                  description={activeModule === 'custom' ? '自由调整 Logo、CPR 与底图裁切。' : '批量套用 Logo、CPR 与常用画板尺寸。'}
                   onOpenSettings={() => setSettingsDialogOpen(true)}
                   onCheckUpdate={() => void checkForUpdate(true)}
                   onOpenChangelog={() => setChangelogOpen(true)}

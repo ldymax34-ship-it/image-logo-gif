@@ -57,6 +57,33 @@ describe('App root integration', () => {
     container.remove();
   });
 
+  it('opens 自定义构图 from its own entry with a full-height empty workspace', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => { root.render(<App />); });
+
+    const customEntry = container.querySelector<HTMLButtonElement>('aside button[aria-label="自定义构图"]')!;
+    act(() => { customEntry.click(); });
+
+    const customWorkspace = container.querySelector<HTMLElement>('.custom-workspace');
+    expect(customWorkspace).not.toBeNull();
+    expect(container.querySelector('.custom-empty')?.textContent).toContain('未导入图片');
+    expect([...container.querySelectorAll('h1')].some((heading) => heading.textContent === '自定义构图')).toBe(true);
+    // 独立入口之后，页面内不再重复一套 设媒 / 自定义 模块导航。
+    expect(container.querySelector('.module-nav')).toBeNull();
+    expect(container.querySelector('.app-module-content-custom')).not.toBeNull();
+
+    const logoEntry = container.querySelector<HTMLButtonElement>('aside button[aria-label="Logo 与版式"]')!;
+    act(() => { logoEntry.click(); });
+    expect(container.querySelector('.custom-workspace')).toBeNull();
+    expect(container.querySelector('.app-module-content-media .workspace')).not.toBeNull();
+    expect([...container.querySelectorAll('h1')].some((heading) => heading.textContent === 'Logo 与版式')).toBe(true);
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
   it('hides video tasks from the global panel only while the video tool is active', () => {
     exportStatusStore.upsert({ id: 'v1', batchId: 'video-b', source: 'video-watermark', name: '片段', extension: 'mp4', progress: 0, status: 'queued' });
     exportStatusStore.upsert({ id: 'm1', batchId: 'media-b', source: 'media-batch', name: '封面', extension: 'jpg', progress: 0, status: 'queued' });

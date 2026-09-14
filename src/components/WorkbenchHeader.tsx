@@ -1,7 +1,9 @@
 import { GlobalTopActions } from '../app/GlobalTopActions';
 import { Palette } from 'lucide-react';
 
-export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendingSpecChanges, onOpenSettings, onCheckUpdate, onOpenChangelog }: {
+export function WorkbenchHeader({ title, description, assetCount, boardCount, previewCount, hasPendingSpecChanges, onOpenSettings, onCheckUpdate, onOpenChangelog }: {
+  title?: string;
+  description?: string;
   assetCount: number;
   boardCount: number;
   previewCount: number;
@@ -13,9 +15,9 @@ export function WorkbenchHeader({ assetCount, boardCount, previewCount, hasPendi
   return <header className="topbar">
     <div className="tool-page-heading">
       <span className="tool-page-icon" aria-hidden="true"><Palette size={18} strokeWidth={1.6} /></span>
-      <h1>Logo 与版式</h1>
+      <h1>{title ?? 'Logo 与版式'}</h1>
       <span className="tool-status-badge is-stable">可用</span>
-      <p className="tool-page-description">批量套用 Logo、CPR 与常用画板尺寸。</p>
+      <p className="tool-page-description">{description ?? '批量套用 Logo、CPR 与常用画板尺寸。'}</p>
     </div>
     <div className="topbar-status" aria-label="当前工作台状态">
       <span className="workbench-summary" aria-label={`${assetCount} 张素材，${boardCount} 个画板，${previewCount} 个预览状态`}>

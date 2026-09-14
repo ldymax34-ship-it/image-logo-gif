@@ -10,7 +10,7 @@ permissions:
 
 env:
   PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
-  PREVIEW_RELEASE_NOTES: 0.9.3：修复首次启动环境检测页深色主题与状态可读性。
+  PREVIEW_RELEASE_NOTES: 0.9.4：新增自定义构图独立入口，修复首次导入布局、Logo 默认居中及 macOS FFmpeg 检测。
 
 jobs:
   prepare:

@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   LockKeyhole,
+  LayoutTemplate,
   Palette,
   Settings,
   ShieldCheck,
@@ -16,6 +17,7 @@ import type { RecentToolEntry } from './appHistory';
 
 type ToolboxHomeProps = {
   onOpenLogoLayout: () => void;
+  onOpenCustom: () => void;
   onOpenWatermark: () => void;
   onOpenVideoWatermark?: () => void;
   onOpenSettings: () => void;
@@ -32,7 +34,7 @@ type ToolEntry = {
   eyebrow: string;
   icon: LucideIcon;
   action?: () => void;
-  tone: 'logo' | 'watermark' | 'video';
+  tone: 'logo' | 'watermark' | 'video' | 'custom';
 };
 
 function trackPointerHighlight(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -43,6 +45,7 @@ function trackPointerHighlight(event: ReactPointerEvent<HTMLButtonElement>) {
 
 const RECENT_TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
   'logo-layout': { label: 'Logo 与版式', icon: Palette },
+  custom: { label: '自定义构图', icon: LayoutTemplate },
   watermark: { label: '水印工具', icon: ShieldCheck },
   'video-watermark': { label: '视频水印', icon: Video }
 };
@@ -55,7 +58,7 @@ function formatRecentTime(at: number): string {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenWatermark, onOpenVideoWatermark, onOpenSettings, onOpenChangelog, recentTools, onOpenRecentTool, isDesktop }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenCustom, onOpenWatermark, onOpenVideoWatermark, onOpenSettings, onOpenChangelog, recentTools, onOpenRecentTool, isDesktop }: ToolboxHomeProps) {
   const desktop = isDesktop ?? isDesktopBridgeAvailable();
 
   const tools: ToolEntry[] = [
@@ -76,6 +79,15 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenWatermark, onOpenVideoWate
       icon: ShieldCheck,
       action: onOpenWatermark,
       tone: 'watermark'
+    },
+    {
+      id: 'custom',
+      label: '自定义构图',
+      description: '自由调整 Logo、CPR 与裁切位置，适合单张画布精细排版。',
+      eyebrow: '自由排版',
+      icon: LayoutTemplate,
+      action: onOpenCustom,
+      tone: 'custom'
     },
     {
       id: 'video-watermark',

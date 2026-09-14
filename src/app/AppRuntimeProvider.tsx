@@ -15,7 +15,7 @@ import { AppActivityContext, IDLE_APP_ACTIVITY, type AppActivity } from './appAc
 import { loadAppPreferences, resolveStartupTool, saveAppPreferences, type AppPreferencesV1 } from './appPreferences';
 import { loadRecentTools, pushRecentTool, saveRecentTools, type RecentToolEntry } from './appHistory';
 
-export type AppTool = 'toolbox' | 'logo-layout' | 'gif-compress' | 'batch-template-gif' | 'watermark' | 'video-watermark';
+export type AppTool = 'toolbox' | 'logo-layout' | 'custom' | 'gif-compress' | 'batch-template-gif' | 'watermark' | 'video-watermark';
 export type AppNavigationTarget = WorkbenchModule | AppTool;
 
 
@@ -90,7 +90,7 @@ export function resolveAppActivity(
 export function AppRuntimeProvider({ children }: { children: ReactNode }) {
   const [appPreferences, setAppPreferences] = useState<AppPreferencesV1>(() => loadAppPreferences());
   const [activeTool, setActiveTool] = useState<AppTool>(() => resolveStartupTool(appPreferences));
-  const [activeModule, setActiveModule] = useState<WorkbenchModule>('media');
+  const [activeModule, setActiveModule] = useState<WorkbenchModule>(() => activeTool === 'custom' ? 'custom' : 'media');
   const [brandAssets, setBrandAssets] = useState<BrandAsset[]>(DEFAULT_BRAND_ASSETS);
   const [brandLayer, setBrandLayer] = useState<BrandLayerState>(DEFAULT_BRAND_LAYER);
   const [brandSettings, setBrandSettings] = useState<BrandSettingsV1>(() => loadBrandSettings());
@@ -134,14 +134,18 @@ export function AppRuntimeProvider({ children }: { children: ReactNode }) {
     setActiveTool('toolbox');
   }, [canNavigateTo]);
   const navigateToTool = useCallback((tool: AppTool) => {
-    if (tool === activeTool) return;
+    if (tool === activeTool && !(tool === 'logo-layout' && activeModule === 'custom')) return;
     if (!canNavigateTo(tool)) return;
+    if (tool === 'custom') setActiveModule('custom');
+    if (tool === 'logo-layout') setActiveModule('media');
     setActiveTool(tool);
     if (tool !== 'toolbox') {
       setRecentTools((previous) => pushRecentTool(previous, tool));
     }
-  }, [activeTool, canNavigateTo]);
+  }, [activeModule, activeTool, canNavigateTo]);
   const setActiveAppTool = useCallback((tool: AppTool) => {
+    if (tool === 'custom') setActiveModule('custom');
+    if (tool === 'logo-layout') setActiveModule('media');
     setActiveTool(tool);
   }, []);
   const registerNavigationGuard = useCallback((guard: (target: AppNavigationTarget) => boolean) => {

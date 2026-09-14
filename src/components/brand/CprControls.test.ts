@@ -1,9 +1,13 @@
-import { createElement, isValidElement, type ChangeEvent, type ReactNode } from 'react';
+// @vitest-environment jsdom
+
+import { act, createElement, isValidElement, type ChangeEvent, type ReactNode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Simulate } from 'react-dom/test-utils';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createDefaultCprState, createDefaultLogoGroup, type CprState, type LogoGroupState } from '../../core';
 import { CprControls, setCprColorMode } from './CprControls';
-import { LogoGroupControls } from './LogoGroupControls';
+import { clampLogoScale, LOGO_SIZE_OPTIONS, LogoGroupControls, parseLogoScalePercent } from './LogoGroupControls';
 
 const COLOR_LABELS = ['原色', '白色', '黑色', '自定义'];
 
@@ -80,6 +84,50 @@ describe('color mode labels', () => {
 });
 
 describe('continuous scale reset', () => {
+  it('clamps percentage input, keeps empty/NaN input stable, and exposes the larger preset', () => {
+    expect(clampLogoScale(12)).toBe(10);
+    expect(parseLogoScalePercent('', 2)).toBe(2);
+    expect(parseLogoScalePercent('not-a-number', 2)).toBe(2);
+    expect(parseLogoScalePercent('250', 1)).toBe(2.5);
+    expect(LOGO_SIZE_OPTIONS).toContainEqual({ value: 'xxl', label: '超大（KV）' });
+  });
+
+  it('keeps the percentage draft while typing 300, then commits on Enter', () => {
+    let group: LogoGroupState = { ...createDefaultLogoGroup(), scale: 1 };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => root.render(createElement(LogoGroupControls, {
+      group,
+      language: 'zh-CN',
+      onLanguageChange: () => undefined,
+      onChange: (next) => { group = next; }
+    })));
+
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Logo 连续缩放百分比"]');
+    expect(input).not.toBeNull();
+    const type = (value: string) => {
+      Simulate.change(input!, { target: { value } as unknown as EventTarget });
+    };
+
+    act(() => {
+      input!.focus();
+      type('3');
+      type('30');
+      type('300');
+    });
+    expect(input!.value).toBe('300');
+    expect(group.scale).toBe(1);
+
+    act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(input!.value).toBe('300');
+    expect(group.scale).toBe(3);
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
   it('resets Logo scale through the existing onChange path after a double click', () => {
     let group: LogoGroupState = { ...createDefaultLogoGroup(), scale: 1 };
     const renderControl = () => LogoGroupControls({

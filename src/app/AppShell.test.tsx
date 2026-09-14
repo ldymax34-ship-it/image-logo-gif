@@ -1,18 +1,17 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { AppShell } from './AppShell';
 
 describe('AppShell', () => {
-  it('renders the Logo secondary navigation as compact tabs without a duplicate return shell', () => {
+  it('renders only the page header and the active module content', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
-    const onModuleChange = vi.fn();
 
     act(() => {
       root.render(
-        <AppShell activeModule="media" onModuleChange={onModuleChange} header={<header><h1>Logo 与版式</h1></header>}>
+        <AppShell activeModule="media" header={<header><h1>Logo 与版式</h1></header>}>
           <div>内容</div>
         </AppShell>
       );
@@ -20,17 +19,27 @@ describe('AppShell', () => {
 
     expect(container.querySelector('.app-shell-header')).not.toBeNull();
     expect(container.querySelector('.app-shell-header .capsule-back-button')).toBeNull();
-    expect(container.querySelector('.module-nav')).not.toBeNull();
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('设媒');
-    expect(container.querySelector('.module-glyph')).toBeNull();
-    expect(container.querySelector('.module-status-dot')).toBeNull();
-    expect(container.querySelector('[role="tab"]')?.getAttribute('title')).toBeNull();
+    // 设媒 / 自定义 现在各自有独立入口，页面内不再重复一套模块导航。
+    expect(container.querySelector('.module-nav')).toBeNull();
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+    expect(container.querySelector('.app-module-content-media')?.textContent).toBe('内容');
+
+    act(() => root.unmount());
+  });
+
+  it('keeps the custom module content class for the custom composition entry', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
 
     act(() => {
-      container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="false"]')?.click();
+      root.render(
+        <AppShell activeModule="custom" header={<header><h1>Logo 与版式</h1></header>}>
+          <div>自定义内容</div>
+        </AppShell>
+      );
     });
-    expect(onModuleChange).toHaveBeenCalledWith('custom');
+
+    expect(container.querySelector('.app-module-content-custom')?.textContent).toBe('自定义内容');
 
     act(() => root.unmount());
   });

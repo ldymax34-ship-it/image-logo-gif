@@ -12,6 +12,8 @@ import {
   formatFileSize,
   getBoardPreviewKey,
   getLanguageLogoScale,
+  getLogoScaleLimits,
+  normalizeLogoGroupScale,
   parseSpecText,
   resolveBoardBrandAssets,
   saveCustomPresetTemplates,
@@ -195,11 +197,37 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
   const selectedBoardAssets = resolveBoardBrandAssets({ boardBrandState: selectedBoardBrandState, brandCatalog: brandAssets, brandLayer: selectedBoardLayer });
   const focusLogoGroup = focusPreviewKey ? boardBrandStates[focusPreviewKey]?.logo ?? defaultLogoGroup : defaultLogoGroup;
   const focusCprState = focusPreviewKey ? boardBrandStates[focusPreviewKey]?.cpr ?? defaultCprState : defaultCprState;
-  const focusBoardAssets = resolveBoardBrandAssets({
-    boardBrandState: { logo: focusLogoGroup, cpr: focusCprState },
-    brandCatalog: brandAssets,
-    brandLayer
-  });
+  const controlsLogoGroup = focusSession?.draft.brand.logo ?? selectedLogoGroup;
+  const controlsSpec = focusSession ? focusSpec : selectedSpec;
+  const controlsAssets = focusSession
+    ? resolveBoardBrandAssets({ boardBrandState: { logo: controlsLogoGroup, cpr: focusCprState }, brandCatalog: brandAssets, brandLayer })
+    : selectedBoardAssets;
+  const logoScaleMax = controlsSpec
+    ? getLogoScaleLimits({ width: controlsSpec.width, height: controlsSpec.height }, controlsLogoGroup, { companyLogo: controlsAssets.companyLogo, gameLogo: controlsAssets.gameLogo }).maxScale
+    : undefined;
+
+  function normalizeCurrentLogoChange(next: LogoGroupState): LogoGroupState {
+    if (!controlsSpec) return next;
+    return normalizeLogoGroupScale(
+      { width: controlsSpec.width, height: controlsSpec.height },
+      next,
+      { companyLogo: controlsAssets.companyLogo, gameLogo: controlsAssets.gameLogo }
+    );
+  }
+
+  useEffect(() => {
+    if (focusSession || !selectedBoardKey || !selectedSpec) return;
+    const current = boardBrandStates[selectedBoardKey]?.logo;
+    if (!current) return;
+    const normalized = normalizeLogoGroupScale(
+      { width: selectedSpec.width, height: selectedSpec.height },
+      current,
+      { companyLogo: selectedBoardAssets.companyLogo, gameLogo: selectedBoardAssets.gameLogo }
+    );
+    if (normalized.scale !== current.scale) {
+      dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: normalized });
+    }
+  }, [boardBrandStates, dispatchBoardBrand, focusSession, selectedBoardAssets.companyLogo, selectedBoardAssets.gameLogo, selectedBoardKey, selectedSpec]);
 
   useEffect(() => {
     if (!focusAsset || !focusSpec || !focusPreviewKey || !focusPreviewState || focusSession?.boardKey === focusPreviewKey) return;
@@ -349,11 +377,26 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
   function updateFocusedLanguage(language: BrandLanguage) {
     if (!focusSession) {
       const next = applyLanguageLogoScale(selectedLogoGroup, language, brandSettings);
-      return changeBrandLanguage(language, next.scale);
+      const gameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === language);
+      const normalized = selectedSpec
+        ? normalizeLogoGroupScale(
+          { width: selectedSpec.width, height: selectedSpec.height },
+          { ...next, gameLogoId: gameLogo?.id },
+          { companyLogo: selectedBoardAssets.companyLogo, gameLogo }
+        )
+        : next;
+      return changeBrandLanguage(language, normalized.scale);
     }
     const gameLogo = brandAssets.find((asset) => asset.type === 'logo' && asset.language === language);
     const next = applyLanguageLogoScale(focusSession.draft.brand.logo, language, brandSettings);
-    setFocusSession(updateFocusLogo(focusSession, { ...next, gameLogoId: gameLogo?.id }));
+    const normalized = focusSpec
+      ? normalizeLogoGroupScale(
+        { width: focusSpec.width, height: focusSpec.height },
+        { ...next, gameLogoId: gameLogo?.id },
+        { companyLogo: controlsAssets.companyLogo, gameLogo }
+      )
+      : { ...next, gameLogoId: gameLogo?.id };
+    setFocusSession(updateFocusLogo(focusSession, normalized));
   }
 
   function requestBrandScope(layer: ScopeLayer, scope: BrandScopeKind) {
@@ -442,9 +485,10 @@ export function MediaWorkbench({ active, sharedState }: { active: boolean; share
     cprState={focusSession?.draft.brand.cpr ?? selectedCprState}
     brandLayer={focusSession ? { ...brandLayer, ...focusSession.draft.brandLayer, logoEffect: focusSession.draft.brandLayer.logoEffect } : selectedBoardLayer}
     brandSettings={brandSettings}
-    gameLogoAsset={focusSession ? focusBoardAssets.gameLogo : selectedBoardAssets.gameLogo}
+    gameLogoAsset={controlsAssets.gameLogo}
+    logoScaleMax={logoScaleMax}
     onLanguageChange={updateFocusedLanguage}
-    onLogoChange={(next) => { if (focusSession) setFocusSession(updateFocusLogo(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: next }); }}
+    onLogoChange={(next) => { const normalized = normalizeCurrentLogoChange(next); if (focusSession) setFocusSession(updateFocusLogo(focusSession, normalized)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo', key: selectedBoardKey, logo: normalized }); }}
     onCprChange={(next) => { if (focusSession) setFocusSession(updateFocusCpr(focusSession, next)); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-cpr', key: selectedBoardKey, cpr: next }); }}
     activeSection={focusSession?.tool === 'logo' ? 'logo' : focusSession?.tool === 'cpr' ? 'cpr' : undefined}
     onBrandLayerChange={(next) => { if (focusSession) setFocusSession(updateFocusBrandLayer(focusSession, { logoEnabled: next.logoEnabled, logoEffect: { ...next.logoEffect } })); else if (selectedBoardKey) dispatchBoardBrand({ type: 'update-logo-visual', key: selectedBoardKey, logoEnabled: next.logoEnabled, logoEffect: next.logoEffect }); }}

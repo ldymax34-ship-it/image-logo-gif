@@ -5,6 +5,9 @@ import { CPR_PRESET } from './cprPreset';
 import type { BrandRenderPlan, BrandPlacement, CprConstraintMode, CprState, LogoConstraintMode, LogoGroupState } from './brandTypes';
 import { classifyAspect, type CanvasSize, type LayoutRect } from '../layout/layoutProfile';
 
+export const LOGO_SCALE_MIN = 0.1;
+export const LOGO_SCALE_MAX = 10;
+
 export function getLogoLanguageScale(canvas: CanvasSize, group: LogoGroupState, game?: BrandAsset): number {
   if (group.mode === 'company-only' || game?.language !== 'en-US') return 1;
   return classifyAspect(canvas) === 'portrait' ? 1.15 : 1.1;
@@ -15,21 +18,30 @@ function getCompanyHeightMultiplier(group: LogoGroupState): number {
   return preset * (group.companyLogoScaleFactor ?? 1);
 }
 
-function getGroupWidth(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, game?: BrandAsset): number {
+function getGroupWidth(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, game?: BrandAsset, allowOverflow = false): number {
   const languageScale = getLogoLanguageScale(canvas, group, game);
   // Every preset shares the same base geometry. This keeps a drag-slider
   // continuous: changing scale never switches to a different sizing formula.
-  const presetScale = group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : group.sizePreset === 'xl' ? 1.45 : 1;
-  const width = gridUnit * (group.placement === 'center' ? 4 : 2) * presetScale * (group.scale ?? 1) * languageScale;
+  const presetScale = group.sizePreset === 'small' ? .85 : group.sizePreset === 'large' ? 1.15 : group.sizePreset === 'xl' ? 1.45 : group.sizePreset === 'xxl' ? 2 : 1;
+  // A first drag turns a preset into custom placement. Keep the preset's
+  // explicit geometry for that transition; otherwise a centered group would
+  // switch from the 4U center width to the 2U corner width mid-gesture.
+  const sizingPlacement = group.placement === 'custom'
+    ? group.customSizingPlacement ?? 'corner-right'
+    : group.placement;
+  const width = gridUnit * (sizingPlacement === 'center' ? 4 : 2) * presetScale * (group.scale ?? 1) * languageScale;
   // Standard layout keeps its historical preset behavior. The custom
   // workbench resolves its own geometric scale before building this plan.
-  return group.placement === 'custom' && group.constraintMode === 'canvas'
+  // Canvas constraint means the full canvas is the sizing domain even before
+  // a live gesture changes placement to custom. Keeping this uncapped avoids
+  // a boundary jump when a centered Logo is first dragged.
+  return allowOverflow || group.constraintMode === 'canvas'
     ? width
     : Math.min(canvas.width - gridUnit * 2, width);
 }
 
-function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset) {
-  const width = getGroupWidth(canvas, gridUnit, group, game);
+function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupState, company?: BrandAsset, game?: BrandAsset, allowOverflow = false) {
+  const width = getGroupWidth(canvas, gridUnit, group, game, allowOverflow);
   if (group.mode !== 'company-and-game' || !company || !game) {
     const aspect = (group.mode === 'company-only' ? company?.aspectRatio : game?.aspectRatio) ?? 3;
     // Keep the standalone company mark aligned with the same visual hierarchy
@@ -49,24 +61,64 @@ function groupDimensions(canvas: CanvasSize, gridUnit: number, group: LogoGroupS
   return { width, height: gameHeight, gameHeight, companyHeight: gameHeight * companyHeightMultiplier, gap };
 }
 
+export type LogoScaleLimits = { minScale: number; maxScale: number };
+
+/**
+ * Returns the absolute scale range for the current Logo geometry. The upper
+ * bound is both the product hard limit and the selected safe-area/canvas
+ * boundary, so controls cannot enter a numeric range where the Render Plan
+ * is already clamped and the preview no longer grows.
+ */
+export function getLogoScaleLimits(
+  canvas: CanvasSize,
+  group: LogoGroupState,
+  assets: { companyLogo?: BrandAsset; gameLogo?: BrandAsset } = {}
+): LogoScaleLimits {
+  const grid = createBrandGrid(canvas);
+  const emptyBounds = getLogoPlacementBounds(canvas, { width: 0, height: 0 }, group.constraintMode);
+  const availableWidth = Math.max(0, emptyBounds.maxX - emptyBounds.minX);
+  const availableHeight = Math.max(0, emptyBounds.maxY - emptyBounds.minY);
+  const upperBound = Math.max(LOGO_SCALE_MAX, group.scale ?? 1);
+  const fits = (scale: number) => {
+    const dimensions = groupDimensions(canvas, grid.unit, { ...group, scale }, assets.companyLogo, assets.gameLogo, true);
+    return dimensions.width <= availableWidth + Number.EPSILON && dimensions.height <= availableHeight + Number.EPSILON;
+  };
+
+  if (!fits(LOGO_SCALE_MIN)) return { minScale: LOGO_SCALE_MIN, maxScale: LOGO_SCALE_MIN };
+  if (fits(upperBound)) return { minScale: LOGO_SCALE_MIN, maxScale: upperBound };
+
+  let low = LOGO_SCALE_MIN;
+  let high = upperBound;
+  for (let index = 0; index < 40; index += 1) {
+    const middle = (low + high) / 2;
+    if (fits(middle)) low = middle;
+    else high = middle;
+  }
+  return { minScale: LOGO_SCALE_MIN, maxScale: Math.max(LOGO_SCALE_MIN, low) };
+}
+
+/** Keeps persisted/control state aligned with the current Logo geometry. */
+export function normalizeLogoGroupScale(
+  canvas: CanvasSize,
+  group: LogoGroupState,
+  assets: { companyLogo?: BrandAsset; gameLogo?: BrandAsset } = {}
+): LogoGroupState {
+  const limits = getLogoScaleLimits(canvas, group, assets);
+  const currentScale = Number.isFinite(group.scale) ? group.scale! : 1;
+  const scale = Math.min(limits.maxScale, Math.max(limits.minScale, currentScale));
+  return scale === group.scale ? group : { ...group, scale };
+}
+
 /** Custom composition may grow until its actual group geometry meets the canvas edge. */
 function constrainCustomCanvasLogoGroup(
   canvas: CanvasSize,
-  gridUnit: number,
   group: LogoGroupState,
   company?: BrandAsset,
   game?: BrandAsset
 ): LogoGroupState {
   if (group.placement !== 'custom' || group.constraintMode !== 'canvas') return group;
-  const dimensions = groupDimensions(canvas, gridUnit, group, company, game);
-  const geometricMultiplier = Math.min(
-    1,
-    canvas.width / Math.max(1, dimensions.width),
-    canvas.height / Math.max(1, dimensions.height)
-  );
-  return geometricMultiplier < 1
-    ? { ...group, scale: (group.scale ?? 1) * geometricMultiplier }
-    : group;
+  const maxScale = getLogoScaleLimits(canvas, group, { companyLogo: company, gameLogo: game }).maxScale;
+  return (group.scale ?? 1) > maxScale ? { ...group, scale: maxScale } : group;
 }
 
 export type LogoPlacementBounds = {
@@ -173,7 +225,7 @@ function buildCprItem(canvas: CanvasSize, cpr: CprState): NonNullable<BrandRende
 export function buildBrandRenderPlan(canvas: CanvasSize, group: LogoGroupState, options: BuildBrandRenderOptions = {}): BrandRenderPlan {
   group = normalizeLogoGroup(group);
   const grid = createBrandGrid(canvas);
-  group = constrainCustomCanvasLogoGroup(canvas, grid.unit, group, options.companyLogo, options.gameLogo);
+  group = constrainCustomCanvasLogoGroup(canvas, group, options.companyLogo, options.gameLogo);
   const logoEffect = resolveColorEffect(group.colorMode, options.effect ?? DEFAULT_BRAND_EFFECT); const color = logoEffect.colorEnabled ? logoEffect.color : '#ffffff';
   const hasCompany = group.mode !== 'game-only' && options.companyLogo; const hasGame = group.mode !== 'company-only' && options.gameLogo;
   const cprState = options.cpr ?? (options.cprEnabled ? { enabled: true, scale: 1, transform: { placement: 'bottom-right' as const, offsetX: 0, offsetY: 0 }, colorMode: 'white' as const, effect: { ...DEFAULT_BRAND_EFFECT, strokeEnabled: false, glowEnabled: false, shadowEnabled: false } } : undefined);

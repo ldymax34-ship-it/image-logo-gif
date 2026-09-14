@@ -35,7 +35,7 @@ body {
 .app-module-content { grid-column: 1; min-width: 0; min-height: 0; overflow: hidden; background: transparent; }
 .app-module-content-media { background: transparent; }
 .app-module-content-media > .focus-workspace { border: 0; border-radius: 0; }
-.app-module-shell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
+.app-module-shell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .module-nav { display: flex; align-items: center; gap: 4px; min-width: 0; min-height: 36px; overflow-x: auto; overflow-y: hidden; padding: 6px 0; border-bottom: 1px solid var(--color-border); scrollbar-width: thin; }
 .module-nav button { flex: 0 0 auto; min-height: 28px; padding: 4px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-muted); font-size: 12px; font-weight: 620; }
 .module-nav button:hover { background: var(--color-panel-raised); color: var(--color-text); }
@@ -836,6 +836,7 @@ input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='
 
 /* 首页工具身份色：只落在图标与轻边缘反馈，不把工具卡整体染色。 */
 .toolbox-tool-button[data-tone='logo'] { --tool-tone: #d6a45f; --tool-tone-soft: rgb(214 164 95 / 12%); --tool-tone-border: rgb(214 164 95 / 30%); }
+.toolbox-tool-button[data-tone='custom'] { --tool-tone: #b8b8b8; --tool-tone-soft: rgb(255 255 255 / 8%); --tool-tone-border: rgb(255 255 255 / 22%); }
 .toolbox-tool-button[data-tone='watermark'] { --tool-tone: #55b89a; --tool-tone-soft: rgb(85 184 154 / 12%); --tool-tone-border: rgb(85 184 154 / 30%); }
 .toolbox-tool-button[data-tone='video'] { --tool-tone: #649bd4; --tool-tone-soft: rgb(100 155 212 / 12%); --tool-tone-border: rgb(100 155 212 / 30%); }
 .toolbox-tool-button[data-tone] .toolbox-tool-icon { border-color: var(--tool-tone-border); background: var(--tool-tone-soft); color: var(--tool-tone); }

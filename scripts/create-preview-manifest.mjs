@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 export function previewReleaseNotes(version) {
-  return `${version}：修复首次启动环境检测页深色主题与状态可读性。`;
+  return `${version}：新增自定义构图独立入口，修复首次导入布局、Logo 默认居中及 macOS FFmpeg 检测。`;
 }
 
 export function assertUpdaterSignature(signature) {

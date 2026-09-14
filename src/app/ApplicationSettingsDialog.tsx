@@ -6,6 +6,7 @@ import { Select } from '../components/ui';
 const STARTUP_OPTIONS: Array<{ value: StartupTool; label: string }> = [
   { value: 'toolbox', label: '工具箱首页' },
   { value: 'logo-layout', label: 'Logo 与版式' },
+  { value: 'custom', label: '自定义构图' },
   { value: 'gif-media', label: 'GIF / 媒体工具' },
   { value: 'watermark', label: '水印工具' },
   { value: 'video-watermark', label: '视频水印' },

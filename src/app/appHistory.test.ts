@@ -22,4 +22,14 @@ describe('appHistory', () => {
 
     expect(result.map((entry) => entry.tool)).toEqual(['watermark', 'logo-layout']);
   });
+
+  it('records the independent 自定义构图 entry as its own recent tool', () => {
+    const result = parseRecentTools(JSON.stringify([
+      { tool: 'custom', at: 3 },
+      { tool: 'logo-layout', at: 2 },
+      { tool: 'gif-compress', at: 1 }
+    ]));
+
+    expect(result.map((entry) => entry.tool)).toEqual(['custom', 'logo-layout']);
+  });
 });

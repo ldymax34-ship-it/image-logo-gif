@@ -14,7 +14,9 @@ import {
   type BrandSettingsV1,
   type LogoConstraintMode,
   type MaterialAsset,
-  type MaterialSpec
+  type MaterialSpec,
+  getLogoScaleLimits,
+  LOGO_SCALE_MIN
 } from '../../core';
 import { BoardCanvas } from '../../components/canvas';
 import type { FocusSession } from './focusSession';
@@ -112,6 +114,8 @@ export function FocusWorkspace({
   const minScale = computeFitScale(asset, spec, session.draft.previewState.fitMode);
   const maxScale = minScale * 6;
   const selectionPlan = buildBrandRenderPlan({ width: spec.width, height: spec.height }, session.draft.brand.logo, { companyLogo: assets.companyLogo, gameLogo: assets.gameLogo, cpr: session.draft.brand.cpr });
+  const logoScaleLimits = getLogoScaleLimits({ width: spec.width, height: spec.height }, session.draft.brand.logo, { companyLogo: assets.companyLogo, gameLogo: assets.gameLogo });
+  const focusLogoScale = Math.min(logoScaleLimits.maxScale, Math.max(LOGO_SCALE_MIN, session.draft.brand.logo.scale ?? 1));
   const selectionRect = session.tool === 'logo' ? selectionPlan.logoGroupRect : session.tool === 'cpr' ? selectionPlan.cpr?.rect : undefined;
   const selectionLabel = session.tool === 'logo' ? 'Logo' : session.tool === 'cpr' ? 'CPR' : '图片裁切';
   const constraintMode = session.draft.brand.logo.constraintMode ?? 'safe-area';
@@ -196,12 +200,14 @@ export function FocusWorkspace({
   }
 
   function updateFocusLogoFromFabric(next: { x: number; y: number; scale: number }, scaledRect: { width: number; height: number }) {
+    const logo = session.draft.brand.logo;
     const position = brandSettings.snapEnabled
       ? snapLogoGroupPosition({ width: spec.width, height: spec.height }, scaledRect, next, brandSettings.snapThreshold / stageScale, constraintMode)
       : next;
     onSessionChange(updateFocusLogo(session, {
-      ...session.draft.brand.logo,
+      ...logo,
       placement: 'custom',
+      customSizingPlacement: logo.placement === 'custom' ? logo.customSizingPlacement : logo.placement,
       manualOffset: { x: position.x, y: position.y },
       scale: next.scale
     }));
@@ -234,7 +240,13 @@ export function FocusWorkspace({
       if (!rect) return;
       const raw = { x: rect.x + canvasDx, y: rect.y + canvasDy };
       const next = brandSettings.snapEnabled ? snapLogoGroupPosition({ width: spec.width, height: spec.height }, rect, raw, brandSettings.snapThreshold / stageScale, constraintMode) : raw;
-      onSessionChange(updateFocusLogo(session, { ...session.draft.brand.logo, placement: 'custom', manualOffset: next }));
+      const logo = session.draft.brand.logo;
+      onSessionChange(updateFocusLogo(session, {
+        ...logo,
+        placement: 'custom',
+        customSizingPlacement: logo.placement === 'custom' ? logo.customSizingPlacement : logo.placement,
+        manualOffset: next
+      }));
       return;
     }
     const nextCpr = { ...session.draft.brand.cpr, transform: { ...session.draft.brand.cpr.transform, placement: 'custom' as const, offsetX: session.draft.brand.cpr.transform.offsetX + canvasDx, offsetY: session.draft.brand.cpr.transform.offsetY + canvasDy } };
@@ -320,7 +332,8 @@ export function FocusWorkspace({
           canvas={{ width: spec.width, height: spec.height }}
           rect={selectionPlan.logoGroupRect}
           previewScale={stageScale}
-          currentScale={session.draft.brand.logo.scale ?? 1}
+          currentScale={focusLogoScale}
+          scaleMax={logoScaleLimits.maxScale}
           constraintMode={constraintMode}
           selected
           onSelectedChange={(selected) => {

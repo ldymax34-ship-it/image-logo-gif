@@ -71,6 +71,37 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 只内置已确认需要的字体资源；文字水印在获得来源、许可证、校验与双平台策略之前不得假定可使用任何中文字体。
 - 审计结果必须进入提交记录或构建说明，不能只留在聊天中。
 
+## 0.9.4 自定义构图独立入口 macOS 验证包（2026-09-14）
+
+当前基线
+
+- Windows NSIS：本轮未构建。
+- Windows 安装后：本轮未验证。
+- macOS DMG：43,920,775 B（约 41.89 MiB）。
+- macOS `.app`：88,264 KiB（约 86.20 MiB）。
+
+与最近可用的 0.9.2 arm64 本地产物比较
+
+- DMG：43,918,953 B → 43,920,775 B，增加 1,822 B。
+- `.app`：88,272 KiB → 88,264 KiB，减少 8 KiB。
+- 本轮没有新增 npm、Rust、sidecar、字体、模型或运行时依赖；体积变化属于现有前端与主程序代码变化，没有发现新的大型资源。
+
+主要体积来源
+
+1. `Contents/MacOS/ffmpeg`：35,716 KiB。
+2. `Contents/MacOS/brand_material_workbench`：18,628 KiB。
+3. `Contents/MacOS/ffprobe`：17,676 KiB。
+4. `Contents/Resources/resources/fonts/SourceHanSansSC-Regular.otf`：16,144 KiB。
+5. 其余图标、许可证、签名与 `Info.plist` 合计不足 100 KiB。
+
+构建与签名
+
+- 产物架构为 Mach-O arm64，版本 0.9.4。
+- `.app` 使用 ad-hoc 签名；`codesign --verify --deep --strict` 通过，DMG 的 `hdiutil verify` 校验通过。
+- 修复后包内 `ffmpeg` 与 `ffprobe` 均为 `0755`，并分别实际执行 `-version` 成功；两份源 sidecar 的 Git 模式记录为 `100755`，避免后续打包再次丢失执行权限。
+- 本机没有 Apple Developer ID 与公证凭据，`spctl` 会拒绝该本地包；它仅用于本机验证，不是可直接对外分发的公证包。
+- 仓库默认开启 updater 产物，首次构建因没有 `TAURI_SIGNING_PRIVATE_KEY` 在生成 `.app`、DMG 后返回失败；随后通过命令行临时覆盖 `createUpdaterArtifacts=false` 重新构建 `.app + .dmg` 并成功退出，未修改签名、更新或发布配置。
+
 ## 0.1.33 Stage 5A 工具箱启动器审计（2026-07-23）
 
 - 新增依赖：无。未新增 npm、Rust crate、sidecar、字体、模型、Vue、FFmpeg 或第二个 Tauri window。

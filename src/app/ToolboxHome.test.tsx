@@ -7,6 +7,7 @@ import { ToolboxHome } from './ToolboxHome';
 
 const baseProps = {
   onOpenLogoLayout: () => undefined,
+  onOpenCustom: () => undefined,
   onOpenWatermark: () => undefined,
   onOpenVideoWatermark: () => undefined,
   onOpenSettings: () => undefined,
@@ -26,6 +27,7 @@ describe('ToolboxHome', () => {
 
     expect(container.querySelector('main[aria-label="品宣工具箱"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="Logo 与版式"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="自定义构图"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="水印工具"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="视频水印"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="暗水印与像素指纹（实验）"]')).toBeNull();
@@ -53,6 +55,7 @@ describe('ToolboxHome', () => {
     const { container, root } = mount();
 
     expect(container.querySelector('button[aria-label="Logo 与版式"]')?.getAttribute('data-tone')).toBe('logo');
+    expect(container.querySelector('button[aria-label="自定义构图"]')?.getAttribute('data-tone')).toBe('custom');
     expect(container.querySelector('button[aria-label="水印工具"]')?.getAttribute('data-tone')).toBe('watermark');
     expect(container.querySelector('button[aria-label="视频水印"]')?.getAttribute('data-tone')).toBe('video');
     act(() => root.unmount());
@@ -91,6 +94,22 @@ describe('ToolboxHome', () => {
     expect(videoCard?.disabled).toBe(false);
     act(() => { videoCard?.click(); });
     expect(onOpenVideoWatermark).toHaveBeenCalledTimes(1);
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  it('opens the custom composition workspace from its own production card', () => {
+    const onOpenCustom = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => { root.render(<ToolboxHome {...baseProps} onOpenCustom={onOpenCustom} />); });
+
+    const customCard = container.querySelector<HTMLButtonElement>('button[aria-label="自定义构图"]');
+    expect(customCard?.disabled).toBe(false);
+    act(() => { customCard?.click(); });
+    expect(onOpenCustom).toHaveBeenCalledTimes(1);
+
     act(() => { root.unmount(); });
     container.remove();
   });

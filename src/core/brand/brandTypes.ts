@@ -4,7 +4,7 @@ import type { BrandLanguage, BrandEffectState } from './brandAsset';
 export type LogoGroupMode = 'game-only' | 'company-only' | 'company-and-game';
 export type BrandPlacement = 'corner-left' | 'center' | 'corner-right' | 'custom';
 export type BrandColorMode = 'white' | 'black' | 'original' | 'custom';
-export type BrandSize = 'small' | 'standard' | 'large' | 'xl';
+export type BrandSize = 'small' | 'standard' | 'large' | 'xl' | 'xxl';
 export type CompanyLogoScale = 'small' | 'match' | 'large';
 
 export type CprPlacement = 'bottom-left' | 'bottom-center' | 'bottom-right' | 'custom';
@@ -58,6 +58,8 @@ export type LogoGroupState = {
   gapUnits: number;
   placement: BrandPlacement;
   lastExplicitPlacement?: Exclude<BrandPlacement, 'custom'>;
+  /** Set only when a live gesture first converts an explicit placement to custom. */
+  customSizingPlacement?: Exclude<BrandPlacement, 'custom'>;
   manualOffset?: { x: number; y: number };
   /** 0.1.31: whether the logo group is constrained to the brand safe-area or may reach the canvas edge. */
   constraintMode?: LogoConstraintMode;

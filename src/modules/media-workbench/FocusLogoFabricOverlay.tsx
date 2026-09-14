@@ -28,6 +28,7 @@ type LatestView = {
   rect?: FocusLogoCanvasRect;
   previewScale: number;
   currentScale: number;
+  scaleMax: number;
   constraintMode: LogoConstraintMode;
   selected: boolean;
 };
@@ -87,7 +88,7 @@ function reconcileFocusLogo({
   const nextObject = object ?? createFocusLogoObject(FabricRectConstructor, view.rect, view.previewScale);
   if (!object) instance.add(nextObject);
   if (!isTransforming) {
-    const baseline = createFocusLogoTransformBaseline(view.rect, view.currentScale, view.canvas, view.constraintMode, view.previewScale);
+    const baseline = createFocusLogoTransformBaseline(view.rect, view.currentScale, view.canvas, view.constraintMode, view.previewScale, view.scaleMax);
     applyFrame(nextObject, toConstrainedFocusLogoFabricFrame({ x: view.rect.x, y: view.rect.y, scale: view.currentScale }, baseline));
   }
   if (view.selected) {
@@ -105,6 +106,7 @@ export function FocusLogoFabricOverlay({
   rect,
   previewScale,
   currentScale,
+  scaleMax,
   constraintMode,
   selected,
   onSelectedChange,
@@ -116,6 +118,7 @@ export function FocusLogoFabricOverlay({
   rect?: FocusLogoCanvasRect;
   previewScale: number;
   currentScale: number;
+  scaleMax: number;
   constraintMode: LogoConstraintMode;
   selected: boolean;
   onSelectedChange: (selected: boolean) => void;
@@ -130,10 +133,10 @@ export function FocusLogoFabricOverlay({
   const baselineRef = useRef<FocusLogoTransformBaseline>();
   const transformingRef = useRef(false);
   const hostEpochRef = useRef(0);
-  const latestViewRef = useRef<LatestView>({ canvas, rect, previewScale, currentScale, constraintMode, selected });
+  const latestViewRef = useRef<LatestView>({ canvas, rect, previewScale, currentScale, scaleMax, constraintMode, selected });
   const callbacksRef = useRef({ onSelectedChange, onTransformChange, onTransformingChange, onError });
 
-  latestViewRef.current = { canvas, rect, previewScale, currentScale, constraintMode, selected };
+  latestViewRef.current = { canvas, rect, previewScale, currentScale, scaleMax, constraintMode, selected };
   callbacksRef.current = { onSelectedChange, onTransformChange, onTransformingChange, onError };
 
   useEffect(() => {
@@ -173,7 +176,7 @@ export function FocusLogoFabricOverlay({
         const object = transform.target as FabricRect | undefined;
         const view = latestViewRef.current;
         if (!object?.__focusLogo || !view.rect) return;
-        baselineRef.current = createFocusLogoTransformBaseline(view.rect, view.currentScale, view.canvas, view.constraintMode, view.previewScale);
+        baselineRef.current = createFocusLogoTransformBaseline(view.rect, view.currentScale, view.canvas, view.constraintMode, view.previewScale, view.scaleMax);
         transformingRef.current = true;
         callbacksRef.current.onTransformingChange(true);
       });
@@ -221,7 +224,7 @@ export function FocusLogoFabricOverlay({
       view: latestViewRef.current,
       isTransforming: transformingRef.current
     });
-  }, [canvas, constraintMode, currentScale, previewScale, rect, selected]);
+  }, [canvas, constraintMode, currentScale, previewScale, rect, scaleMax, selected]);
 
   return <div ref={hostRef} className="focus-logo-fabric-overlay" aria-label="Logo 交互层" />;
 }
