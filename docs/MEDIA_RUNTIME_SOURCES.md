@@ -20,6 +20,15 @@
 
 Windows 压缩包于 2026-08-24 从 `BtbN/FFmpeg-Builds` 固定 GitHub Release `autobuild-2026-08-23-13-03` 下载；资产 `ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0.zip` 的 SHA-256 为 `2f388916565c44f6edcdddd7b01ccc73a2bbc7f107bd615b7247e9c9773f4a09`。二进制配置已复核包含 `--enable-gpl`、`--enable-ffnvcodec`、`--enable-amf`、`--enable-libvpl` 和 `--enable-libx264`，未包含 `--enable-nonfree`。Windows CI 在构建前运行 `scripts/install-windows-ffmpeg.ps1`，对压缩包和两个二进制分别校验 SHA-256 后注入 Tauri sidecar，避免 GitHub 普通 Git 的 100 MB 单文件限制。GPLv3 许可证文本随应用打包为 `resources/licenses/FFmpeg-GPL-3.0.txt`。
 
+### 0.9.4 构建下载源修复（2026-09-14）
+
+- 上游 README 的 Release Retention Policy 仅保留最近 14 份 daily build（每月最后一份另行保留）；上述 2026-08-23 下载地址现已返回 HTTP 404，导致首轮 0.9.4 Windows CI 在下载阶段失败。
+- 将本机已审计的两份 sidecar 按上表 SHA-256 复核后原样重新压缩，附 GPL-3.0 许可证与来源说明，保存到既有二进制仓库的固定 `windows-ffmpeg-n9.0.1` Release。该归档是只含 sidecar 的重打包，不冒充原上游 ZIP。
+- 固定资产：`https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/windows-ffmpeg-n9.0.1/ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0-sidecars.zip`。
+- 新归档大小为 110,716,032 B，SHA-256 为 `7e8e99d2c548fa2a8ab54f3b0cdd43c99b7e3524d152059cd9029165382e503a`；两个解压后二进制的版本、大小和 SHA-256 均保持不变。
+- 仅构建脚本的下载地址、归档名与归档哈希改变；仍校验归档和两个二进制，不使用浮动 `latest`，不新增客户端运行时下载。
+- 方案来源：`https://github.com/BtbN/FFmpeg-Builds#release-retention-policy` 与 GitHub CLI 原生 Release 资产上传能力。
+
 上游包元数据与二进制版本已复核；本仓库未保留临时压缩包或下载器。后续替换必须同时更新本表、SHA-256、Tauri 包体审计及 macOS/Windows 实机回归。
 
 ## FFUI 前端适配

@@ -1,11 +1,13 @@
 $ErrorActionPreference = "Stop"
 
-$archiveUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-23-13-03/ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0.zip"
-$archiveSha256 = "2f388916565c44f6edcdddd7b01ccc73a2bbc7f107bd615b7247e9c9773f4a09"
+# Upstream daily releases expire after 14 days. This fixed mirror repack
+# contains the same audited binaries; keep verifying each binary below.
+$archiveUrl = "https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases/releases/download/windows-ffmpeg-n9.0.1/ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0-sidecars.zip"
+$archiveSha256 = "7e8e99d2c548fa2a8ab54f3b0cdd43c99b7e3524d152059cd9029165382e503a"
 $root = Split-Path -Parent $PSScriptRoot
 $binaryDirectory = Join-Path $root "src-tauri\binaries"
 $temporaryDirectory = Join-Path $env:TEMP "brand-material-ffmpeg-n9.0.1-6-g9d4ca21220"
-$archivePath = Join-Path $temporaryDirectory "ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0.zip"
+$archivePath = Join-Path $temporaryDirectory "ffmpeg-n9.0.1-6-g9d4ca21220-win64-gpl-9.0-sidecars.zip"
 $extractDirectory = Join-Path $temporaryDirectory "unpacked"
 
 New-Item -ItemType Directory -Force $temporaryDirectory | Out-Null
