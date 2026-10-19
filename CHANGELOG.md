@@ -1,5 +1,13 @@
 # 更新日志
 
+## 2026-10-19｜0.9.5 已推送与双平台签名包完成；公共更新待解锁验收
+
+- 源码已推送 `release/0.9.5-compression-tools`。本机验证：前端 609 条、Rust 149 条、核心校验、Rust 格式/检查、Release 构建通过；真实 macOS GIF 计算/播放/保存及图片 JPEG/WebP/PNG 编码与 PNG 保存通过。
+- 双平台 CI `39274314082` 成功：macOS arm64 与 Windows x64 均通过前端校验并生成签名 updater 和安装包。使用应用内既有公钥及 updater 使用的 `minisign-verify` 验证两端包签名，均通过；Mac `.app` codesign 与 DMG 完整性通过。
+- 产物已保存到 `artifacts/local-packages/2026-10-19/`：Windows `BrandMaterialWorkbench_0.9.5_Windows_x64_Setup.exe` **314,404,210 B**（较 0.9.4 +1,763,302 B）；Mac `BrandMaterialWorkbench_0.9.5_macOS_arm64.dmg` **44,280,635 B**（较 0.9.4 +355,341 B）。校验和见 `SHA256SUMS-0.9.5.txt`；未提交安装包、用户素材或 QA 图片。
+- 原发布工作流 `39272715435` 在上传阶段因既有发布令牌 Bad credentials 失败，构建/签名本身成功。现采用 Actions 保留签名产物 → 既有私有草稿暂存流程（`39276554481`）→ 本机既有 GitHub 登录上传，未扩大 CI 令牌范围、未更换签名密钥。0.9.5 的 macOS 候选清单/包已上传 `preview-mac-candidate`。
+- **尚未放行公共更新**：隔离的 0.9.4 副本已就绪，但机器自动锁屏，CUA 明确返回无法解锁，真实候选下载/安装/重启未完成。按 `docs/UPDATE_RELEASE_GATES.md` 保持公共 Preview 0.9.4；CNB 镜像尚未触发。待用户解锁后继续实际升级验证，再发布双平台 0.9.5 清单和 CNB 镜像。Windows 实机交互未验证。
+
 ## 2026-10-19｜0.9.5：GIF 计算 IPC 修复与发布准备
 
 - 修复真实桌面计算在 IPC 反序列化阶段因缺少 `outputDirectory` 失败：共享 Rust 参数允许省略该字段，直接导出仍要求有效输出目录；计算路径继续只写应用临时目录。
