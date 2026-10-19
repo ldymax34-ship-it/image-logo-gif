@@ -2,6 +2,9 @@ name: Build signed Preview candidates
 
 on:
   workflow_dispatch:
+  push:
+    branches: [release/0.9.5-compression-tools]
+    paths: [.github/workflows/build-preview-candidates.yml]
 
 permissions:
   contents: read
