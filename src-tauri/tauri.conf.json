@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "品宣物料工作台",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "identifier": "com.kuro.internal.brandmaterialworkbench",
   "build": {
     "frontendDist": "../dist",
@@ -44,7 +44,11 @@
     ],
     "resources": [
       "resources/fonts/SourceHanSansSC-Regular.otf",
-      "resources/licenses/FFmpeg-GPL-3.0.txt"
+      "resources/licenses/FFmpeg-GPL-3.0.txt",
+      "resources/licenses/JSquash-Apache-2.0.txt",
+      "resources/licenses/mozjpeg-IJG-BSD.txt",
+      "resources/licenses/libwebp-BSD-3-Clause.txt",
+      "resources/licenses/oxipng-MIT.txt"
     ],
     "icon": [
       "icons/32x32.png",

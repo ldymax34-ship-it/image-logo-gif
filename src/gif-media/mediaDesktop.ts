@@ -1,5 +1,15 @@
 import { isDesktopBridgeAvailable } from '../platform/desktopBridge';
-import type { GifMediaOptions, MediaEngineStatus, MediaTaskEvent, WatermarkOptions } from './mediaTypes';
+import type {
+  ComputedGifResult,
+  GifAnalysis,
+  GifAnalysisRequest,
+  GifComputeRequest,
+  GifMediaOptions,
+  MediaEngineStatus,
+  MediaTaskEvent,
+  SavedGifResult,
+  WatermarkOptions,
+} from './mediaTypes';
 import type { MediaProbeResult, PreviewGifRequest } from './mediaTypes';
 
 export type WatermarkVideoOptions = {
@@ -111,6 +121,11 @@ export type MediaDesktopApi = {
   startGifTask: (request: { taskId: string; inputPath: string; options: GifMediaOptions }) => Promise<{ taskId: string; outputPath: string }>;
   startWatermarkTask: (request: { taskId: string; inputPath: string; options: WatermarkOptions | WatermarkVideoOptions }) => Promise<{ taskId: string; outputPath: string }>;
   probeMedia: (inputPath: string) => Promise<MediaProbeResult>;
+  /** 用户点击「计算预览」后才会调用：单帧 + 短样本体积估算。 */
+  analyzeGifTask: (request: GifAnalysisRequest, frameAtSeconds?: number) => Promise<GifAnalysis>;
+  computeGifPreview: (request: GifComputeRequest) => Promise<ComputedGifResult>;
+  saveComputedGif: (request: { taskId: string; directory: string }) => Promise<SavedGifResult>;
+  discardComputedGif: (taskId: string) => Promise<void>;
   previewGifFrame: (request: PreviewGifRequest) => Promise<{ taskId: string; outputPath: string }>;
   cancelPreviewTask: (taskId: string) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
@@ -210,6 +225,10 @@ export async function loadMediaDesktopApi(): Promise<MediaDesktopApi> {
     startGifTask: (request) => invoke('start_gif_media_task', { request }),
     startWatermarkTask: (request) => invoke('start_watermark_media_task', { request }),
     probeMedia: (inputPath) => invoke('probe_media', { inputPath }),
+    analyzeGifTask: (request, frameAtSeconds) => invoke('analyze_gif_media_task', { request, frameAtSeconds }),
+    computeGifPreview: (request) => invoke<ComputedGifResult>('compute_gif_media_preview', { request }),
+    saveComputedGif: (request) => invoke<SavedGifResult>('save_computed_gif', request),
+    discardComputedGif: (taskId) => invoke('discard_computed_gif', { taskId }),
     previewGifFrame: (request) => invoke('preview_gif_frame', { request }),
     cancelPreviewTask: (taskId) => invoke('cancel_preview_task', { taskId }),
     cancelTask: (taskId) => invoke('cancel_gif_media_task', { taskId }),

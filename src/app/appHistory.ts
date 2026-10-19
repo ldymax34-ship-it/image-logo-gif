@@ -11,8 +11,10 @@ const RECENT_TOOL_LIMIT = 6;
 const RECENT_TOOL_IDS: Array<Exclude<AppTool, 'toolbox'>> = [
   'logo-layout',
   'custom',
+  'image-compress',
   'watermark',
-  'video-watermark'
+  'video-watermark',
+  'gif-compress'
 ];
 
 function isRecentTool(value: unknown): value is Exclude<AppTool, 'toolbox'> {

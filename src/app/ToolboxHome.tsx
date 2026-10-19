@@ -1,5 +1,7 @@
 import {
   ArrowUpRight,
+  FileVideo2,
+  ImageDown,
   LockKeyhole,
   LayoutTemplate,
   Palette,
@@ -20,6 +22,8 @@ type ToolboxHomeProps = {
   onOpenCustom: () => void;
   onOpenWatermark: () => void;
   onOpenVideoWatermark?: () => void;
+  onOpenVideoGif?: () => void;
+  onOpenImageCompress?: () => void;
   onOpenSettings: () => void;
   onOpenChangelog?: () => void;
   recentTools?: RecentToolEntry[];
@@ -34,7 +38,7 @@ type ToolEntry = {
   eyebrow: string;
   icon: LucideIcon;
   action?: () => void;
-  tone: 'logo' | 'watermark' | 'video' | 'custom';
+  tone: 'logo' | 'watermark' | 'video' | 'custom' | 'gif' | 'image';
 };
 
 function trackPointerHighlight(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -47,7 +51,9 @@ const RECENT_TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
   'logo-layout': { label: 'Logo 与版式', icon: Palette },
   custom: { label: '自定义构图', icon: LayoutTemplate },
   watermark: { label: '水印工具', icon: ShieldCheck },
-  'video-watermark': { label: '视频水印', icon: Video }
+  'video-watermark': { label: '视频水印', icon: Video },
+  'gif-compress': { label: '视频转 GIF', icon: FileVideo2 },
+  'image-compress': { label: '图片压缩', icon: ImageDown }
 };
 
 function formatRecentTime(at: number): string {
@@ -58,7 +64,7 @@ function formatRecentTime(at: number): string {
   return `${Math.floor(diff / 86_400_000)} 天前`;
 }
 
-export function ToolboxHome({ onOpenLogoLayout, onOpenCustom, onOpenWatermark, onOpenVideoWatermark, onOpenSettings, onOpenChangelog, recentTools, onOpenRecentTool, isDesktop }: ToolboxHomeProps) {
+export function ToolboxHome({ onOpenLogoLayout, onOpenCustom, onOpenWatermark, onOpenVideoWatermark, onOpenVideoGif, onOpenImageCompress, onOpenSettings, onOpenChangelog, recentTools, onOpenRecentTool, isDesktop }: ToolboxHomeProps) {
   const desktop = isDesktop ?? isDesktopBridgeAvailable();
 
   const tools: ToolEntry[] = [
@@ -97,6 +103,24 @@ export function ToolboxHome({ onOpenLogoLayout, onOpenCustom, onOpenWatermark, o
       icon: Video,
       action: onOpenVideoWatermark,
       tone: 'video'
+    },
+    {
+      id: 'gif-compress',
+      label: '视频转 GIF',
+      description: '截取单个 MP4 / MOV 片段，设定宽度与帧率，导出不超过 8 MB 的 GIF。',
+      eyebrow: '动图生产',
+      icon: FileVideo2,
+      action: onOpenVideoGif,
+      tone: 'gif'
+    },
+    {
+      id: 'image-compress',
+      label: '图片压缩',
+      description: '单张图片本地压缩，对比压缩前后画质与体积，另存新文件、不覆盖原图。',
+      eyebrow: '图片瘦身',
+      icon: ImageDown,
+      action: onOpenImageCompress,
+      tone: 'image'
     }
   ];
 

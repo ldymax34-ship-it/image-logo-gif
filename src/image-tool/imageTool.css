@@ -1,0 +1,406 @@
+/* 图片压缩工具（单图） - 只作用于 .image-tool，避免影响工作台其他页面 */
+
+.image-tool {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  color: var(--color-text);
+  background: var(--color-panel);
+  font-family: var(--font-sans);
+}
+
+.image-tool-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 12px;
+  padding: 12px;
+  min-height: 0;
+}
+
+.image-tool-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background:
+    repeating-conic-gradient(rgb(255 255 255 / 3%) 0 25%, transparent 0 50%) 0 0 / 20px 20px,
+    var(--color-field);
+  overflow: hidden;
+}
+
+/* ── 空状态 / 选择文件 ── */
+
+.image-tool-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  padding: 32px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.image-tool-drop strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.image-tool-drop span {
+  max-width: 340px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.image-tool-file-input {
+  display: none;
+}
+
+/* ── 前后对比 ── */
+
+.image-tool-compare {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.image-tool-compare-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.image-tool-compare-overlay {
+  will-change: clip-path;
+}
+
+.image-tool-compare-tag {
+  position: absolute;
+  top: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: rgb(18 18 20 / 72%);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+
+.image-tool-compare-tag-left { left: 10px; }
+.image-tool-compare-tag-right { right: 10px; }
+
+.image-tool-compare-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+  cursor: ew-resize;
+}
+
+.image-tool-compare-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  background: var(--color-panel);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 45%);
+}
+
+.image-tool-compare-divider:focus-visible {
+  outline: 2px solid var(--color-focus, rgb(217 212 202 / 40%));
+  outline-offset: 2px;
+}
+
+.image-tool-stage-status {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgb(18 18 20 / 80%);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.image-tool-stage-actions {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+}
+
+/* ── 右侧参数面板 ── */
+
+.image-tool-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-panel-muted);
+  overflow: auto;
+}
+
+.image-tool-file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.image-tool-file strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-tool-file span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.image-tool-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.image-tool-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+
+.image-tool-label output {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.image-tool-formats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.image-tool-format {
+  min-height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-field);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, color 120ms;
+}
+
+.image-tool-format:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.image-tool-format.is-active {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.image-tool-hint {
+  color: var(--color-text-faint);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.image-tool-note {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid rgb(232 177 58 / 35%);
+  border-radius: 8px;
+  background: rgb(232 177 58 / 10%);
+  color: #e8b13a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.image-tool-width {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.image-tool-width input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-field);
+  color: var(--color-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.image-tool-width span {
+  color: var(--color-text-faint);
+  font-size: 11px;
+}
+
+.image-tool-output-meta {
+  color: var(--color-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.image-tool-error {
+  margin: 0;
+  color: #e26060;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* ── 底栏 ── */
+
+.image-tool-footer {
+  height: 74px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.image-tool-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.image-tool-size {
+  color: var(--color-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.image-tool-size-muted {
+  color: var(--color-text-faint);
+}
+
+.image-tool-save {
+  flex: 0 0 auto;
+  display: grid;
+  width: 420px;
+  max-width: 50%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 42px;
+  align-content: center;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.image-tool-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-tool-primary {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #17171a;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.image-tool-primary:hover:not(:disabled) {
+  background: var(--color-accent-strong);
+}
+
+.image-tool-primary:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.image-tool-ghost {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-field);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.image-tool-ghost:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.image-tool-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 860px) {
+  .image-tool-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(200px, 1fr) auto;
+  }
+}
+
+.image-tool-save > .image-tool-primary { grid-column: 2; grid-row: 1; }
+.image-tool-save > .image-tool-error, .image-tool-save > .image-tool-saved { grid-column: 1; max-height: 42px; overflow: auto; }

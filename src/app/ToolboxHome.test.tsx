@@ -10,6 +10,8 @@ const baseProps = {
   onOpenCustom: () => undefined,
   onOpenWatermark: () => undefined,
   onOpenVideoWatermark: () => undefined,
+  onOpenVideoGif: () => undefined,
+  onOpenImageCompress: () => undefined,
   onOpenSettings: () => undefined,
 };
 
@@ -31,8 +33,17 @@ describe('ToolboxHome', () => {
     expect(container.querySelector('button[aria-label="水印工具"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="视频水印"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="暗水印与像素指纹（实验）"]')).toBeNull();
+    // "视频转 GIF" replaces the old hidden "GIF 压缩" placeholder and is now an
+    // enabled production card.
+    expect(container.querySelector('button[aria-label="视频转 GIF"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="视频转 GIF"]')?.hasAttribute('disabled')).toBe(false);
     expect(container.querySelector('button[aria-label="GIF 压缩"]')).toBeNull();
     expect(container.querySelector('button[aria-label="轻量 GIF 工具"]')).toBeNull();
+    // 图片压缩 is a standalone single-image entry.
+    const imageCard = container.querySelector('button[aria-label="图片压缩"]');
+    expect(imageCard).not.toBeNull();
+    expect(imageCard?.hasAttribute('disabled')).toBe(false);
+    expect(imageCard?.getAttribute('data-tone')).toBe('image');
     expect(container.querySelector('button[aria-label="设置"]')).not.toBeNull();
     expect(container.querySelector('.toolbox-launcher')).not.toBeNull();
     expect(container.querySelectorAll('.toolbox-section-heading')).toHaveLength(1);
@@ -58,7 +69,24 @@ describe('ToolboxHome', () => {
     expect(container.querySelector('button[aria-label="自定义构图"]')?.getAttribute('data-tone')).toBe('custom');
     expect(container.querySelector('button[aria-label="水印工具"]')?.getAttribute('data-tone')).toBe('watermark');
     expect(container.querySelector('button[aria-label="视频水印"]')?.getAttribute('data-tone')).toBe('video');
+    expect(container.querySelector('button[aria-label="视频转 GIF"]')?.getAttribute('data-tone')).toBe('gif');
     act(() => root.unmount());
+    container.remove();
+  });
+
+  it('opens the video-to-GIF entry from its own production card', () => {
+    const onOpenVideoGif = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => { root.render(<ToolboxHome {...baseProps} onOpenVideoGif={onOpenVideoGif} isDesktop />); });
+
+    const gifCard = container.querySelector<HTMLButtonElement>('button[aria-label="视频转 GIF"]');
+    expect(gifCard?.disabled).toBe(false);
+    act(() => { gifCard?.click(); });
+    expect(onOpenVideoGif).toHaveBeenCalledTimes(1);
+
+    act(() => { root.unmount(); });
     container.remove();
   });
 

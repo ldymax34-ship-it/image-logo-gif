@@ -24,7 +24,7 @@ describe('cross-tool control surfaces', () => {
 
   it('keeps standalone Vue tools on the same neutral palette and control density', () => {
     expect(gifTool).toContain('--gif-accent: #d9d4ca');
-    expect(gifTool).toMatch(/\.gif-tool-form input, \.gif-tool-form select[\s\S]*?height: 36px;/);
+    expect(gifTool).toMatch(/\.gif-settings-input[\s\S]*?height: 36px;/);
     expect(watermarkTool).toContain('--wm-accent: #d9d4ca');
     expect(watermarkTool).toMatch(/\.watermark-tool-form input, \.watermark-tool-form select[\s\S]*?height: 36px;/);
     expect(watermarkTool).toMatch(/\.watermark-tool-dropzone[\s\S]*?border: 1px dashed var\(--wm-border-strong\);[\s\S]*?border-radius: 12px;/);

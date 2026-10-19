@@ -79,6 +79,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(media::MediaTaskRegistry::default())
+        .manage(media::ComputedGifRegistry::default())
         .setup(|app| {
             let log_plugin = tauri_plugin_log::Builder::new()
                 .targets([
@@ -120,6 +121,10 @@ pub fn run() {
             media::watermark_encoder_capability,
             media::video_watermark_recommendation,
             media::start_gif_media_task,
+            media::analyze_gif_media_task,
+            media::compute_gif_media_preview,
+            media::save_computed_gif,
+            media::discard_computed_gif,
             media::start_watermark_media_task,
             media::probe_media,
             media::preview_gif_frame,

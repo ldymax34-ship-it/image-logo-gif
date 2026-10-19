@@ -26,10 +26,18 @@ describe('app preferences', () => {
     expect(resolveStartupTool({ version: 1, startupTool: 'video-watermark', lastTool: 'toolbox' })).toBe('video-watermark');
   });
 
-  it('accepts the independent 自定义构图 startup entry and still rejects retired tools', () => {
+  it('accepts the independent 自定义构图 and 视频转 GIF startup entries and still rejects retired tools', () => {
     expect(resolveStartupTool({ version: 1, startupTool: 'custom', lastTool: 'toolbox' })).toBe('custom');
     expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'custom' })).toBe('custom');
-    expect(resolveStartupTool({ version: 1, startupTool: 'gif-compress', lastTool: 'toolbox' })).toBe('toolbox');
+    // 视频转 GIF is now an open entry, so it resolves as itself instead of
+    // silently falling back to the toolbox.
+    expect(resolveStartupTool({ version: 1, startupTool: 'gif-compress', lastTool: 'toolbox' })).toBe('gif-compress');
+    expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'gif-compress' })).toBe('gif-compress');
+    // 图片压缩 is an independent single-image entry with its own startup choice.
+    expect(resolveStartupTool({ version: 1, startupTool: 'image-compress', lastTool: 'toolbox' })).toBe('image-compress');
+    expect(resolveStartupTool({ version: 1, startupTool: 'last', lastTool: 'image-compress' })).toBe('image-compress');
+    // 批量模板 GIF 合成器 has no navigation entry yet and must keep falling back.
+    expect(resolveStartupTool({ version: 1, startupTool: 'batch-template-gif', lastTool: 'toolbox' })).toBe('toolbox');
     expect(parseAppPreferences(JSON.stringify({ version: 1, startupTool: 'custom', lastTool: 'custom' })))
       .toEqual({ version: 1, startupTool: 'custom', lastTool: 'custom' });
   });

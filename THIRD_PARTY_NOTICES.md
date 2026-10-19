@@ -23,3 +23,14 @@
 - Windows FFmpeg 构建启用 GPL 组件，按 GPLv3 分发；许可证原文随应用放在 `resources/licenses/FFmpeg-GPL-3.0.txt`。上游源码与构建配置：`https://github.com/BtbN/FFmpeg-Builds`。
 - 使用范围：当前 Tauri app 内唯一的 MP4/MOV → GIF 运行时。仅从 bundle resource directory 启动，不探测 PATH、不联网下载、不启动第二个 Tauri app。
 - 固定上游标识、SHA-256、文件大小、平台打包路径与维护说明见 `docs/MEDIA_RUNTIME_SOURCES.md`。
+
+## 图片压缩（单图）前端编码器
+
+- `@jsquash/jpeg@1.3.0`、`@jsquash/webp@1.5.0`、`@jsquash/oxipng@2.3.0`
+- 来源：`https://github.com/jamsinclair/jSquash`，由 Squoosh codec 派生的预编译发布；上游为 `GoogleChromeLabs/squoosh` 固定提交 `e8d35e0fb66e`。
+- 许可证：包本身 Apache-2.0；随包附带底层 codec 许可证原文：
+  - MozJPEG / libjpeg-turbo：IJG License + Modified BSD（`resources/licenses/mozjpeg-IJG-BSD.txt`）。
+  - libwebp：BSD-3-Clause（`resources/licenses/libwebp-BSD-3-Clause.txt`）。
+  - oxipng：MIT（`resources/licenses/oxipng-MIT.txt`）。
+  - `@jsquash` 包许可证：Apache-2.0（`resources/licenses/JSquash-Apache-2.0.txt`）。
+- 使用范围：仅在 `src/image-tool/` 的 Web Worker 内本地编码 JPEG / WebP / PNG；不包含 Squoosh 的 Web 应用壳、Google Analytics、AVIF / JXL / 视觉对比等未采用模块，也不发起任何外部请求。

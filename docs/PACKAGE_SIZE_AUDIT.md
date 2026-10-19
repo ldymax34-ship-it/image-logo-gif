@@ -190,3 +190,51 @@ Windows 离线 WebView2 约 200MB 是已接受的固定安装基线。新增依�
 - 未新增第三方依赖或额外 Fabric runtime；复用现有本地 `fabric@7.4.0` 的动态导入与同一控制点主题。
 - 前端主 JS 从 UI 规则统一后的约 315 KB 变为约 320 KB（gzip 约 100 KB → 102 KB）；增量为 Focus Logo 的交互适配和测试所需代码，未打包第二份 Fabric chunk。
 - 未生成新的 Windows NSIS、macOS DMG 或 `.app`；平台安装包与安装后目录增量仍需在后续平台构建中记录。
+
+## 2026-10 图片压缩（单图）前端编码器接入
+
+本轮只新增前端编码器依赖，Rust、sidecar、字体、模型与运行时均未变化。
+
+前端构建产物（`npm run build` 实测）
+
+- `dist`：25 文件 / 1,679,093 B → 32 文件 / 2,466,007 B，增加 **786,914 B**。
+- 新增 wasm：mozjpeg 269,882 B、webp 281,261 B、oxipng 164,172 B，合计 715,315 B；与 codec 胶水里的 wasm 引用共用同一份 hashed 资源，构建产物中每个 wasm 只有一份。
+- 新增 worker 脚本：45,819 B；新增图片压缩 CSS：5,975 B；组件与入口 JS 约 16 KB。
+- 新增许可证资源 4 份，合计约 19 KB（`src-tauri/resources/licenses/`）。
+
+依赖占用（`node_modules`，构建期）
+
+- `@jsquash`：2.1 MB。
+- `wasm-feature-detect`：48 KB（`@jsquash/webp`、`@jsquash/oxipng` 的传递依赖，本仓库改用显式 wasm 注入，未打进前端产物）。
+
+安装包增量
+
+- Windows NSIS：本地未构建，待实测。
+- Windows 安装后目录：本轮未验证。
+- macOS DMG / `.app`：本轮未构建，待打包机实测；预期增量接近前端 +787 KB 与约 19 KB 许可证文本。
+- 本轮不包含图片素材或模型权重，未发现重复运行时或未使用资源被打包。
+
+### 2026-10-19 GIF 预览修正（无新增依赖）
+
+- 前端 `dist`：2,466,007 B / 32 文件 → 2,472,751 B / 32 文件，增加 **6,744 B**（仅 `GifTool.vue` / `gifTool.css` / 新 `assetUrl.ts` 与模板的小改动），没有新增 npm、Rust、sidecar、字体或模型依赖。
+- Rust 侧只增加 `asset_protocol_scope().allow_file()` 的运行时调用，二进制增量未单独测量（属既有依赖内的代码变化）；安装包增量待打包实测。
+
+### 2026-10-19 图片压缩 + GIF 预览修正 macOS 测试包（含两个新入口）
+
+| 项 | 实测 |
+| --- | --- |
+| macOS DMG | 44,186,461 B（42.14 MiB）；比上一版 GIF 测试包 +271,402 B |
+| macOS `.app` | 88,628 KiB（86.55 MiB）；比上一版 +272 KiB |
+| 主程序二进制 | 19,446,432 B |
+| 新增前端资源 | 32 个 dist 文件名全部内嵌进主程序（含 `codecs.worker-*.js`、3 个 wasm，共 715,315 B 原始字节）；无独立前端目录 |
+| 许可证资源 | `Contents/Resources/resources/licenses/` 内新增 4 份 codec 许可证文本（约 19 KB） |
+| Windows NSIS | 本地未构建，未实测 |
+| Windows 安装后目录 | 未验证 |
+
+- 体积增量与前端 `dist` 增量（图片压缩 +786,914 B、GIF 预览 +6,744 B）量级一致，未发现异常膨胀或重复资源；wasm 在包内是压缩内嵌，不是独立文件。
+- 构建命令：`npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'`（仅本次禁用 updater 产物，未改配置）。
+- 签名：ad-hoc（`codesign --verify --deep --strict` 通过）；未公证；`hdiutil verify` 通过。
+
+## 2026-10-19 GIF 单页工作区复核测试包
+
+DMG 44,218,664 B（42.17 MiB），较上一份交互修正与拖动预览包 +74,570 B；`.app` 88,736 KiB，主程序 19,557,920 B；前端 33 文件 / 2,491,372 B，全部资源文件名内嵌主程序。复用既有媒体 sidecar，无新增依赖。构建仅临时关闭 updater 产物；签名与 DMG 完整性通过，ad-hoc 未公证。Windows 包体及窗口内功能未验证。详见 CHANGELOG 同日独立复核条目。

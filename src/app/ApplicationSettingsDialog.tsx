@@ -7,9 +7,11 @@ const STARTUP_OPTIONS: Array<{ value: StartupTool; label: string }> = [
   { value: 'toolbox', label: '工具箱首页' },
   { value: 'logo-layout', label: 'Logo 与版式' },
   { value: 'custom', label: '自定义构图' },
-  { value: 'gif-media', label: 'GIF / 媒体工具' },
   { value: 'watermark', label: '水印工具' },
   { value: 'video-watermark', label: '视频水印' },
+  { value: 'gif-compress', label: '视频转 GIF' },
+  { value: 'image-compress', label: '图片压缩' },
+  { value: 'gif-media', label: 'GIF / 媒体工具（旧隐藏入口）' },
   { value: 'last', label: '上次使用的工具' }
 ];
 

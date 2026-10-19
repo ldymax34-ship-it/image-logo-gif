@@ -2,6 +2,8 @@ import { useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  FileVideo2,
+  ImageDown,
   Film,
   LayoutGrid,
   LayoutTemplate,
@@ -25,7 +27,9 @@ const SIDEBAR_TOOLS: SidebarTool[] = [
   { id: 'logo-layout', label: 'Logo 与版式', icon: Palette, group: 'production' },
   { id: 'custom', label: '自定义构图', icon: LayoutTemplate, group: 'production' },
   { id: 'watermark', label: '图片水印', icon: ShieldCheck, group: 'production' },
-  { id: 'video-watermark', label: '视频水印', icon: Film, group: 'production' }
+  { id: 'video-watermark', label: '视频水印', icon: Film, group: 'production' },
+  { id: 'gif-compress', label: '视频转 GIF', icon: FileVideo2, group: 'production' },
+  { id: 'image-compress', label: '图片压缩', icon: ImageDown, group: 'production' }
 ];
 
 const GROUP_LABELS: Record<SidebarTool['group'], string> = {

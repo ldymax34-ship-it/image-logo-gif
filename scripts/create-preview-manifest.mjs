@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 export function previewReleaseNotes(version) {
-  return `${version}：新增自定义构图独立入口，修复首次导入布局、Logo 默认居中及 macOS FFmpeg 检测。`;
+  return `${version}：新增单图压缩与细节缩放，重排视频转 GIF 工作区，修复 GIF 计算参数、取消与保存状态。`;
 }
 
 export function assertUpdaterSignature(signature) {

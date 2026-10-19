@@ -57,6 +57,58 @@ export type MediaProbeResult = {
   hasAudio?: boolean;
 };
 
+/** 「计算预览」请求：只做分析与单帧提取，不写输出目录。 */
+export type GifAnalysisRequest = {
+  taskId: string;
+  inputPath: string;
+  options: {
+    startSeconds?: number;
+    endSeconds?: number;
+    width?: number;
+    fps: number;
+    preset: string;
+    outputDirectory: string;
+    targetBytes?: number;
+    mode?: string;
+    minWidth?: number;
+  };
+};
+
+/** 计算预览返回的有效短样本；正式生成在签名一致时复用它。 */
+export type GifSampleHint = {
+  signature: string;
+  width: number;
+  seconds: number;
+  bytes: number;
+};
+
+/**
+ * 「计算预览」结果：一张真实输出单帧 + 来自同一编码器短样本的体积估算。
+ *
+ * 估算按完整片段时长换算，是范围而非承诺；单帧只用于判断细节。
+ */
+export type GifAnalysis = {
+  taskId: string;
+  framePath: string;
+  outputWidth: number;
+  outputHeight: number;
+  fps: number;
+  startSeconds: number;
+  endSeconds: number;
+  durationSeconds: number;
+  sampleWidth: number;
+  sampleSeconds: number;
+  sampleBytes: number;
+  estimateLowBytes: number;
+  estimateBytes: number;
+  estimateHighBytes: number;
+  budgetBytes: number;
+  likelyFits: boolean;
+  suggestedWidth?: number | null;
+  suggestedSeconds?: number | null;
+  sampleSignature: string;
+};
+
 export type PreviewGifRequest = {
   taskId: string;
   inputPath: string;
@@ -169,3 +221,45 @@ export function formatFileSize(bytes?: number): string {
 export function mediaTaskKindLabel(kind: MediaTaskKind): string {
   return kind === 'gif' ? 'GIF 转换' : '可见水印';
 }
+
+/** 「计算 GIF」请求：只传编码参数；结果目录由后端创建和管理。 */
+export type GifComputeRequest = {
+  taskId: string;
+  inputPath: string;
+  options: {
+    startSeconds?: number;
+    endSeconds?: number;
+    width?: number;
+    fps: number;
+    preset: string;
+    targetBytes?: number;
+    mode?: string;
+    minWidth?: number;
+    sample?: GifSampleHint;
+  };
+};
+
+/**
+ * 一次「计算 GIF」的真实产物：文件位于后端管理的临时目录，尚未写入导出目录。
+ * `width/height/bytes` 读取真实文件；`fps` 是本次请求的设置值，不是实测帧率。
+ */
+export type ComputedGifResult = {
+  taskId: string;
+  path: string;
+  bytes: number;
+  width: number;
+  height: number;
+  fps: number;
+  durationSeconds: number;
+  startSeconds: number;
+  endSeconds: number;
+};
+
+/** 保存已计算 GIF 的结果：path 是最终写入用户目录的位置。 */
+export type SavedGifResult = {
+  path: string;
+  bytes: number;
+};
+
+/** 用户取消计算时后端返回的标志性消息；前端据此区分取消与失败。 */
+export const GIF_COMPUTE_CANCELLED_MESSAGE = '计算已取消';

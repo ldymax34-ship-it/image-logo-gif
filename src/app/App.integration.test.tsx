@@ -2,7 +2,7 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { exportStatusStore } from '../components/export-status/exportStatusStore';
 
@@ -25,6 +25,9 @@ describe('App root integration', () => {
     expect(toolbox?.querySelector('button[aria-label="暗水印与像素指纹（实验）"]')).toBeNull();
     expect(toolbox?.querySelector('button[aria-label="GIF 压缩"]')).toBeNull();
     expect(toolbox?.querySelector('button[aria-label="轻量 GIF 工具"]')).toBeNull();
+    // The homepage now exposes the shipped single-video GIF entry; the old
+    // placeholder labels and the unavailable template tool stay absent.
+    expect(toolbox?.querySelector('button[aria-label="视频转 GIF"]')).not.toBeNull();
     expect(toolbox?.querySelector('button[aria-label="GIF 合成与压缩"]')).toBeNull();
     expect(toolbox?.querySelector('button[aria-label="批量模板 GIF 合成器"]')).toBeNull();
     expect(container.querySelector('[aria-labelledby="application-settings-title"]')).toBeNull();
@@ -111,6 +114,37 @@ describe('App root integration', () => {
 
     // Back on the toolbox the video tasks are visible again.
     expect(container.textContent).toContain('片段.mp4');
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('opens 视频转 GIF from the homepage card into the single-video Vue tool', async () => {
+    // Warm the dynamic import first so mounting does not depend on module-graph
+    // transform timing while the whole suite is running.
+    await import('../gif-tool/main');
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => { root.render(<App />); });
+
+    const gifCard = container.querySelector<HTMLButtonElement>('main[aria-label="品宣工具箱"] button[aria-label="视频转 GIF"]')!;
+    expect(gifCard).not.toBeUndefined();
+    await act(async () => { gifCard.click(); });
+
+    // The page header states the shipped scope and the decimal 8 MB ceiling.
+    expect([...container.querySelectorAll('h1')].some((heading) => heading.textContent === '视频转 GIF')).toBe(true);
+    expect(container.querySelector('.embedded-tool-wrapper')).not.toBeNull();
+    expect(container.textContent).toContain('不超过 8 MB');
+
+    // The Vue module mounts into the wrapper without a separate window.
+    const vueRoot = container.querySelector('.embedded-tool-container');
+    expect(vueRoot).not.toBeNull();
+    await vi.waitFor(() => {
+      expect(vueRoot?.querySelector('main[aria-label="视频转 GIF"]')).not.toBeNull();
+    }, { timeout: 10_000, interval: 25 });
+    expect(vueRoot?.querySelector('.gif-tool')).not.toBeNull();
 
     act(() => root.unmount());
     container.remove();

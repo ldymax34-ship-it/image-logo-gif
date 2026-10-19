@@ -14,8 +14,12 @@ describe('AppSidebar', () => {
 
     expect(container.querySelector('aside')?.classList.contains('is-collapsed')).toBe(true);
     expect(container.querySelector('button[aria-label="展开侧边栏"]')).not.toBeNull();
+    // The video-to-GIF entry is now an enabled production item; the old hidden
+    // "GIF 压缩" label no longer exists anywhere.
+    expect(container.querySelector('button[aria-label="视频转 GIF"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="GIF 压缩"]')).toBeNull();
     expect(container.querySelector('button[aria-label="工具箱首页"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="图片压缩"]')).not.toBeNull();
     expect(container.querySelector('button[aria-label="批量模板 GIF"]')).toBeNull();
     const sidebarIcons = [...container.querySelectorAll('.app-sidebar-icon svg')];
     expect(sidebarIcons.length).toBeGreaterThan(0);
@@ -59,6 +63,23 @@ describe('AppSidebar', () => {
 
     act(() => logoEntry?.click());
     expect(onNavigate).toHaveBeenCalledWith('logo-layout');
+
+    act(() => root.unmount());
+  });
+
+  it('navigates to the video-to-GIF tool from its production entry', () => {
+    const onNavigate = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    act(() => root.render(<AppSidebar activeTool="gif-compress" onNavigate={onNavigate} onOpenSettings={vi.fn()} />));
+
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="展开侧边栏"]')?.click());
+    const gifEntry = container.querySelector<HTMLButtonElement>('button[aria-label="视频转 GIF"]');
+    expect(gifEntry).not.toBeNull();
+    expect(gifEntry?.classList.contains('active')).toBe(true);
+
+    act(() => gifEntry?.click());
+    expect(onNavigate).toHaveBeenCalledWith('gif-compress');
 
     act(() => root.unmount());
   });

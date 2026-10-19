@@ -156,6 +156,8 @@ function AppContent() {
               onOpenCustom={() => navigateTo('custom')}
               onOpenWatermark={() => navigateTo('watermark')}
               onOpenVideoWatermark={() => navigateTo('video-watermark')}
+              onOpenVideoGif={() => navigateTo('gif-compress')}
+              onOpenImageCompress={() => navigateTo('image-compress')}
               onOpenSettings={() => setApplicationSettingsOpen(true)}
               onOpenChangelog={() => setChangelogOpen(true)}
               recentTools={recentTools}
@@ -197,6 +199,11 @@ function AppContent() {
           {/* GIF Compress (embedded Vue) */}
           {activeTool === 'gif-compress' && (
             <VueToolWrapper mountKey="gif-compress" onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} />
+          )}
+
+          {/* Image Compress (embedded Vue) */}
+          {activeTool === 'image-compress' && (
+            <VueToolWrapper mountKey="image-compress" onReturn={requestToolbox} onOpenChangelog={() => setChangelogOpen(true)} />
           )}
 
           {/* Batch Template GIF */}

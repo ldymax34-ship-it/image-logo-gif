@@ -30,6 +30,601 @@ const WATERMARK_PREVIEW_STATUS_EVENT: &str = "watermark-preview://status";
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Hard, non-negotiable ceiling for one exported GIF: 8,000,000 bytes, i.e. the
+/// decimal 8 MB the product promises. Deliberately NOT 8 MiB (8,388,608 B) and
+/// not a client-supplied value: the renderer enforces this itself so a caller
+/// can never widen the limit by sending a different `targetBytes`.
+const MAX_GIF_BYTES: u64 = 8_000_000;
+
+/// 计算结果的临时目录名。目录与文件名都由后端创建和决定，前端只传 taskId 与
+/// 编码参数，不能传入任意临时路径；保存阶段也只接受本工具登记过的 taskId。
+const COMPUTED_GIF_DIR_NAME: &str = "brand-material-gif-preview";
+
+/// 计算结果的最长保留时间。每次新的计算顺手清理更早的残留，避免临时目录
+/// 随着反复计算无限增长；正在使用的结果不会被误删（刚写入，未过期）。
+const COMPUTED_GIF_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// 用户主动取消计算时返回给前端的标志性消息。前端据此区分「取消」与「失败」，
+/// 两者都不会产生可保存的结果。
+const GIF_COMPUTE_CANCELLED: &str = "计算已取消";
+
+/// How many *full* encodes one GIF task may spend. Aligned with the standalone
+/// GIF tool's rule "首次完整编码 + 最多一次宽度校正". The short analysis sample is
+/// not a full encode and is not counted here.
+const MAX_GIF_FULL_ENCODES: u32 = 2;
+
+/// Short analysis sample: never wider than this and never longer than
+/// `GIF_SAMPLE_MAX_SECONDS`. Used only to pick the first full-encode width.
+const GIF_SAMPLE_MAX_WIDTH: u32 = 320;
+const GIF_SAMPLE_MAX_SECONDS: f64 = 2.0;
+
+/// Progress share owned by the short analysis sample; the full encodes split
+/// the remainder so the visible progress never moves backwards.
+const GIF_SAMPLE_PROGRESS: f64 = 0.15;
+
+/// Spread reported around a predicted size. The preview always shows a range:
+/// a two-second sample cannot promise a byte-exact result for the whole segment.
+const GIF_ESTIMATE_RANGE_RATIO: f64 = 0.2;
+
+/// Shortest segment the UI allows; a "shorten the clip" suggestion never goes
+/// below it.
+const GIF_MIN_SEGMENT_SECONDS: f64 = 0.1;
+
+/// The four product intents. This is the wire format shared with the UI; the
+/// frame rate stays a user choice (two presets per intent) and is never changed
+/// by compression.
+const GIF_MODES: [&str; 4] = ["balanced", "fps", "quality", "custom"];
+
+/// How aggressively the single width correction aims at the budget, per intent.
+///
+/// A larger factor keeps more resolution (aims closer to the budget); a smaller
+/// one shrinks more so the budget is met with certainty. The frame rate is never
+/// part of this decision: it stays the user's hard constraint.
+fn gif_correction_safety(mode: &str) -> f64 {
+    match mode {
+        // 画质优先：保护输出尺寸与单帧细节。
+        "quality" => 0.97,
+        // 帧率优先：该倾向明确允许用宽度换体积。
+        "fps" => 0.85,
+        // 均衡 / 自定义。
+        _ => 0.92,
+    }
+}
+
+fn gif_mode_is_valid(mode: &str) -> bool {
+    GIF_MODES.contains(&mode)
+}
+
+/// Accepts both JSON integers and JSON floats for a `u64` field.
+///
+/// Tauri commands deserialize through `serde_json`, which rejects a floating
+/// point literal for a `u64` field with `invalid type: floating point`. The
+/// byte budget used to be computed in JavaScript as `7.8 * 1024 * 1024`, which
+/// serialized to `8178892.8` and failed request parsing outright. Rather than
+/// trusting every caller to pre-round, the boundary now coerces explicitly.
+fn flexible_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Int(i64),
+        Float(f64),
+    }
+
+    let raw = Option::<Raw>::deserialize(deserializer)?;
+    Ok(match raw {
+        None => None,
+        // Negative and non-finite values are meaningless as a byte budget; treat
+        // them as "no budget supplied" instead of failing the whole request.
+        Some(Raw::Int(value)) => u64::try_from(value).ok(),
+        Some(Raw::Float(value)) if value.is_finite() && value >= 0.0 => Some(value.round() as u64),
+        Some(Raw::Float(_)) => None,
+    })
+}
+
+/// The byte budget one GIF attempt must respect to be publishable.
+///
+/// `target_bytes == 0` means "no client budget", in which case the decimal hard
+/// ceiling is the whole budget. A client budget can only tighten it, never widen
+/// it past `MAX_GIF_BYTES`.
+fn gif_budget(target_bytes: u64) -> u64 {
+    if target_bytes == 0 {
+        MAX_GIF_BYTES
+    } else {
+        target_bytes.min(MAX_GIF_BYTES)
+    }
+}
+
+/// Whether a finished GIF encode may be published as the user's output.
+///
+/// Deliberately independent of "how many attempts are left": exceeding the
+/// budget forbids publishing, it does not by itself end the task.
+fn gif_within_budget(actual_bytes: u64, target_bytes: u64) -> bool {
+    actual_bytes > 0 && actual_bytes <= gif_budget(target_bytes)
+}
+
+/// What one finished GIF encode attempt means for the loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GifStepOutcome {
+    /// Under budget: publish the temp file to the destination and finish.
+    Publish,
+    /// Over budget but fixable: drop the temp file, shrink the width, try again.
+    Retry,
+    /// Unusable: drop the temp file and fail with the given reason.
+    Fail(GifFailureReason),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GifFailureReason {
+    /// Every allowed full encode was used and the result was still over budget.
+    BudgetUnreachable,
+    /// The output width is already at the user's floor, so another encode
+    /// cannot reduce the size any further.
+    NoRoomToShrink,
+}
+
+/// Byte rate of the short sample, scaled from the sample width to `width`.
+///
+/// GIF size grows roughly with pixel area per second, so the sample yields
+/// `sample_bytes / sample_seconds` bytes per second and another width scales
+/// that by the area ratio. Pure so the estimate is testable without FFmpeg.
+fn gif_bytes_per_second(
+    sample_bytes: u64,
+    sample_seconds: f64,
+    sample_width: u32,
+    width: u32,
+) -> f64 {
+    let seconds = sample_seconds.max(0.05);
+    let sample_width = sample_width.max(1);
+    let area = (width.max(1) as f64 / sample_width as f64).powi(2);
+    (sample_bytes as f64 / seconds) * area
+}
+
+/// Estimated bytes for the *whole* selected segment at `width`.
+///
+/// The sample only covers `sample_seconds`, so its per-second rate must be
+/// multiplied by the real segment duration. Treating the sample byte count as
+/// the whole-clip size would badly under-estimate long segments.
+fn gif_estimate_full_bytes(
+    sample_bytes: u64,
+    sample_seconds: f64,
+    sample_width: u32,
+    width: u32,
+    duration_seconds: f64,
+) -> u64 {
+    let per_second = gif_bytes_per_second(sample_bytes, sample_seconds, sample_width, width);
+    (per_second * duration_seconds.max(0.0)).round() as u64
+}
+
+/// Width the budget can afford for the *whole* segment, computed from the sample.
+///
+/// Closed form of `estimate_full_bytes(width) ≤ budget × safety` under the area
+/// model: `w ≤ w_sample × sqrt(budget × safety × t_sample / (sample_bytes × T))`.
+/// Clamped to `[floor, cap]`. Note the duration ratio: a 2 s sample of a 10 s
+/// clip must aim roughly `sqrt(5)` narrower than the sample width.
+fn fit_width_for_budget(
+    sample_width: u32,
+    sample_bytes: u64,
+    sample_seconds: f64,
+    budget: u64,
+    safety_ratio: f64,
+    floor: u32,
+    cap: u32,
+    duration_seconds: f64,
+) -> Option<u32> {
+    if sample_width == 0 || sample_bytes == 0 || budget == 0 || cap == 0 || duration_seconds <= 0.0
+    {
+        return None;
+    }
+    let sample_seconds = sample_seconds.max(0.05);
+    let full_at_sample_width = (sample_bytes as f64 / sample_seconds) * duration_seconds;
+    if full_at_sample_width <= 0.0 {
+        return None;
+    }
+    let ratio = (budget as f64 * safety_ratio) / full_at_sample_width;
+    let predicted = (sample_width as f64 * ratio.sqrt()).round() as u32;
+    Some(predicted.clamp(floor.max(1).min(cap), cap))
+}
+
+/// Symmetric estimate range shown in the preview. Never a guarantee.
+fn gif_estimate_range(estimate: u64) -> (u64, u64) {
+    if estimate == 0 {
+        return (0, 0);
+    }
+    let low = (estimate as f64 * (1.0 - GIF_ESTIMATE_RANGE_RATIO)).round() as u64;
+    let high = (estimate as f64 * (1.0 + GIF_ESTIMATE_RANGE_RATIO)).round() as u64;
+    (low.max(1), high)
+}
+
+/// What to suggest when the estimate is over budget.
+///
+/// First choice: a narrower width that fits. If even the user's floor width
+/// cannot fit, suggest shortening the segment instead. Purely advisory: the
+/// user's own width / range inputs are never rewritten behind their back.
+#[allow(clippy::too_many_arguments)]
+fn gif_analysis_advice(
+    sample_width: u32,
+    sample_bytes: u64,
+    sample_seconds: f64,
+    budget: u64,
+    safety_ratio: f64,
+    expected_width: u32,
+    floor: u32,
+    duration_seconds: f64,
+) -> (Option<u32>, Option<f64>) {
+    if sample_bytes == 0 || budget == 0 || duration_seconds <= 0.0 || expected_width == 0 {
+        return (None, None);
+    }
+    let at_expected = gif_estimate_full_bytes(
+        sample_bytes,
+        sample_seconds,
+        sample_width,
+        expected_width,
+        duration_seconds,
+    );
+    if at_expected <= budget {
+        return (None, None);
+    }
+    let floor_width = floor.max(1).min(expected_width);
+    let at_floor = gif_estimate_full_bytes(
+        sample_bytes,
+        sample_seconds,
+        sample_width,
+        floor_width,
+        duration_seconds,
+    );
+    if at_floor > budget {
+        // Even the floor is too large: suggest a shorter segment, rounded down to
+        // 0.1 s and never below the minimum the UI allows.
+        let ratio = budget as f64 / at_floor.max(1) as f64;
+        let seconds = ((duration_seconds * ratio * 10.0).floor() / 10.0).max(0.0);
+        if seconds >= GIF_MIN_SEGMENT_SECONDS && seconds < duration_seconds {
+            return (None, Some(seconds));
+        }
+        return (None, None);
+    }
+    let fitted = fit_width_for_budget(
+        sample_width,
+        sample_bytes,
+        sample_seconds,
+        budget,
+        safety_ratio,
+        floor_width,
+        expected_width,
+        duration_seconds,
+    )
+    .unwrap_or(floor_width);
+    if fitted < expected_width {
+        (Some(fitted), None)
+    } else {
+        (None, None)
+    }
+}
+
+/// The short analysis sample is the *same* encoder request as the real one —
+/// same builder, same FPS, same palette/dither strategy — with only the width
+/// and the trimmed duration reduced. Nothing else may diverge, otherwise the
+/// prediction would not describe the real encode.
+fn gif_sample_request(
+    request: &GifMediaTaskRequest,
+    sample_width: u32,
+    sample_seconds: f64,
+) -> GifMediaTaskRequest {
+    let mut sample = request.clone();
+    let start = sample.options.start_seconds.unwrap_or(0.0);
+    sample.options.end_seconds = Some(start + sample_seconds.max(0.05));
+    sample.options.width = Some(sample_width);
+    sample
+}
+
+/// Width and duration of the analysis sample for a given segment.
+///
+/// Shared by the explicit analysis and the production run so both encode the
+/// *same* short sample; that is what makes reusing a preview sample safe.
+fn gif_sample_plan(cap: u32, segment_seconds: f64) -> (u32, f64) {
+    let width = GIF_SAMPLE_MAX_WIDTH.min(cap.max(1)).max(1);
+    let seconds = segment_seconds.max(0.05).min(GIF_SAMPLE_MAX_SECONDS);
+    (width, seconds)
+}
+
+/// Identity of one short sample encoding.
+///
+/// Every input that changes the sample bytes is part of it (source identity and
+/// length, frame rate, preset, segment start, sample geometry). The production
+/// run recomputes it and only reuses a preview sample whose signature matches.
+fn gif_sample_signature(
+    input_path: &str,
+    input_len: u64,
+    fps: u32,
+    preset: &str,
+    start_seconds: f64,
+    sample_width: u32,
+    sample_seconds: f64,
+) -> String {
+    format!(
+        "gif-sample-v1|{input_path}|{input_len}|{fps}|{preset}|{start_seconds:.6}|{sample_width}|{sample_seconds:.6}"
+    )
+}
+
+fn gif_input_len(input_path: &str) -> u64 {
+    std::fs::metadata(input_path)
+        .map(|meta| meta.len())
+        .unwrap_or(0)
+}
+
+/// User-facing explanation for a task that could not reach the budget. Pure so
+/// the exact wording (decimal units, "已删除，未写入输出目录") is testable.
+fn gif_failure_message(
+    reason: GifFailureReason,
+    last_bytes: u64,
+    target_bytes: u64,
+    fps: u32,
+) -> String {
+    let budget = gif_budget(target_bytes);
+    let over_ceiling = last_bytes > MAX_GIF_BYTES;
+    let head = match reason {
+        GifFailureReason::BudgetUnreachable => format!(
+            "已用完 {} 次完整编码，最后一次仍为 {}（{} 字节），超过目标 {} 字节。",
+            MAX_GIF_FULL_ENCODES,
+            format_file_size(last_bytes),
+            last_bytes,
+            budget
+        ),
+        GifFailureReason::NoRoomToShrink => format!(
+            "输出宽度已到设定的下限，无法再通过缩小宽度降低体积。最后一次编码为 {}（{} 字节），超过目标 {} 字节。",
+            format_file_size(last_bytes),
+            last_bytes,
+            budget
+        ),
+    };
+    let ceiling = if over_ceiling {
+        format!(
+            "\n该结果同时超过绝对上限 {} 字节（{}），因此不会写入输出目录。",
+            MAX_GIF_BYTES,
+            format_file_size(MAX_GIF_BYTES)
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "{head}{ceiling}\n压缩只会缩小输出宽度，帧率始终保持你设定的 {fps} fps，截取时长也不会被改动。\n请缩短截取区间、降低帧率或调小输出宽度后重试。本次产物已删除，未写入输出目录。"
+    )
+}
+
+/// Publishes a finished, budget-checked GIF without ever overwriting a file this
+/// task did not create.
+///
+/// `next_available_path` only *predicts* a free name: between that check and the
+/// publish, another task or the user can create the file. A plain `fs::rename`
+/// would silently replace it on macOS/Linux, so the commit is a hard link
+/// instead:
+/// - the temp file already lives in the destination directory, so the link is
+///   same-volume and creation is atomic;
+/// - `hard_link` fails with `AlreadyExists` rather than replacing, so a
+///   collision moves on to `_2`, `_3`, … and the other file is preserved;
+/// - only after the link exists is the temp file removed.
+///
+/// Requirement: the destination filesystem must support hard links (APFS/HFS+,
+/// NTFS, ext4 do; exFAT/FAT32 and some network mounts do not). On such a
+/// filesystem the failure is reported explicitly instead of falling back to an
+/// overwriting rename.
+fn persist_gif_final(temp: &Path, preferred: &Path) -> Result<PathBuf, String> {
+    let parent = preferred.parent().unwrap_or_else(|| Path::new("."));
+    let stem = preferred
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("output");
+    let ext = preferred
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("gif");
+    let mut index = 1u32;
+    loop {
+        let candidate = if index == 1 {
+            preferred.to_path_buf()
+        } else {
+            parent.join(format!("{stem}_{index}.{ext}"))
+        };
+        match fs::hard_link(temp, &candidate) {
+            Ok(()) => {
+                remove_incomplete_output(temp);
+                return Ok(candidate);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                index += 1;
+                continue;
+            }
+            Err(error) => {
+                remove_incomplete_output(temp);
+                return Err(format!(
+                    "无法在不覆盖既有文件的前提下写入输出目录：{error}（该文件系统可能不支持硬链接）"
+                ));
+            }
+        }
+    }
+}
+
+/// 后端管理的计算结果目录（系统临时目录下固定名称）。
+fn computed_gif_dir() -> PathBuf {
+    std::env::temp_dir().join(COMPUTED_GIF_DIR_NAME)
+}
+
+/// 清理计算结果目录里超过 `max_age` 的 `.gif` 产物。
+///
+/// 只清理本目录内的 GIF 文件，不触碰用户目录；正在使用的结果刚写入，不会过期。
+fn prune_computed_gifs(dir: &Path, max_age: Duration) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let is_gif = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"));
+        if !is_gif {
+            continue;
+        }
+        let stale = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > max_age);
+        if stale {
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
+/// 删除某个计算结果及其所有中间产物（同目录下以同一 stem 开头的临时 GIF）。
+///
+/// 只作用于后端管理的结果目录；前缀来自本工具生成的唯一文件名，不会误删
+/// 其他任务或用户文件。
+fn cleanup_gif_artifacts(preferred: &Path) {
+    remove_incomplete_output(preferred);
+    let Some(parent) = preferred.parent() else {
+        return;
+    };
+    let Some(stem) = preferred.file_stem().and_then(|value| value.to_str()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let is_related = name.starts_with(&format!(".{stem}."))
+            || name == format!("{stem}.gif")
+            || name.starts_with(&format!("{stem}_"));
+        let is_gif = name.ends_with(".gif");
+        if is_related && is_gif {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Sources the `{stem}_gif.gif` name used when the user saves a computed result.
+fn gif_source_stem(input_path: &str) -> String {
+    Path::new(input_path)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("media")
+        .to_string()
+}
+
+/// 保存阶段的临时文件：与目标目录同卷，隐藏且带进程号/序号，写入完成并同步后
+/// 再走 `persist_gif_final` 的非覆盖硬链接发布。
+fn save_gif_temp_path(directory: &Path, preferred_name: &str) -> PathBuf {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let stem = Path::new(preferred_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("gif");
+    let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    directory.join(format!(
+        ".{stem}.{}.{sequence}.save.tmp.gif",
+        std::process::id()
+    ))
+}
+
+/// 校验一个计算结果确实是 GIF（`GIF87a` / `GIF89a`），并返回真实字节数。
+fn validate_computed_gif(path: &Path) -> Result<u64, String> {
+    let metadata = fs::metadata(path).map_err(|error| format!("无法读取计算结果：{error}"))?;
+    if !metadata.is_file() || metadata.len() == 0 {
+        return Err("计算结果为空".into());
+    }
+    let mut header = [0u8; 6];
+    {
+        use std::io::Read;
+        let mut file =
+            fs::File::open(path).map_err(|error| format!("无法读取计算结果：{error}"))?;
+        file.read_exact(&mut header)
+            .map_err(|error| format!("无法读取计算结果：{error}"))?;
+    }
+    if &header[..3] != b"GIF" {
+        return Err("计算结果不是有效的 GIF 文件".into());
+    }
+    if metadata.len() > MAX_GIF_BYTES {
+        return Err(format!(
+            "计算结果 {} 超过 {MAX_GIF_BYTES} 字节上限",
+            metadata.len()
+        ));
+    }
+    Ok(metadata.len())
+}
+
+/// Width-only compression step.
+///
+/// FPS is a user hard constraint in this tool and compression never changes it,
+/// so width is the only knob. Returns the next width, strictly smaller than
+/// `current_width` and never below `floor`; `None` means there is no room left
+/// and the task must stop explicitly instead of re-encoding identical output.
+fn next_gif_width(
+    current_width: u32,
+    floor: u32,
+    safety_ratio: f64,
+    actual_bytes: u64,
+    budget: u64,
+) -> Option<u32> {
+    if actual_bytes == 0 || budget == 0 || current_width == 0 {
+        return None;
+    }
+    let floor = floor.max(1);
+    // Already at (or below) the user's floor: another encode would reproduce the
+    // same picture, so the loop must stop explicitly instead of spinning.
+    if current_width <= floor {
+        return None;
+    }
+    let ratio = (budget as f64 * safety_ratio) / actual_bytes as f64;
+    let scaled = (current_width as f64 * ratio.sqrt()).round() as u32;
+    // Progress is measured in real width only: a step that does not reduce the
+    // width would just re-encode the same picture.
+    let candidate = scaled.clamp(floor, current_width.saturating_sub(1));
+    (candidate < current_width).then_some(candidate)
+}
+
+/// Pure loop decision: the only place that decides whether one attempt's
+/// artefact may reach the user's destination.
+///
+/// Rules (aligned with the standalone GIF tool's product rules):
+/// - a result within budget is published;
+/// - a result over budget — including one above the decimal hard ceiling —
+///   keeps the task alive while a width correction is still possible;
+/// - only when no correction is left does the task fail explicitly.
+///
+/// Extracted so the boundary cases are testable without spawning FFmpeg or
+/// constructing a Tauri `AppHandle`.
+fn gif_step_outcome(
+    actual_bytes: u64,
+    target_bytes: u64,
+    can_shrink: bool,
+    full_encodes_done: u32,
+    max_full_encodes: u32,
+) -> GifStepOutcome {
+    if gif_within_budget(actual_bytes, target_bytes) {
+        return GifStepOutcome::Publish;
+    }
+    if can_shrink && full_encodes_done < max_full_encodes {
+        return GifStepOutcome::Retry;
+    }
+    if can_shrink {
+        GifStepOutcome::Fail(GifFailureReason::BudgetUnreachable)
+    } else {
+        GifStepOutcome::Fail(GifFailureReason::NoRoomToShrink)
+    }
+}
+
 /// Thin, unified spawn helper for every bundled FFmpeg/FFprobe subprocess
 /// (encode, probe, hardware-capability check, preview, version read). On
 /// Windows it adds `CREATE_NO_WINDOW` so no cmd/PowerShell/FFmpeg console window
@@ -51,22 +646,68 @@ pub struct GifMediaOptions {
     pub width: Option<u32>,
     pub fps: u32,
     pub preset: String,
+    // Compute omits this field; direct export still requires a valid directory.
+    #[serde(default)]
     pub output_directory: String,
-    /// 目标文件体积（bytes），用于 8MB 自动收口
-    #[serde(default)]
+    /// 目标文件体积（bytes），用于 8MB 自动收口。软预算；硬上限固定为
+    /// `MAX_GIF_BYTES`（8,000,000 字节），不随本字段放大。
+    #[serde(default, deserialize_with = "flexible_u64")]
     pub target_bytes: Option<u64>,
-    /// 压缩偏好：balanced / clarity / smoothness
+    /// 倾向（意图）：balanced / fps / quality / custom。只影响超限时宽度校正的
+    /// 幅度，不会改变帧率或截取时长。
     #[serde(default)]
-    pub compression_preference: Option<String>,
-    /// 最低输出宽度
+    pub mode: Option<String>,
+    /// 最低允许输出宽度：宽度校正的下限。
     #[serde(default)]
     pub min_width: Option<u32>,
-    /// 最低帧率
+    /// 计算预览得到的有效短样本。正式生成只在签名完全一致时复用它，避免同一份
+    /// 有效分析被重复编码；签名不匹配则自己重新采样。
     #[serde(default)]
-    pub min_fps: Option<u32>,
-    /// 是否允许强压缩
-    #[serde(default)]
-    pub allow_strong_compression: Option<bool>,
+    pub sample: Option<GifSampleHint>,
+}
+
+/// A short-sample measurement returned by `analyze_gif_media_task`.
+///
+/// The production run reuses it only when `signature` matches the sample it
+/// would have produced itself, so a stale hint can never drive the estimate.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifSampleHint {
+    pub signature: String,
+    pub width: u32,
+    pub seconds: f64,
+    pub bytes: u64,
+}
+
+/// Result of the explicit "计算预览" step: one real output frame plus a byte
+/// estimate derived from a short sample of the very same encoder.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifAnalysis {
+    pub task_id: String,
+    /// Real decoded frame at the chosen time, at the expected output width.
+    pub frame_path: String,
+    pub output_width: u32,
+    pub output_height: u32,
+    pub fps: u32,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub duration_seconds: f64,
+    pub sample_width: u32,
+    pub sample_seconds: f64,
+    pub sample_bytes: u64,
+    pub estimate_low_bytes: u64,
+    pub estimate_bytes: u64,
+    pub estimate_high_bytes: u64,
+    pub budget_bytes: u64,
+    /// Conservative verdict: the top of the estimate range still fits the budget.
+    pub likely_fits: bool,
+    /// Width the budget can afford, when it is narrower than the expected width.
+    pub suggested_width: Option<u32>,
+    /// Shorten-the-clip hint, used when even the floor width cannot fit.
+    pub suggested_seconds: Option<f64>,
+    /// Signature of the reused sample, passed back on the generation request.
+    pub sample_signature: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -215,6 +856,80 @@ pub struct VideoWatermarkRecommendation {
 pub struct MediaTaskStarted {
     pub task_id: String,
     pub output_path: String,
+}
+
+/// 一次「计算 GIF」的真实产物。
+///
+/// `path` 位于后端管理的临时结果目录，尚未写入用户导出目录；`width/height/
+/// bytes` 读取真实文件（FFprobe 失败时宽高为 0，由前端在图片加载后用
+/// naturalWidth/naturalHeight 校正），`fps` 是本次请求的设置值而不是实测值。
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputedGifResult {
+    pub task_id: String,
+    pub path: String,
+    pub bytes: u64,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub duration_seconds: f64,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+}
+
+/// 把已计算 GIF 写入用户导出目录的返回结果。
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedGifResult {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug)]
+struct ComputedGifEntry {
+    path: PathBuf,
+    preferred_name: String,
+}
+
+/// 已计算结果的登记表：taskId → 临时文件与建议文件名。
+///
+/// 保存命令只接受 taskId，再从这里解析真实路径，因此不存在「前端传任意路径
+/// 就复制」的宽泛接口。
+#[derive(Default)]
+pub struct ComputedGifRegistry {
+    entries: Mutex<HashMap<String, ComputedGifEntry>>,
+}
+
+impl ComputedGifRegistry {
+    fn insert(&self, task_id: String, path: PathBuf, preferred_name: String) {
+        let mut entries = self.entries.lock().expect("computed gif registry poisoned");
+        if let Some(previous) = entries.remove(&task_id) {
+            cleanup_gif_artifacts(&previous.path);
+        }
+        entries.insert(
+            task_id,
+            ComputedGifEntry {
+                path,
+                preferred_name,
+            },
+        );
+    }
+
+    fn get(&self, task_id: &str) -> Option<ComputedGifEntry> {
+        self.entries
+            .lock()
+            .expect("computed gif registry poisoned")
+            .get(task_id)
+            .cloned()
+    }
+
+    fn remove(&self, task_id: &str) -> Option<PathBuf> {
+        self.entries
+            .lock()
+            .expect("computed gif registry poisoned")
+            .remove(task_id)
+            .map(|entry| entry.path)
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -443,9 +1158,11 @@ pub fn engine_status(app: AppHandle) -> MediaEngineStatus {
     }
 }
 
-fn validate_request(request: &GifMediaTaskRequest) -> Result<(), String> {
+/// Everything a task needs regardless of whether it will write anything: used
+/// by the explicit analysis (which only writes into the temp dir) as well as by
+/// the production run.
+fn validate_gif_inputs(request: &GifMediaTaskRequest) -> Result<(), String> {
     let input = Path::new(&request.input_path);
-    let output_directory = Path::new(&request.options.output_directory);
     if !input.is_file() {
         return Err("输入文件不存在或不可访问".into());
     }
@@ -456,18 +1173,28 @@ fn validate_request(request: &GifMediaTaskRequest) -> Result<(), String> {
     if !matches!(extension.as_deref(), Some("mp4" | "mov")) {
         return Err("首版仅支持 MP4 或 MOV 输入".into());
     }
-    if !output_directory.is_dir() {
-        return Err("输出文件夹不存在或不可访问".into());
-    }
     if request.options.fps == 0 || request.options.fps > 60 {
         return Err("FPS 必须在 1 到 60 之间".into());
     }
-    if request
-        .options
-        .width
-        .is_some_and(|width| width == 0 || width > 8192)
-    {
-        return Err("输出宽度必须在 1 到 8192 之间".into());
+    if let Some(mode) = request.options.mode.as_deref() {
+        if !gif_mode_is_valid(mode) {
+            return Err("不支持的输出倾向".into());
+        }
+    }
+    if let Some(width) = request.options.width {
+        if width == 0 || width > 8192 {
+            return Err("期望宽度必须在 1 到 8192 之间".into());
+        }
+    }
+    if let Some(min_width) = request.options.min_width {
+        if min_width == 0 || min_width > 8192 {
+            return Err("最低输出宽度必须在 1 到 8192 之间".into());
+        }
+        if let Some(width) = request.options.width.filter(|width| *width > 0) {
+            if min_width > width {
+                return Err("最低输出宽度不能大于期望宽度".into());
+            }
+        }
     }
     if request
         .options
@@ -476,6 +1203,14 @@ fn validate_request(request: &GifMediaTaskRequest) -> Result<(), String> {
         .is_some_and(|(end, start)| end <= start)
     {
         return Err("结束时间必须大于开始时间".into());
+    }
+    Ok(())
+}
+
+fn validate_request(request: &GifMediaTaskRequest) -> Result<(), String> {
+    validate_gif_inputs(request)?;
+    if !Path::new(&request.options.output_directory).is_dir() {
+        return Err("输出文件夹不存在或不可访问".into());
     }
     Ok(())
 }
@@ -671,6 +1406,10 @@ pub fn probe_media(app: AppHandle, input_path: String) -> Result<MediaProbeResul
     if !input.is_file() {
         return Err("输入文件不存在或不可访问".into());
     }
+    // 原片预览走 Tauri 官方 asset 协议：只对用户本次选择（或拖入）的这一个文件
+    // 追加运行时授权，不扩大 tauri.conf.json 的静态 scope。拖入的路径不会像
+    // 文件选择器那样被 dialog 插件自动授权，所以必须在这里按文件放行。
+    let _ = app.asset_protocol_scope().allow_file(input);
     let ffprobe = sidecar_path(&app, "ffprobe")?;
     let output = bundled_command(ffprobe)
         .args([
@@ -2300,14 +3039,44 @@ fn remove_incomplete_output(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
-fn gif_temp_output_path(final_output_path: &Path) -> PathBuf {
-    final_output_path.with_file_name(format!(
-        ".{}.gif.part",
-        final_output_path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("media")
-    ))
+/// Temp output for one GIF encode attempt.
+///
+/// Three things matter here:
+/// 1. The muxer is selected from the output extension, so the temp name must
+///    keep a real `.gif` suffix. The previous `.<stem>.gif.part` ending had no
+///    recognisable extension and relied on FFmpeg guessing the format.
+/// 2. `build_gif_encode_args` also passes an explicit `-f gif`, so the format is
+///    stated rather than inferred. The suffix is a second, independent guarantee.
+/// 3. The name carries a per-task `token` and an attempt `slot`. Two tasks that
+///    target the same directory can therefore never share one temp file, and the
+///    short-sample encode can never clobber a full-encode artefact.
+///
+/// Never equal to the final path: a caller must not be able to observe a
+/// half-written or over-budget GIF at the user's destination.
+fn gif_temp_output_path(final_output_path: &Path, token: &str, slot: &str) -> PathBuf {
+    let stem = final_output_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("media");
+    final_output_path.with_file_name(format!(".{stem}.{token}.{slot}.tmp.gif"))
+}
+
+/// Per-task token for GIF temp names. Unique across tasks and processes.
+fn gif_temp_token(task_id: &str) -> String {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sanitized: String = task_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(32)
+        .collect();
+    let seq = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{}-{}-{seq}", std::process::id(), sanitized)
 }
 
 /// Unique temp `.mp4` in the same directory as the final watermark output.
@@ -3448,105 +4217,89 @@ pub fn watermark_encoder_capability(app: AppHandle) -> Result<WatermarkEncoderCa
     })
 }
 
-/// Adjust GIF encoding parameters to reduce file size based on compression preference.
-fn reduce_gif_params(
-    current_fps: u32,
-    current_width: Option<u32>,
-    step: u32,
-    preference: &str,
-) -> (u32, Option<u32>) {
-    match preference {
-        "clarity" => {
-            // Prefer keeping resolution; reduce colors first (fewer colors = smaller palette), then fps, then size
-            let fps = if current_fps > 12 && step <= 3 {
-                current_fps - 4
-            } else {
-                current_fps - 2
-            };
-            let width = if step > 3 {
-                current_width.map(|w| (w as f64 * 0.75) as u32)
-            } else {
-                current_width
-            };
-            (fps.max(6), width)
-        }
-        "smoothness" => {
-            // Prefer keeping fps; reduce colors first, then size, then fps
-            let fps = if step > 4 {
-                (current_fps - 4).max(4)
-            } else {
-                current_fps
-            };
-            let width = if step > 1 {
-                current_width.map(|w| (w as f64 * 0.8) as u32)
-            } else {
-                current_width
-            };
-            (fps.max(4), width)
-        }
-        _ => {
-            // balanced: adjust everything
-            let fps = if step % 2 == 0 {
-                (current_fps - 2).max(8)
-            } else {
-                current_fps
-            };
-            let width = if step % 2 == 1 {
-                current_width.map(|w| (w as f64 * 0.85) as u32)
-            } else {
-                current_width
-            };
-            (fps.max(8), width)
+/// Side effects the GIF task loop needs from its host.
+///
+/// Production uses `AppGifHost` (Tauri `AppHandle` + `MediaTaskRegistry`); tests
+/// pass a recorder, so the whole sample → first full encode → width correction →
+/// publish sequence can be exercised with the real bundled FFmpeg and without
+/// constructing an `AppHandle`.
+trait GifTaskHost: Send + Sync {
+    fn emit(&self, event: MediaTaskEvent);
+    fn insert_child(&self, task_id: &str, child: Arc<Mutex<Child>>);
+    fn take_cancelled(&self, task_id: &str) -> bool;
+    fn remove_task(&self, task_id: &str);
+    /// 允许 WebView 通过 asset 协议只读预览这一个已发布的文件。
+    fn authorize_preview(&self, _path: &Path) {}
+}
+
+/// Why one GIF encode attempt stopped without a publishable artefact.
+///
+/// Cancellation is modelled explicitly rather than as a magic string: the encode
+/// path consumed the registry's cancel flag itself, so the retry loop cannot
+/// re-read it and would otherwise start another encode after a cancel, leaving
+/// the UI stuck on a task whose terminal event was already sent.
+enum GifEncodeError {
+    Cancelled,
+    Failed(String),
+}
+
+impl GifEncodeError {
+    fn message(&self) -> String {
+        match self {
+            GifEncodeError::Cancelled => "已取消".to_string(),
+            GifEncodeError::Failed(message) => message.clone(),
         }
     }
 }
 
-/// Run FFmpeg synchronously for a GIF encode, returning the output file size on success.
-/// Encode GIF with real child process, progress reporting, and cancellation support.
-/// Uses temp output + atomic rename to final path. Does NOT hold the registry lock during wait().
+/// Appends the `-y` plus temp-path tail to a builder's arguments.
+///
+/// Extracted so a test can assert the resulting argument list contains exactly
+/// one output path — the temp one — and never the user's destination.
+fn gif_encode_args_with_temp(args: &[OsString], temp_output: &Path) -> Vec<OsString> {
+    let mut args_temp: Vec<OsString> = args.to_vec();
+    args_temp.push(OsString::from("-y"));
+    args_temp.push(temp_output.as_os_str().to_owned());
+    args_temp
+}
+
+/// Run FFmpeg synchronously for one GIF encode attempt and return the encoded
+/// byte size. The caller owns publishing: this function never writes to the
+/// user's destination, so a failed or over-budget attempt can never be observed
+/// there. Does NOT hold the registry lock during wait().
 fn run_gif_encode_with_progress(
     ffmpeg: &Path,
     args: &[OsString],
-    final_output_path: &Path,
-    app: &AppHandle,
-    registry: &MediaTaskRegistry,
+    temp_output: &Path,
+    host: &Arc<dyn GifTaskHost>,
     task_id: &str,
-    progress_step_base: f64, // 0.0 .. 1.0 base for this retry step
+    progress_step_base: f64, // 0.0 .. 1.0 base for this step
     progress_step_span: f64, // how much progress this step contributes
-) -> Result<u64, String> {
-    // Keep the temporary file in the same directory and retain a .gif suffix so
-    // FFmpeg can select the GIF muxer even though the file is not final yet.
-    let temp_output = gif_temp_output_path(final_output_path);
-
-    // Build args with -y (retry safety) → temp output
-    let mut args_temp: Vec<OsString> = args
-        .iter()
-        .filter(|a| a.to_string_lossy() != final_output_path.to_string_lossy())
-        .cloned()
-        .collect();
-    args_temp.push(OsString::from("-y"));
-    args_temp.push(temp_output.as_os_str().to_owned());
+) -> Result<u64, GifEncodeError> {
+    // `args` end with encoder options, not with a path, so appending the tail
+    // yields exactly one output. The destination path is never handed to FFmpeg.
+    let args_temp = gif_encode_args_with_temp(args, temp_output);
 
     let mut child = bundled_command(ffmpeg)
         .args(&args_temp)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("无法启动 FFmpeg：{e}"))?;
+        .map_err(|e| GifEncodeError::Failed(format!("无法启动 FFmpeg：{e}")))?;
 
     // Register child for cancellation (Arc<Mutex<Child>>)
     let child_arc = Arc::new(Mutex::new(child));
-    registry.insert(task_id.to_string(), child_arc.clone());
+    host.insert_child(task_id, child_arc.clone());
 
     // Take stdout/stderr BEFORE anyone else locks
     let stdout = child_arc
         .lock()
-        .map_err(|_| "FFmpeg 进程锁失败".to_string())?
+        .map_err(|_| GifEncodeError::Failed("FFmpeg 进程锁失败".to_string()))?
         .stdout
         .take();
     let stderr = child_arc
         .lock()
-        .map_err(|_| "FFmpeg 进程锁失败".to_string())?
+        .map_err(|_| GifEncodeError::Failed("FFmpeg 进程锁失败".to_string()))?
         .stderr
         .take();
 
@@ -3560,7 +4313,7 @@ fn run_gif_encode_with_progress(
     });
 
     // Spawn stdout progress parser
-    let app_clone = app.clone();
+    let host_clone = host.clone();
     let tid = task_id.to_string();
     if let Some(stdout) = stdout {
         thread::spawn(move || {
@@ -3568,13 +4321,10 @@ fn run_gif_encode_with_progress(
                 // out_time_ms from -progress starts from 0 after -ss
                 if let Some(frac) = parse_progress_line(&line, 0.0, progress_step_span) {
                     let p = progress_step_base + frac;
-                    emit(
-                        &app_clone,
-                        MediaTaskEvent::Progress {
-                            task_id: tid.clone(),
-                            progress: p.clamp(0.0, 0.99),
-                        },
-                    );
+                    host_clone.emit(MediaTaskEvent::Progress {
+                        task_id: tid.clone(),
+                        progress: p.clamp(0.0, 0.99),
+                    });
                 }
             }
         });
@@ -3586,10 +4336,10 @@ fn run_gif_encode_with_progress(
         let result = {
             let mut child_guard = child_arc
                 .lock()
-                .map_err(|_| "FFmpeg 进程锁失败".to_string())?;
+                .map_err(|_| GifEncodeError::Failed("FFmpeg 进程锁失败".to_string()))?;
             child_guard
                 .try_wait()
-                .map_err(|e| format!("FFmpeg 等待失败：{e}"))?
+                .map_err(|e| GifEncodeError::Failed(format!("FFmpeg 等待失败：{e}")))?
         };
         if let Some(status) = result {
             break status;
@@ -3599,43 +4349,42 @@ fn run_gif_encode_with_progress(
     let _stderr_output = stderr_thread.join().unwrap_or_default();
 
     // Check cancellation (registry can now lock independently)
-    if registry.take_cancelled(task_id) {
-        let _ = fs::remove_file(&temp_output);
-        emit(
-            app,
-            MediaTaskEvent::Cancelled {
-                task_id: task_id.to_string(),
-            },
-        );
-        registry.remove(task_id);
-        return Err("已取消".into());
+    if host.take_cancelled(task_id) {
+        remove_incomplete_output(temp_output);
+        host.emit(MediaTaskEvent::Cancelled {
+            task_id: task_id.to_string(),
+        });
+        return Err(GifEncodeError::Cancelled);
     }
-    registry.remove(task_id);
 
     if status.success() {
-        match fs::metadata(&temp_output) {
+        match fs::metadata(temp_output) {
             Ok(meta) => {
-                let size = meta.len();
-                if let Err(e) = fs::rename(&temp_output, final_output_path) {
-                    let _ = fs::remove_file(&temp_output);
-                    return Err(format!("无法移动到最终路径：{e}"));
-                }
-                Ok(size)
+                // Deliberately do NOT publish to the destination here. The caller
+                // must first check the real encoded size against the budget;
+                // publishing first is what used to strand an over-budget GIF at
+                // the user's destination when every attempt was exhausted.
+                Ok(meta.len())
             }
             Err(_) => {
-                let _ = fs::remove_file(&temp_output);
-                Err("FFmpeg 完成后未找到输出文件".into())
+                remove_incomplete_output(temp_output);
+                Err(GifEncodeError::Failed("FFmpeg 完成后未找到输出文件".into()))
             }
         }
     } else {
-        let _ = fs::remove_file(&temp_output);
-        Err("FFmpeg 编码失败".into())
+        remove_incomplete_output(temp_output);
+        Err(GifEncodeError::Failed("FFmpeg 编码失败".into()))
     }
 }
 
+/// Builds the encoder arguments for one GIF attempt.
+///
+/// Deliberately does **not** take an output path: the retry loop must never let
+/// FFmpeg see the user's destination, otherwise a rejected attempt would already
+/// have written (or half-written) a file there. `run_gif_encode_with_progress`
+/// appends `-y` plus the temp path.
 fn build_gif_encode_args(
     request: &GifMediaTaskRequest,
-    output: &Path,
     fps: u32,
     width: Option<u32>,
 ) -> Vec<OsString> {
@@ -3673,12 +4422,657 @@ fn build_gif_encode_args(
         OsString::from(palette),
         OsString::from("-loop"),
         OsString::from("0"), // always infinite loop
+        // State the format instead of letting FFmpeg infer it from the output
+        // name. `-f` is an output option and must precede the output path. This
+        // is what makes the `.tmp.gif` retry target safe even if a temp name
+        // ever loses its extension.
+        OsString::from("-f"),
+        OsString::from("gif"),
         OsString::from("-progress"),
         OsString::from("pipe:1"),
         OsString::from("-nostats"),
-        output.as_os_str().to_owned(),
     ]);
     args
+}
+
+/// Production `GifTaskHost`: routes events, cancellation and child registration
+/// through the Tauri app handle and the shared `MediaTaskRegistry`.
+struct AppGifHost {
+    app: AppHandle,
+}
+
+impl GifTaskHost for AppGifHost {
+    fn emit(&self, event: MediaTaskEvent) {
+        emit(&self.app, event);
+    }
+
+    fn insert_child(&self, task_id: &str, child: Arc<Mutex<Child>>) {
+        self.app
+            .state::<MediaTaskRegistry>()
+            .insert(task_id.to_string(), child);
+    }
+
+    fn take_cancelled(&self, task_id: &str) -> bool {
+        self.app
+            .state::<MediaTaskRegistry>()
+            .take_cancelled(task_id)
+    }
+
+    fn remove_task(&self, task_id: &str) {
+        self.app.state::<MediaTaskRegistry>().remove(task_id);
+    }
+
+    fn authorize_preview(&self, path: &Path) {
+        let _ = self.app.asset_protocol_scope().allow_file(path);
+    }
+}
+
+/// Emits the single terminal `Failed` event for a task and deregisters it.
+fn gif_emit_failed(host: &Arc<dyn GifTaskHost>, task_id: &str, message: String) {
+    host.emit(MediaTaskEvent::Failed {
+        task_id: task_id.to_string(),
+        message,
+    });
+    host.remove_task(task_id);
+}
+
+/// One GIF task: short sample → first full encode → at most one width-only
+/// correction → atomic, non-overwriting publish.
+///
+/// Product rules (aligned with the standalone GIF tool):
+/// - FPS is the user's hard constraint; compression only shrinks the width.
+/// - The trimmed duration is never changed by compression.
+/// - At most `MAX_GIF_FULL_ENCODES` full encodes.
+/// - The short sample and the full encode come from the same argument builder,
+///   so the prediction describes the encode that is actually run.
+/// - Nothing over budget is ever published, and each attempt's temp file is
+///   removed before the next one starts.
+///
+/// Exactly one terminal event is emitted on every exit path.
+fn run_gif_task_loop(
+    ffmpeg: &Path,
+    request: &GifMediaTaskRequest,
+    preferred_output: &Path,
+    target_bytes: u64,
+    source_width: Option<u32>,
+    source_duration: f64,
+    host: &Arc<dyn GifTaskHost>,
+    task_id: &str,
+) {
+    let budget = gif_budget(target_bytes);
+    let fps = request.options.fps;
+    let token = gif_temp_token(task_id);
+    // Unknown mode falls back to the balanced behaviour instead of failing a
+    // task that already passed validation.
+    let mode = request.options.mode.as_deref().unwrap_or("balanced");
+    let requested_width = request.options.width.filter(|width| *width > 0);
+    let cap = match requested_width.or(source_width) {
+        Some(width) if width > 0 => width,
+        _ => {
+            gif_emit_failed(
+                host,
+                task_id,
+                "无法读取视频宽度，请在参数里手动填写输出宽度后重试".to_string(),
+            );
+            return;
+        }
+    };
+    let floor = request.options.min_width.unwrap_or(160).max(64).min(cap);
+
+    // ── Stage 0: short sample, built by the very same argument builder ──────
+    let start_seconds = request.options.start_seconds.unwrap_or(0.0).max(0.0);
+    let end_seconds = request
+        .options
+        .end_seconds
+        .unwrap_or(source_duration)
+        .min(source_duration.max(start_seconds + 0.05));
+    let segment = (end_seconds - start_seconds).max(0.05);
+    let (sample_width, sample_seconds) = gif_sample_plan(cap, segment);
+    let sample_signature = gif_sample_signature(
+        &request.input_path,
+        gif_input_len(&request.input_path),
+        fps,
+        &request.options.preset,
+        start_seconds,
+        sample_width,
+        sample_seconds,
+    );
+    // Reuse a still-valid analysis sample instead of encoding the same thing
+    // twice. Only an exact signature match qualifies; anything else re-samples.
+    let reused_sample = request.options.sample.as_ref().filter(|hint| {
+        hint.bytes > 0
+            && hint.width == sample_width
+            && (hint.seconds - sample_seconds).abs() < 1e-6
+            && hint.signature == sample_signature
+    });
+    let sample_bytes = match reused_sample {
+        Some(hint) => hint.bytes,
+        None => {
+            let sample_request = gif_sample_request(request, sample_width, sample_seconds);
+            let sample_temp = gif_temp_output_path(preferred_output, &token, "sample");
+            let sample_args = build_gif_encode_args(&sample_request, fps, Some(sample_width));
+            let bytes = match run_gif_encode_with_progress(
+                ffmpeg,
+                &sample_args,
+                &sample_temp,
+                host,
+                task_id,
+                0.0,
+                GIF_SAMPLE_PROGRESS,
+            ) {
+                Ok(bytes) => bytes,
+                Err(GifEncodeError::Cancelled) => {
+                    host.remove_task(task_id);
+                    return;
+                }
+                Err(error) => {
+                    gif_emit_failed(host, task_id, error.message());
+                    return;
+                }
+            };
+            remove_incomplete_output(&sample_temp);
+            bytes
+        }
+    };
+
+    // ── Stage 1: first full encode, then at most one width-only correction ──
+    // The prediction covers the *whole* segment, not just the sample window.
+    let estimate = fit_width_for_budget(
+        sample_width,
+        sample_bytes,
+        sample_seconds,
+        budget,
+        gif_correction_safety(mode),
+        floor,
+        cap,
+        segment,
+    )
+    .unwrap_or(cap);
+    let mut current_width = requested_width.unwrap_or(estimate).clamp(floor, cap);
+    let mut encodes_done = 0u32;
+
+    loop {
+        if host.take_cancelled(task_id) {
+            // Only our own temp artefacts may be removed here: the destination
+            // is never written before the publish step.
+            remove_incomplete_output(&gif_temp_output_path(preferred_output, &token, "first"));
+            remove_incomplete_output(&gif_temp_output_path(preferred_output, &token, "correct"));
+            host.emit(MediaTaskEvent::Cancelled {
+                task_id: task_id.to_string(),
+            });
+            host.remove_task(task_id);
+            return;
+        }
+
+        let slot = if encodes_done == 0 {
+            "first"
+        } else {
+            "correct"
+        };
+        let temp = gif_temp_output_path(preferred_output, &token, slot);
+        let args = build_gif_encode_args(request, fps, Some(current_width));
+        // Full encodes own the progress range after the sample's share, so the
+        // reported progress never jumps backwards between stages. When the
+        // sample was reused there was no sample stage to spend.
+        let progress_base = if reused_sample.is_some() {
+            0.0
+        } else {
+            GIF_SAMPLE_PROGRESS
+        };
+        let encode_span = (1.0 - progress_base) / MAX_GIF_FULL_ENCODES as f64;
+        let step = progress_base + encodes_done as f64 * encode_span;
+        let bytes = match run_gif_encode_with_progress(
+            ffmpeg,
+            &args,
+            &temp,
+            host,
+            task_id,
+            step,
+            encode_span,
+        ) {
+            Ok(bytes) => bytes,
+            Err(GifEncodeError::Cancelled) => {
+                // The encoder already emitted the single `Cancelled` event.
+                host.remove_task(task_id);
+                return;
+            }
+            Err(error) => {
+                remove_incomplete_output(&temp);
+                gif_emit_failed(host, task_id, error.message());
+                return;
+            }
+        };
+        encodes_done += 1;
+
+        let next = next_gif_width(
+            current_width,
+            floor,
+            gif_correction_safety(mode),
+            bytes,
+            budget,
+        );
+        match gif_step_outcome(
+            bytes,
+            target_bytes,
+            next.is_some(),
+            encodes_done,
+            MAX_GIF_FULL_ENCODES,
+        ) {
+            GifStepOutcome::Publish => match persist_gif_final(&temp, preferred_output) {
+                Ok(actual) => {
+                    // Closing window: a cancel accepted while the publish was in
+                    // flight must still produce a single, truthful `Cancelled`
+                    // terminal state and leave no file behind.
+                    if host.take_cancelled(task_id) {
+                        remove_incomplete_output(&actual);
+                        host.emit(MediaTaskEvent::Cancelled {
+                            task_id: task_id.to_string(),
+                        });
+                        host.remove_task(task_id);
+                        return;
+                    }
+                    // 预览最终 GIF 时只需要读取这一个已发布的文件；授权发生在
+                    // 成功发布之后，失败/取消/超限路径仍然不会产生授权。
+                    host.authorize_preview(&actual);
+                    host.emit(MediaTaskEvent::Completed {
+                        task_id: task_id.to_string(),
+                        output_path: actual.to_string_lossy().into_owned(),
+                        output_bytes: bytes,
+                    });
+                    host.remove_task(task_id);
+                    return;
+                }
+                Err(message) => {
+                    gif_emit_failed(host, task_id, message);
+                    return;
+                }
+            },
+            GifStepOutcome::Retry => {
+                remove_incomplete_output(&temp);
+                match next {
+                    Some(width) => current_width = width,
+                    None => {
+                        gif_emit_failed(
+                            host,
+                            task_id,
+                            gif_failure_message(
+                                GifFailureReason::NoRoomToShrink,
+                                bytes,
+                                target_bytes,
+                                fps,
+                            ),
+                        );
+                        return;
+                    }
+                }
+            }
+            GifStepOutcome::Fail(reason) => {
+                remove_incomplete_output(&temp);
+                gif_emit_failed(
+                    host,
+                    task_id,
+                    gif_failure_message(reason, bytes, target_bytes, fps),
+                );
+                return;
+            }
+        }
+    }
+}
+
+/// Pixel size of the first video stream, via the bundled FFprobe.
+fn video_size(app: &AppHandle, input: &Path) -> Result<(u32, u32), String> {
+    let ffprobe = sidecar_path(app, "ffprobe")?;
+    probe_video_size(&ffprobe, input)
+}
+
+/// 用给定的 FFprobe 读取第一路视频流的宽高（视频与 GIF 都适用）。
+fn probe_video_size(ffprobe: &Path, input: &Path) -> Result<(u32, u32), String> {
+    let output = bundled_command(ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "default=noprint_wrappers=1",
+        ])
+        .arg(input)
+        .output()
+        .map_err(|error| format!("无法读取视频尺寸：{error}"))?;
+    if !output.status.success() {
+        return Err("FFprobe 无法读取视频尺寸，请在参数里手动填写期望宽度".into());
+    }
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let read = |key: &str| {
+        text.lines()
+            .find_map(|line| line.strip_prefix(key))
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .filter(|value| *value > 0)
+    };
+    match (read("width="), read("height=")) {
+        (Some(width), Some(height)) => Ok((width, height)),
+        _ => Err("FFprobe 返回的视频尺寸无效，请在参数里手动填写期望宽度".into()),
+    }
+}
+
+/// Output height the encoder would produce for `width` with `scale=w:-2`.
+///
+/// `-2` keeps the aspect ratio and rounds to an even number, so the preview can
+/// show the exact geometry without probing the encoded file.
+fn scaled_height(source_width: u32, source_height: u32, width: u32) -> u32 {
+    if source_width == 0 {
+        return 0;
+    }
+    let exact = source_height as f64 * width as f64 / source_width as f64;
+    let even = (exact / 2.0).round() * 2.0;
+    even.max(2.0) as u32
+}
+
+/// Marker returned when the user aborted the analysis; the command maps it to a
+/// user-facing message and the UI discards it for stale generations anyway.
+const GIF_ANALYSIS_CANCELLED: &str = "分析已取消";
+
+/// Renders `value` into a safe file-name stem (no separators, bounded length).
+fn sanitize_file_stem(value: &str) -> String {
+    let mut stem: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .take(48)
+        .collect();
+    if stem.is_empty() {
+        stem.push_str("analysis");
+    }
+    stem
+}
+
+/// Runs one blocking FFmpeg child for the analysis, registered for cancellation.
+fn run_gif_analysis_command(
+    ffmpeg: &Path,
+    args: &[OsString],
+    host: &Arc<dyn GifTaskHost>,
+    task_id: &str,
+    failure: &str,
+) -> Result<(), String> {
+    let child = bundled_command(ffmpeg)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("无法启动 FFmpeg：{error}"))?;
+    let child = Arc::new(Mutex::new(child));
+    host.insert_child(task_id, child.clone());
+    let status = child
+        .lock()
+        .map_err(|_| "无法获取 FFmpeg 进程状态".to_string())?
+        .wait();
+    if host.take_cancelled(task_id) {
+        return Err(GIF_ANALYSIS_CANCELLED.into());
+    }
+    match status {
+        Ok(status) if status.success() => Ok(()),
+        Ok(_) => Err(failure.to_string()),
+        Err(error) => Err(format!("FFmpeg 进程异常：{error}")),
+    }
+}
+
+/// The explicit "计算预览" job: one real output frame plus a byte estimate for
+/// the whole segment, derived from a short sample of the very same encoder.
+///
+/// The single frame is for judging detail only; it can never prove the file size
+/// or the smoothness of the animation. Size comes from the sample encode scaled
+/// by the segment/sample duration ratio and the area ratio.
+#[allow(clippy::too_many_arguments)]
+fn run_gif_analysis(
+    ffmpeg: &Path,
+    request: &GifMediaTaskRequest,
+    frame_at_seconds: Option<f64>,
+    source_width: u32,
+    source_height: u32,
+    source_duration: f64,
+    frame_output: &Path,
+    sample_output: &Path,
+    host: &Arc<dyn GifTaskHost>,
+    task_id: &str,
+) -> Result<GifAnalysis, String> {
+    let fps = request.options.fps;
+    let mode = request.options.mode.as_deref().unwrap_or("balanced");
+    let expected_width = request
+        .options
+        .width
+        .filter(|width| *width > 0)
+        .unwrap_or(source_width)
+        .max(1);
+    let start_seconds = request.options.start_seconds.unwrap_or(0.0).max(0.0);
+    let end_seconds = request
+        .options
+        .end_seconds
+        .unwrap_or(source_duration)
+        .min(source_duration.max(start_seconds + 0.05));
+    let duration_seconds = (end_seconds - start_seconds).max(0.05);
+    let floor = request
+        .options
+        .min_width
+        .unwrap_or(160)
+        .max(64)
+        .min(expected_width);
+    let budget = gif_budget(request.options.target_bytes.unwrap_or(0));
+
+    // ── 1. Short sample through the production argument builder ────────────
+    let (sample_width, sample_seconds) = gif_sample_plan(expected_width, duration_seconds);
+    let sample_request = gif_sample_request(request, sample_width, sample_seconds);
+    let sample_args = gif_encode_args_with_temp(
+        &build_gif_encode_args(&sample_request, fps, Some(sample_width)),
+        sample_output,
+    );
+    run_gif_analysis_command(
+        ffmpeg,
+        &sample_args,
+        host,
+        task_id,
+        "短样本编码失败，请检查素材或参数",
+    )?;
+    let sample_bytes = std::fs::metadata(sample_output)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    remove_incomplete_output(sample_output);
+    if sample_bytes == 0 {
+        remove_incomplete_output(frame_output);
+        return Err("短样本编码没有产出可测量的文件".into());
+    }
+
+    // Automatic size uses the same budget, floor and mode as the first full encode.
+    let expected_width = if request.options.width.is_none() {
+        fit_width_for_budget(
+            sample_width,
+            sample_bytes,
+            sample_seconds,
+            budget,
+            gif_correction_safety(mode),
+            floor,
+            expected_width,
+            duration_seconds,
+        )
+        .unwrap_or(expected_width)
+    } else {
+        expected_width
+    };
+
+    // ── 2. Real output frame at the chosen time ────────────────────────────
+    let frame_at = frame_at_seconds
+        .filter(|value| value.is_finite())
+        .unwrap_or(start_seconds + (duration_seconds * 0.25).min(0.5))
+        .clamp(start_seconds, (end_seconds - 0.05).max(start_seconds));
+    // Same scale filter and same frame-rate grid as the encoder, so this is the
+    // frame the GIF would show around that moment.
+    let frame_args: Vec<OsString> = vec![
+        OsString::from("-hide_banner"),
+        OsString::from("-nostdin"),
+        OsString::from("-y"),
+        OsString::from("-ss"),
+        OsString::from(frame_at.to_string()),
+        OsString::from("-i"),
+        OsString::from(&request.input_path),
+        OsString::from("-frames:v"),
+        OsString::from("1"),
+        OsString::from("-vf"),
+        OsString::from(format!("fps={fps},scale={expected_width}:-2:flags=lanczos")),
+        frame_output.as_os_str().to_owned(),
+    ];
+    run_gif_analysis_command(
+        ffmpeg,
+        &frame_args,
+        host,
+        task_id,
+        "无法从所选时间点提取单帧，请调整截取区间后重试",
+    )?;
+
+    // ── 3. Estimate for the whole segment + advisory suggestion ────────────
+    let estimate = gif_estimate_full_bytes(
+        sample_bytes,
+        sample_seconds,
+        sample_width,
+        expected_width,
+        duration_seconds,
+    );
+    let (estimate_low, estimate_high) = gif_estimate_range(estimate);
+    let (suggested_width, suggested_seconds) = gif_analysis_advice(
+        sample_width,
+        sample_bytes,
+        sample_seconds,
+        budget,
+        gif_correction_safety(mode),
+        expected_width,
+        floor,
+        duration_seconds,
+    );
+    let sample_signature = gif_sample_signature(
+        &request.input_path,
+        gif_input_len(&request.input_path),
+        fps,
+        &request.options.preset,
+        start_seconds,
+        sample_width,
+        sample_seconds,
+    );
+
+    Ok(GifAnalysis {
+        task_id: task_id.to_string(),
+        frame_path: frame_output.to_string_lossy().into_owned(),
+        output_width: expected_width,
+        output_height: scaled_height(source_width, source_height, expected_width),
+        fps,
+        start_seconds,
+        end_seconds,
+        duration_seconds,
+        sample_width,
+        sample_seconds,
+        sample_bytes,
+        estimate_low_bytes: estimate_low,
+        estimate_bytes: estimate,
+        estimate_high_bytes: estimate_high,
+        budget_bytes: budget,
+        likely_fits: estimate_high <= budget,
+        suggested_width,
+        suggested_seconds,
+        sample_signature,
+    })
+}
+
+/// Explicit analysis behind the "计算预览" button.
+///
+/// Only this command starts FFmpeg for a preview: changing parameters merely
+/// invalidates the previous result. Runs on a blocking thread so the UI thread
+/// stays responsive, and registers its children in the same registry as a
+/// conversion, so the existing cancel command aborts it.
+#[tauri::command]
+pub async fn analyze_gif_media_task(
+    app: AppHandle,
+    request: GifMediaTaskRequest,
+    frame_at_seconds: Option<f64>,
+) -> Result<GifAnalysis, String> {
+    validate_gif_inputs(&request)?;
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
+    }
+    let input = PathBuf::from(&request.input_path);
+    let source_duration = duration_seconds(&app, &input)?;
+    let (source_width, source_height) = video_size(&app, &input)?;
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let task_id = request.task_id.clone();
+
+    let analysis_dir = std::env::temp_dir().join("brand-material-gif-analysis");
+    std::fs::create_dir_all(&analysis_dir)
+        .map_err(|error| format!("无法创建分析临时目录：{error}"))?;
+    let stem = sanitize_file_stem(&task_id);
+    let frame_output = analysis_dir.join(format!("{stem}_frame.png"));
+    let sample_output = analysis_dir.join(format!("{stem}_sample.gif"));
+    remove_incomplete_output(&frame_output);
+    remove_incomplete_output(&sample_output);
+    // Let the webview display the frame through the asset protocol, without
+    // widening the configured scope for anything else.
+    let _ = app.asset_protocol_scope().allow_file(&frame_output);
+
+    {
+        let registry = app.state::<MediaTaskRegistry>();
+        if registry
+            .children
+            .lock()
+            .expect("media child registry poisoned")
+            .contains_key(&task_id)
+        {
+            return Err("该任务已在分析中".into());
+        }
+        // A cancel token makes `cancel` succeed even in the gap between the two
+        // FFmpeg children, so a fast parameter change really stops the work.
+        registry.register_cancel_token(&task_id, Arc::new(AtomicBool::new(false)));
+    }
+
+    let host: Arc<dyn GifTaskHost> = Arc::new(AppGifHost { app: app.clone() });
+    let request_for_job = request.clone();
+    let task_id_for_job = task_id.clone();
+    let frame_for_job = frame_output.clone();
+    let sample_for_job = sample_output.clone();
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        run_gif_analysis(
+            &ffmpeg,
+            &request_for_job,
+            frame_at_seconds,
+            source_width,
+            source_height,
+            source_duration,
+            &frame_for_job,
+            &sample_for_job,
+            &host,
+            &task_id_for_job,
+        )
+    })
+    .await
+    .map_err(|error| format!("分析任务异常结束：{error}"));
+
+    {
+        let registry = app.state::<MediaTaskRegistry>();
+        // Consume a late cancel flag so it cannot linger on this id forever.
+        let _ = registry.take_cancelled(&task_id);
+        registry.remove_cancel_token(&task_id);
+        registry.remove(&task_id);
+    }
+    let result = match joined {
+        Ok(inner) => inner,
+        Err(message) => Err(message),
+    };
+    if result.is_err() {
+        remove_incomplete_output(&frame_output);
+        remove_incomplete_output(&sample_output);
+    }
+    result
 }
 
 #[tauri::command]
@@ -3690,9 +5084,6 @@ pub fn start_gif_media_task(
     validate_request(&request)?;
     let output = output_path(&request);
     let duration = duration_seconds(&app, Path::new(&request.input_path))?;
-    let started_at = request.options.start_seconds.unwrap_or(0.0);
-    let end_at = request.options.end_seconds.unwrap_or(duration);
-    let _relevant_duration = (end_at - started_at).max(0.001);
 
     if !engine_status(app.clone()).ready {
         return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
@@ -3708,163 +5099,29 @@ pub fn start_gif_media_task(
 
     let ffmpeg = sidecar_path(&app, "ffmpeg")?;
     let target_bytes = request.options.target_bytes.unwrap_or(0);
-    let compression_pref = request
-        .options
-        .compression_preference
-        .as_deref()
-        .unwrap_or("balanced");
-    let min_width = request.options.min_width;
-    let min_fps = request.options.min_fps;
-    let allow_strong = request.options.allow_strong_compression.unwrap_or(false);
+    // Probed only when the user did not pin an output width: the width sizes the
+    // compression step and scales the analysis sample.
+    let source_width = if request.options.width.filter(|width| *width > 0).is_some() {
+        None
+    } else {
+        Some(video_size(&app, Path::new(&request.input_path))?.0)
+    };
 
-    let app_for_task = app.clone();
+    let host: Arc<dyn GifTaskHost> = Arc::new(AppGifHost { app: app.clone() });
     let output_for_task = output.clone();
-    let task_id_for_thread = request.task_id.clone();
-    let initial_fps = request.options.fps;
-    let initial_width = request.options.width;
-    let compression_pref_owned = compression_pref.to_string();
-    let min_fps_val = min_fps.unwrap_or(4);
-    let min_width_val = min_width.unwrap_or(160);
     let request_for_thread = request.clone();
 
     thread::spawn(move || {
-        let task_id = task_id_for_thread.clone();
-        let output_path_str = output_for_task.to_string_lossy().into_owned();
-
-        let mut current_fps = initial_fps;
-        let mut current_width = initial_width;
-        let max_retries: u32 = 8;
-        let total_steps = if target_bytes > 0 && allow_strong {
-            max_retries + 1
-        } else {
-            max_retries
-        };
-
-        for step in 0..total_steps {
-            // Check cancellation via registry
-            {
-                let registry = app_for_task.state::<MediaTaskRegistry>();
-                if registry.take_cancelled(&task_id) {
-                    let _ = std::fs::remove_file(&output_for_task);
-                    emit(
-                        &app_for_task,
-                        MediaTaskEvent::Cancelled {
-                            task_id: task_id.clone(),
-                        },
-                    );
-                    registry.remove(&task_id);
-                    return;
-                }
-            }
-
-            // Report progress
-            emit(
-                &app_for_task,
-                MediaTaskEvent::Progress {
-                    task_id: task_id.clone(),
-                    progress: (step as f64 / total_steps as f64).min(0.99),
-                },
-            );
-
-            let args = build_gif_encode_args(
-                &request_for_thread,
-                &output_for_task,
-                current_fps,
-                current_width,
-            );
-
-            match run_gif_encode_with_progress(
-                &ffmpeg,
-                &args,
-                &output_for_task,
-                &app_for_task,
-                &*app_for_task.state::<MediaTaskRegistry>(),
-                &task_id,
-                step as f64 / total_steps as f64,
-                1.0 / total_steps as f64,
-            ) {
-                Ok(file_size) => {
-                    if target_bytes == 0 || file_size <= target_bytes {
-                        // Success: within target or no target
-                        emit(
-                            &app_for_task,
-                            MediaTaskEvent::Completed {
-                                task_id: task_id.clone(),
-                                output_path: output_path_str,
-                                output_bytes: file_size,
-                            },
-                        );
-                        let registry = app_for_task.state::<MediaTaskRegistry>();
-                        registry.remove(&task_id);
-                        return;
-                    }
-
-                    // Too large, need retry
-                    if step + 1 >= total_steps {
-                        // Last retry exhausted
-                        emit(
-                            &app_for_task,
-                            MediaTaskEvent::Failed {
-                                task_id: task_id.clone(),
-                                message: format!(
-                                    "当前时长和画面复杂度无法在现有质量下压缩至 8MB。
-请缩短截取区间，或允许更强压缩。
-最后一次文件大小：{}",
-                                    format_file_size(file_size)
-                                ),
-                            },
-                        );
-                        let registry = app_for_task.state::<MediaTaskRegistry>();
-                        registry.remove(&task_id);
-                        return;
-                    }
-
-                    if allow_strong && step + 1 == max_retries {
-                        current_fps = min_fps_val;
-                        current_width = Some(min_width_val);
-                    } else {
-                        let (next_fps, next_width) = reduce_gif_params(
-                            current_fps,
-                            current_width,
-                            step + 1,
-                            &compression_pref_owned,
-                        );
-                        current_fps = next_fps.max(min_fps_val);
-                        current_width = match (next_width, min_width) {
-                            (Some(w), Some(min_w)) => Some(w.max(min_w)),
-                            (Some(w), None) => Some(w),
-                            (None, _) => None,
-                        };
-                    }
-                    // Continue to next iteration
-                }
-                Err(message) => {
-                    remove_incomplete_output(&output_for_task);
-                    emit(
-                        &app_for_task,
-                        MediaTaskEvent::Failed {
-                            task_id: task_id.clone(),
-                            message,
-                        },
-                    );
-                    let registry = app_for_task.state::<MediaTaskRegistry>();
-                    registry.remove(&task_id);
-                    return;
-                }
-            }
-        }
-
-        // Should not reach here normally
-        remove_incomplete_output(&output_for_task);
-        emit(
-            &app_for_task,
-            MediaTaskEvent::Failed {
-                task_id: task_id.clone(),
-                message: "压缩重试次数已用尽".into(),
-            },
+        run_gif_task_loop(
+            &ffmpeg,
+            &request_for_thread,
+            &output_for_task,
+            target_bytes,
+            source_width,
+            duration,
+            &host,
+            &request_for_thread.task_id,
         );
-        let registry = app_for_task.state::<MediaTaskRegistry>();
-        registry.remove(&task_id);
     });
 
     Ok(MediaTaskStarted {
@@ -3873,11 +5130,350 @@ pub fn start_gif_media_task(
     })
 }
 
-fn format_file_size(bytes: u64) -> String {
-    if bytes < 1024 * 1024 {
-        format!("{} KB", bytes / 1024)
+/// 「计算 GIF」任务宿主：把事件、取消、子进程登记转到 AppHandle，同时记录
+/// 终态事件，让命令可以把真实产物路径/字节/失败原因返回给前端。
+struct ComputeGifHost {
+    app: AppHandle,
+    terminal: Arc<Mutex<Option<MediaTaskEvent>>>,
+}
+
+impl GifTaskHost for ComputeGifHost {
+    fn emit(&self, event: MediaTaskEvent) {
+        if matches!(
+            event,
+            MediaTaskEvent::Completed { .. }
+                | MediaTaskEvent::Failed { .. }
+                | MediaTaskEvent::Cancelled { .. }
+        ) {
+            if let Ok(mut slot) = self.terminal.lock() {
+                *slot = Some(event.clone());
+            }
+        }
+        emit(&self.app, event);
+    }
+
+    fn insert_child(&self, task_id: &str, child: Arc<Mutex<Child>>) {
+        self.app
+            .state::<MediaTaskRegistry>()
+            .insert(task_id.to_string(), child);
+    }
+
+    fn take_cancelled(&self, task_id: &str) -> bool {
+        self.app
+            .state::<MediaTaskRegistry>()
+            .take_cancelled(task_id)
+    }
+
+    fn remove_task(&self, task_id: &str) {
+        self.app.state::<MediaTaskRegistry>().remove(task_id);
+    }
+
+    fn authorize_preview(&self, path: &Path) {
+        let _ = self.app.asset_protocol_scope().allow_file(path);
+    }
+}
+
+/// 计算一个可预览、可保存的真实 GIF：复用 `run_gif_task_loop` 的
+/// 短样本预算 → 最多两次完整编码 → 校验 → 非覆盖发布，只是把发布目录换成
+/// 后端管理的临时结果目录，绝不写用户导出目录。
+///
+/// 与直接导出共享同一条编码循环，不复制第二套参数构建或宽度校正逻辑。
+#[allow(clippy::too_many_arguments)]
+fn compute_gif_preview_file(
+    ffmpeg: &Path,
+    ffprobe: Option<&Path>,
+    request: &GifMediaTaskRequest,
+    results_dir: &Path,
+    target_bytes: u64,
+    source_width: Option<u32>,
+    source_duration: f64,
+    host: &Arc<dyn GifTaskHost>,
+    terminal: &Arc<Mutex<Option<MediaTaskEvent>>>,
+    task_id: &str,
+) -> Result<ComputedGifResult, String> {
+    fs::create_dir_all(results_dir).map_err(|error| format!("无法创建结果临时目录：{error}"))?;
+    prune_computed_gifs(results_dir, COMPUTED_GIF_MAX_AGE);
+    let preferred = results_dir.join(format!("{}.gif", sanitize_file_stem(task_id)));
+    cleanup_gif_artifacts(&preferred);
+
+    run_gif_task_loop(
+        ffmpeg,
+        request,
+        &preferred,
+        target_bytes,
+        source_width,
+        source_duration,
+        host,
+        task_id,
+    );
+
+    let terminal_event = terminal.lock().ok().and_then(|slot| slot.clone());
+    let (path, event_bytes) = match terminal_event {
+        Some(MediaTaskEvent::Completed {
+            output_path,
+            output_bytes,
+            ..
+        }) => (PathBuf::from(output_path), output_bytes),
+        Some(MediaTaskEvent::Failed { message, .. }) => {
+            cleanup_gif_artifacts(&preferred);
+            return Err(message);
+        }
+        Some(MediaTaskEvent::Cancelled { .. }) | None => {
+            cleanup_gif_artifacts(&preferred);
+            return Err(GIF_COMPUTE_CANCELLED.into());
+        }
+        _ => {
+            cleanup_gif_artifacts(&preferred);
+            return Err("计算未产生结果".into());
+        }
+    };
+
+    // 只信任后端临时目录里的产物；任何其他路径都视为异常。
+    if !path.starts_with(results_dir) {
+        cleanup_gif_artifacts(&preferred);
+        return Err("计算结果路径异常".into());
+    }
+    let actual_bytes = match validate_computed_gif(&path) {
+        Ok(bytes) => bytes,
+        Err(message) => {
+            cleanup_gif_artifacts(&preferred);
+            return Err(message);
+        }
+    };
+    if event_bytes != actual_bytes {
+        log::warn!(
+            "COMPUTED_GIF_BYTE_MISMATCH task_id={task_id} event={event_bytes} actual={actual_bytes}"
+        );
+    }
+    let (width, height) = ffprobe
+        .and_then(|ffprobe| probe_video_size(ffprobe, &path).ok())
+        .unwrap_or((0, 0));
+
+    let start_seconds = request.options.start_seconds.unwrap_or(0.0).max(0.0);
+    let end_seconds = request
+        .options
+        .end_seconds
+        .unwrap_or(source_duration)
+        .max(start_seconds);
+    Ok(ComputedGifResult {
+        task_id: task_id.to_string(),
+        path: path.to_string_lossy().into_owned(),
+        bytes: actual_bytes,
+        width,
+        height,
+        fps: request.options.fps,
+        duration_seconds: (end_seconds - start_seconds).max(0.0),
+        start_seconds,
+        end_seconds,
+    })
+}
+
+/// 「计算 GIF」：先做短样本预算，再完成所选片段的真实编码，结果留在后端
+/// 管理的临时目录；不要求用户先选择导出目录，也不写任何用户文件。
+///
+/// 只登记本次结果文件到 asset 协议，供主预览读取。
+#[tauri::command]
+pub async fn compute_gif_media_preview(
+    app: AppHandle,
+    request: GifMediaTaskRequest,
+) -> Result<ComputedGifResult, String> {
+    validate_gif_inputs(&request)?;
+    if !engine_status(app.clone()).ready {
+        return Err("转换引擎不可用：无法使用应用内置 sidecar".into());
+    }
+    let input = PathBuf::from(&request.input_path);
+    let source_duration = duration_seconds(&app, &input)?;
+    let ffmpeg = sidecar_path(&app, "ffmpeg")?;
+    let ffprobe = sidecar_path(&app, "ffprobe")?;
+    let target_bytes = request.options.target_bytes.unwrap_or(0);
+    let has_width = request.options.width.filter(|width| *width > 0).is_some();
+    let source_width = if has_width {
+        None
     } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+        Some(probe_video_size(&ffprobe, &input)?.0)
+    };
+    let results_dir = computed_gif_dir();
+    fs::create_dir_all(&results_dir).map_err(|error| format!("无法创建结果临时目录：{error}"))?;
+
+    let task_id = request.task_id.clone();
+    let terminal: Arc<Mutex<Option<MediaTaskEvent>>> = Arc::new(Mutex::new(None));
+    let host: Arc<dyn GifTaskHost> = Arc::new(ComputeGifHost {
+        app: app.clone(),
+        terminal: terminal.clone(),
+    });
+
+    {
+        let registry = app.state::<MediaTaskRegistry>();
+        if registry
+            .children
+            .lock()
+            .expect("media child registry poisoned")
+            .contains_key(&task_id)
+        {
+            return Err("该任务已在计算中".into());
+        }
+        // 取消令牌让 `cancel` 在两次 FFmpeg 子进程的间隙也能成功。
+        registry.register_cancel_token(&task_id, Arc::new(AtomicBool::new(false)));
+    }
+
+    let request_for_job = request.clone();
+    let results_for_job = results_dir.clone();
+    let host_for_job = host.clone();
+    let terminal_for_job = terminal.clone();
+    let task_id_for_job = task_id.clone();
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        compute_gif_preview_file(
+            &ffmpeg,
+            Some(&ffprobe),
+            &request_for_job,
+            &results_for_job,
+            target_bytes,
+            source_width,
+            source_duration,
+            &host_for_job,
+            &terminal_for_job,
+            &task_id_for_job,
+        )
+    })
+    .await
+    .map_err(|error| format!("计算任务异常结束：{error}"));
+
+    // 取消可能在编码完成之后才被接受：先取标记，再决定是否登记结果。
+    let cancelled = {
+        let registry = app.state::<MediaTaskRegistry>();
+        let cancelled = registry.take_cancelled(&task_id);
+        registry.remove_cancel_token(&task_id);
+        registry.remove(&task_id);
+        cancelled
+    };
+
+    match joined {
+        Ok(Ok(result)) => accept_computed_gif(
+            &app.state::<ComputedGifRegistry>(),
+            cancelled,
+            result,
+            format!("{}_gif.gif", gif_source_stem(&request.input_path)),
+        ),
+        Ok(Err(message)) => {
+            cleanup_gif_artifacts(
+                &results_dir.join(format!("{}.gif", sanitize_file_stem(&task_id))),
+            );
+            Err(message)
+        }
+        Err(message) => {
+            cleanup_gif_artifacts(
+                &results_dir.join(format!("{}.gif", sanitize_file_stem(&task_id))),
+            );
+            Err(message)
+        }
+    }
+}
+
+/// 最终登记计算结果前处理「已经接受的取消」。
+///
+/// 取消请求可能在编码刚完成时到达：此时结果文件已经生成，但绝不能登记为
+/// 可保存结果、也不能向前端返回成功。清理文件后统一返回 `计算已取消`，
+/// 让前端显示取消而不是失败。
+fn accept_computed_gif(
+    registry: &ComputedGifRegistry,
+    cancelled: bool,
+    result: ComputedGifResult,
+    preferred_name: String,
+) -> Result<ComputedGifResult, String> {
+    if cancelled {
+        cleanup_gif_artifacts(Path::new(&result.path));
+        return Err(GIF_COMPUTE_CANCELLED.into());
+    }
+    registry.insert(
+        result.task_id.clone(),
+        PathBuf::from(&result.path),
+        preferred_name,
+    );
+    Ok(result)
+}
+
+/// 保存已计算的 GIF：按 taskId 解析本工具生成的结果文件，复制到目标目录的
+/// 唯一临时文件并同步，再复用既有的非覆盖硬链接发布（同名追加 `_2`、`_3`）。
+///
+/// 不会重新编码，也不接受前端传入的任意源路径。
+#[tauri::command]
+pub fn save_computed_gif(
+    registry: tauri::State<'_, ComputedGifRegistry>,
+    task_id: String,
+    directory: String,
+) -> Result<SavedGifResult, String> {
+    let entry = registry
+        .get(&task_id)
+        .ok_or_else(|| "没有可保存的计算结果，请先计算 GIF".to_string())?;
+    if !entry.path.is_file() {
+        return Err("计算结果已被清理，请重新计算 GIF".into());
+    }
+    let directory = PathBuf::from(directory);
+    if !directory.is_dir() {
+        return Err("所选导出文件夹不存在或不可访问".into());
+    }
+    save_computed_gif_file(&entry.path, &entry.preferred_name, &directory)
+}
+
+/// 把结果文件复制到目标目录并做非覆盖发布。抽成自由函数，便于在不构造
+/// `AppHandle`/`State` 的情况下用真实文件验证「不重编码、不覆盖、临时文件清理」。
+fn save_computed_gif_file(
+    source: &Path,
+    preferred_name: &str,
+    directory: &Path,
+) -> Result<SavedGifResult, String> {
+    let temp = save_gif_temp_path(directory, preferred_name);
+    remove_incomplete_output(&temp);
+    if let Err(error) = fs::copy(source, &temp) {
+        remove_incomplete_output(&temp);
+        return Err(format!("无法复制计算结果到导出目录：{error}"));
+    }
+    // 写入完成并落盘后再发布，避免发布出一份尚未同步完成的文件。
+    match fs::File::open(&temp) {
+        Ok(file) => {
+            if let Err(error) = file.sync_all() {
+                remove_incomplete_output(&temp);
+                return Err(format!("无法同步导出文件：{error}"));
+            }
+        }
+        Err(error) => {
+            remove_incomplete_output(&temp);
+            return Err(format!("无法打开导出临时文件：{error}"));
+        }
+    }
+    let preferred = directory.join(preferred_name);
+    let actual = persist_gif_final(&temp, &preferred)?;
+    let bytes = fs::metadata(&actual)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    Ok(SavedGifResult {
+        path: actual.to_string_lossy().into_owned(),
+        bytes,
+    })
+}
+
+/// 丢弃一份已计算结果及其临时文件（重新计算、换素材或卸载时调用）。
+#[tauri::command]
+pub fn discard_computed_gif(
+    registry: tauri::State<'_, ComputedGifRegistry>,
+    task_id: String,
+) -> Result<(), String> {
+    if let Some(path) = registry.remove(&task_id) {
+        cleanup_gif_artifacts(&path);
+    }
+    Ok(())
+}
+
+/// Human-readable size for task messages.
+///
+/// Uses decimal units because the product limit is expressed in decimal MB
+/// (`MAX_GIF_BYTES` = 8,000,000 B). Printing `8,000,000` as "7.6 MB" via 1024
+/// arithmetic reads as a bug to the person looking at the failure message.
+fn format_file_size(bytes: u64) -> String {
+    if bytes < 1_000_000 {
+        format!("{} KB", bytes / 1_000)
+    } else {
+        format!("{:.1} MB", bytes as f64 / 1_000_000.0)
     }
 }
 
@@ -6060,17 +7656,25 @@ pub fn preview_watermark_frame(
 #[cfg(test)]
 mod tests {
     use super::{
-        drawtext_single_position, drawtext_tiled_coordinates, escape_filter_value, event_kind,
-        event_task_id, ffmpeg_args, gif_temp_output_path, is_static_image, is_video_media,
-        next_available_path, output_path, overlay_coordinates, parse_progress_line,
-        reduce_gif_params, run_watermark_preview_job, run_watermark_production_job,
+        build_gif_encode_args, drawtext_single_position, drawtext_tiled_coordinates,
+        escape_filter_value, event_kind, event_task_id, ffmpeg_args, fit_width_for_budget,
+        format_file_size, gif_analysis_advice, gif_budget, gif_bytes_per_second,
+        gif_correction_safety, gif_encode_args_with_temp, gif_estimate_full_bytes,
+        gif_estimate_range, gif_failure_message, gif_mode_is_valid, gif_sample_plan,
+        gif_sample_request, gif_sample_signature, gif_step_outcome, gif_temp_output_path,
+        gif_temp_token, gif_within_budget, is_static_image, is_video_media, next_available_path,
+        next_gif_width, output_path, overlay_coordinates, parse_progress_line, persist_gif_final,
+        remove_incomplete_output, run_gif_analysis, run_gif_task_loop, run_watermark_preview_job,
+        run_watermark_production_job, sanitize_file_stem, scaled_height,
         start_watermark_preview_queue_with_runner, start_watermark_video_queue,
-        target_sidecar_name, tiled_coordinates, watermark_output_path, EncoderBackend,
-        FrozenWatermarkJob, FrozenWatermarkPreviewJob, GifMediaOptions, GifMediaTaskRequest,
-        MediaTaskEvent, MediaTerminal, WatermarkEncodePayload, WatermarkJobStatus,
+        target_sidecar_name, tiled_coordinates, validate_gif_inputs, watermark_output_path,
+        EncoderBackend, FrozenWatermarkJob, FrozenWatermarkPreviewJob, GifAnalysis,
+        GifFailureReason, GifMediaOptions, GifMediaTaskRequest, GifSampleHint, GifStepOutcome,
+        GifTaskHost, MediaTaskEvent, MediaTerminal, WatermarkEncodePayload, WatermarkJobStatus,
         WatermarkMediaTaskRequest, WatermarkOptions, WatermarkPreviewRequest,
         WatermarkPreviewStatus, WatermarkPreviewStatusEvent, WatermarkPreviewTerminal,
-        WatermarkQueueError, WatermarkQueueEvent, WatermarkTerminal,
+        WatermarkQueueError, WatermarkQueueEvent, WatermarkTerminal, GIF_MODES, MAX_GIF_BYTES,
+        MAX_GIF_FULL_ENCODES,
     };
     use std::{
         ffi::OsString,
@@ -6095,10 +7699,9 @@ mod tests {
                 preset: "fast".into(),
                 output_directory: "/tmp/输出 文件夹".into(),
                 target_bytes: None,
-                compression_preference: None,
+                mode: None,
                 min_width: None,
-                min_fps: None,
-                allow_strong_compression: None,
+                sample: None,
             },
         }
     }
@@ -6296,15 +7899,852 @@ mod tests {
     }
 
     #[test]
-    fn gif_retry_temp_keeps_gif_muxer_suffix_and_never_is_final_name() {
+    fn gif_temp_names_are_isolated_per_task_and_per_slot() {
         let final_path = Path::new("/tmp/中文 输出/片段.gif");
-        let temp = gif_temp_output_path(final_path);
-        assert_eq!(
-            temp.file_name().unwrap().to_string_lossy(),
-            ".片段.gif.part"
+        let first_a = gif_temp_output_path(final_path, "123-taskA-0", "first");
+        let first_b = gif_temp_output_path(final_path, "123-taskB-0", "first");
+        let sample_a = gif_temp_output_path(final_path, "123-taskA-0", "sample");
+
+        // Two tasks writing the same output directory must never share a temp
+        // file, otherwise one task's attempt can be measured or deleted by the
+        // other while it is still being encoded.
+        assert_ne!(first_a, first_b);
+        // The analysis sample must not clobber a full-encode artefact.
+        assert_ne!(first_a, sample_a);
+        assert_ne!(first_a, final_path);
+
+        let name = first_a.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with('.'), "temp files stay hidden: {name}");
+        assert!(
+            name.ends_with(".tmp.gif"),
+            "muxer suffix stays real: {name}"
         );
-        assert_ne!(temp, final_path);
-        assert!(temp.to_string_lossy().ends_with(".gif.part"));
+        assert!(name.contains("taskA"));
+        assert_eq!(first_a.parent(), final_path.parent());
+        assert!(
+            !name.contains('/') && !name.contains('\\'),
+            "a task id must never escape its directory: {name}"
+        );
+    }
+
+    #[test]
+    fn gif_encode_args_state_the_format_and_never_carry_an_output_path() {
+        let args = build_gif_encode_args(&request(), 12, Some(640));
+        let values: Vec<_> = args
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+
+        let format_index = values
+            .iter()
+            .position(|value| value == "-f")
+            .expect("-f must be present so FFmpeg does not infer the muxer");
+        assert_eq!(values[format_index + 1], "gif");
+        // The builder ends with encoder options, so the runner can append one
+        // output path and only one.
+        assert_eq!(values.last().unwrap(), "-nostats");
+        assert!(
+            !values.iter().any(|value| value.ends_with(".gif")),
+            "the builder must not name any output file, got {values:?}"
+        );
+    }
+
+    /// Regression: the loop used to hand FFmpeg the user's destination as a
+    /// first output and then append the temp path as a second one. FFmpeg wrote
+    /// the destination file unconditionally, and the second output had no
+    /// duration limit, so the task hung or encoded far past the chosen segment.
+    #[test]
+    fn gif_attempt_args_expose_only_the_temp_path_to_ffmpeg() {
+        let final_output = Path::new("/tmp/中文 输出/片段.gif");
+        let temp_output = gif_temp_output_path(final_output, "123-task-0", "first");
+        let args = build_gif_encode_args(&request(), 12, Some(640));
+        let values: Vec<_> = gif_encode_args_with_temp(&args, &temp_output)
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+
+        // Exactly one path argument, and it is the temp file.
+        let path_like: Vec<&String> = values
+            .iter()
+            .filter(|value| value.ends_with(".gif"))
+            .collect();
+        assert_eq!(path_like.len(), 1, "expected one output, got {path_like:?}");
+        assert_eq!(*path_like[0], temp_output.to_string_lossy());
+        assert!(
+            !values
+                .iter()
+                .any(|value| value == &final_output.to_string_lossy()),
+            "the destination must never reach FFmpeg"
+        );
+        // `-f gif` still precedes that single output.
+        let format_index = values.iter().position(|value| value == "-f").unwrap();
+        let output_index = values
+            .iter()
+            .position(|value| value.ends_with(".gif"))
+            .unwrap();
+        assert!(format_index < output_index);
+    }
+
+    #[test]
+    fn gif_target_bytes_accepts_float_json_without_failing_the_whole_request() {
+        // Regression: the front end used to send `7.8 * 1024 * 1024`, which
+        // serializes to 8178892.8. A plain `Option<u64>` rejects a JSON float
+        // outright, so the task never started.
+        let float_payload = r#"{
+            "taskId": "task-float",
+            "inputPath": "/tmp/中文 空格/input.mp4",
+            "options": {
+                "fps": 12,
+                "preset": "high",
+                "outputDirectory": "/tmp/输出 文件夹",
+                "targetBytes": 8178892.8
+            }
+        }"#;
+        let parsed: GifMediaTaskRequest = serde_json::from_str(float_payload)
+            .expect("a floating point byte budget must not break request parsing");
+        assert_eq!(parsed.options.target_bytes, Some(8_178_893));
+
+        let int_payload = r#"{
+            "taskId": "task-int",
+            "inputPath": "/tmp/中文 空格/input.mp4",
+            "options": {
+                "fps": 12,
+                "preset": "high",
+                "outputDirectory": "/tmp/输出 文件夹",
+                "targetBytes": 7800000
+            }
+        }"#;
+        let parsed_int: GifMediaTaskRequest =
+            serde_json::from_str(int_payload).expect("integer byte budget parses");
+        assert_eq!(parsed_int.options.target_bytes, Some(7_800_000));
+
+        // Omitting the field must stay valid (older clients).
+        let omitted = r#"{
+            "taskId": "task-none",
+            "inputPath": "/tmp/中文 空格/input.mp4",
+            "options": {
+                "fps": 12,
+                "preset": "high",
+                "outputDirectory": "/tmp/输出 文件夹"
+            }
+        }"#;
+        let parsed_none: GifMediaTaskRequest =
+            serde_json::from_str(omitted).expect("missing byte budget parses");
+        assert_eq!(parsed_none.options.target_bytes, None);
+    }
+
+    #[test]
+    fn gif_budget_never_exceeds_the_decimal_megabyte_ceiling() {
+        assert_eq!(MAX_GIF_BYTES, 8_000_000);
+        assert_ne!(MAX_GIF_BYTES, 8 * 1024 * 1024);
+
+        // No client budget: the decimal ceiling is the whole budget.
+        assert_eq!(gif_budget(0), MAX_GIF_BYTES);
+        // A tighter client budget is honoured…
+        assert_eq!(gif_budget(7_800_000), 7_800_000);
+        // …and a wider one can never raise the ceiling.
+        assert_eq!(gif_budget(100_000_000), MAX_GIF_BYTES);
+
+        // Exactly at the decimal limit is inside it; one byte over is not.
+        assert!(gif_within_budget(8_000_000, 8_000_000));
+        assert!(!gif_within_budget(8_000_001, 8_000_000));
+        assert!(gif_within_budget(7_999_999, 0));
+        assert!(!gif_within_budget(8_000_001, 0));
+        assert!(gif_within_budget(7_800_000, 7_800_000));
+        assert!(!gif_within_budget(7_800_001, 7_800_000));
+        // A zero-byte result is a failed encode, never a success.
+        assert!(!gif_within_budget(0, 8_000_000));
+    }
+
+    /// The rule the总控 review flagged: exceeding 8,000,000 B forbids publishing
+    /// but must NOT end the task while a width correction can still help.
+    #[test]
+    fn gif_over_the_ceiling_keeps_compressing_while_a_width_step_remains() {
+        let max = MAX_GIF_FULL_ENCODES;
+        assert_eq!(max, 2, "complete encodes stay capped at two");
+
+        // Under budget anywhere: publish.
+        assert_eq!(
+            gif_step_outcome(6_400_000, 7_800_000, true, 1, max),
+            GifStepOutcome::Publish
+        );
+
+        // FIRST full encode over the decimal ceiling with a step left: retry,
+        // not an immediate failure.
+        assert_eq!(
+            gif_step_outcome(MAX_GIF_BYTES + 1, 7_800_000, true, 1, max),
+            GifStepOutcome::Retry
+        );
+        assert_eq!(
+            gif_step_outcome(MAX_GIF_BYTES + 1, 0, true, 1, max),
+            GifStepOutcome::Retry
+        );
+        assert_eq!(
+            gif_step_outcome(9_500_000, 7_800_000, true, 1, max),
+            GifStepOutcome::Retry
+        );
+
+        // Width is already at the user's floor: stop explicitly.
+        assert_eq!(
+            gif_step_outcome(MAX_GIF_BYTES + 1, 7_800_000, false, 1, max),
+            GifStepOutcome::Fail(GifFailureReason::NoRoomToShrink)
+        );
+
+        // Both full encodes spent and still over budget: stop explicitly.
+        assert_eq!(
+            gif_step_outcome(7_900_000, 7_800_000, true, max, max),
+            GifStepOutcome::Fail(GifFailureReason::BudgetUnreachable)
+        );
+        assert_eq!(
+            gif_step_outcome(MAX_GIF_BYTES + 1, 7_800_000, true, max, max),
+            GifStepOutcome::Fail(GifFailureReason::BudgetUnreachable)
+        );
+
+        // Boundary: exactly the ceiling is inside it.
+        assert_eq!(
+            gif_step_outcome(MAX_GIF_BYTES, MAX_GIF_BYTES, false, max, max),
+            GifStepOutcome::Publish
+        );
+    }
+
+    #[test]
+    fn gif_width_correction_only_shrinks_and_respects_the_floor() {
+        let budget = 7_800_000;
+
+        let next = next_gif_width(1920, 160, 0.92, 12_000_000, budget)
+            .expect("an over-budget encode has room to shrink");
+        assert!(next < 1920, "correction must be strictly smaller: {next}");
+        assert!(next >= 160, "correction must respect the floor: {next}");
+
+        // The floor is honoured even when the formula wants to go far below it.
+        let floored = next_gif_width(1920, 640, 0.92, 40_000_000, budget).unwrap();
+        assert!((640..1920).contains(&floored), "got {floored}");
+
+        // Already at the floor: no room left, so the loop must stop explicitly
+        // instead of re-encoding identical output.
+        assert!(next_gif_width(160, 160, 0.92, 9_000_000, budget).is_none());
+        assert!(next_gif_width(200, 160, 0.92, 9_000_000, budget).unwrap() < 200);
+
+        // Degenerate inputs never produce a "shrink".
+        assert!(next_gif_width(1920, 160, 0.92, 0, budget).is_none());
+        assert!(next_gif_width(0, 160, 0.92, 9_000_000, budget).is_none());
+        assert!(next_gif_width(1920, 160, 0.92, 9_000_000, 0).is_none());
+    }
+
+    #[test]
+    fn gif_sample_prediction_uses_the_area_model_and_respects_bounds() {
+        // A 320px-, 2 s-sample of 2,000,000 B for a 2 s segment against a
+        // 7,800,000 B budget: 320 * sqrt(0.92 * 7.8M / 2M) ≈ 606.
+        let predicted =
+            fit_width_for_budget(320, 2_000_000, 2.0, 7_800_000, 0.92, 160, 1920, 2.0).unwrap();
+        assert!(
+            (560..660).contains(&predicted),
+            "area model prediction out of range: {predicted}"
+        );
+
+        // Never above the cap, never below the floor.
+        assert_eq!(
+            fit_width_for_budget(320, 10, 2.0, 7_800_000, 0.92, 160, 1920, 2.0),
+            Some(1920)
+        );
+        assert_eq!(
+            fit_width_for_budget(320, 900_000_000, 2.0, 7_800_000, 0.92, 160, 1920, 2.0),
+            Some(160)
+        );
+
+        // Degenerate sample: no prediction.
+        assert_eq!(
+            fit_width_for_budget(0, 1, 2.0, 7_800_000, 0.92, 160, 1920, 2.0),
+            None
+        );
+        assert_eq!(
+            fit_width_for_budget(320, 0, 2.0, 7_800_000, 0.92, 160, 1920, 2.0),
+            None
+        );
+        assert_eq!(
+            fit_width_for_budget(320, 1, 2.0, 0, 0.92, 160, 1920, 2.0),
+            None
+        );
+        assert_eq!(
+            fit_width_for_budget(320, 1, 2.0, 7_800_000, 0.92, 160, 1920, 0.0),
+            None
+        );
+    }
+
+    /// The estimate must scale by the *segment-to-sample duration ratio*: the
+    /// sample byte count is never the size of a longer clip. Same picture, same
+    /// width, one 2 s segment and one 10 s segment.
+    #[test]
+    fn gif_estimate_scales_with_the_segment_to_sample_duration_ratio() {
+        let sample_bytes = 400_000u64;
+        let sample_seconds = 2.0;
+        let sample_width = 320;
+        let width = 640; // 2× the sample width → 4× the area.
+
+        let two_seconds =
+            gif_estimate_full_bytes(sample_bytes, sample_seconds, sample_width, width, 2.0);
+        let ten_seconds =
+            gif_estimate_full_bytes(sample_bytes, sample_seconds, sample_width, width, 10.0);
+
+        // 400,000 B / 2 s = 200,000 B/s at 320px; ×4 area = 800,000 B/s at 640px.
+        assert_eq!(
+            gif_bytes_per_second(sample_bytes, sample_seconds, sample_width, width),
+            800_000.0
+        );
+        assert_eq!(two_seconds, 1_600_000);
+        assert_eq!(ten_seconds, 8_000_000);
+        assert_eq!(
+            ten_seconds,
+            two_seconds * 5,
+            "duration ratio must be linear"
+        );
+
+        // Therefore the width that fits the same budget must be ~sqrt(5) narrower
+        // for the 10 s segment than for the 2 s one.
+        let budget = 7_800_000;
+        let w_short = fit_width_for_budget(
+            sample_width,
+            sample_bytes,
+            sample_seconds,
+            budget,
+            1.0,
+            160,
+            1920,
+            2.0,
+        )
+        .unwrap();
+        let w_long = fit_width_for_budget(
+            sample_width,
+            sample_bytes,
+            sample_seconds,
+            budget,
+            1.0,
+            160,
+            1920,
+            10.0,
+        )
+        .unwrap();
+        assert!(w_long < w_short, "{w_long} !< {w_short}");
+        let ratio = w_short as f64 / w_long as f64;
+        assert!(
+            (ratio - 5f64.sqrt()).abs() < 0.05,
+            "duration ratio should shrink the width by ~sqrt(5), got {ratio}"
+        );
+    }
+
+    #[test]
+    fn gif_estimate_range_is_a_marked_band_around_the_estimate() {
+        assert_eq!(gif_estimate_range(0), (0, 0));
+        let (low, high) = gif_estimate_range(1_000_000);
+        assert_eq!(low, 800_000);
+        assert_eq!(high, 1_200_000);
+        // A tiny estimate never collapses to zero on the low side.
+        let (low, _) = gif_estimate_range(1);
+        assert_eq!(low, 1);
+    }
+
+    /// Advice never rewrites the user's own numbers: it only suggests a width
+    /// that fits, or a shorter segment when even the floor width cannot.
+    #[test]
+    fn gif_analysis_advice_suggests_width_first_then_a_shorter_segment() {
+        let sample_width = 320;
+        let sample_seconds = 2.0;
+        let budget = 7_800_000;
+
+        // Comfortably inside the budget: no advice at all.
+        let (width, seconds) = gif_analysis_advice(
+            sample_width,
+            200_000,
+            sample_seconds,
+            budget,
+            0.92,
+            640,
+            160,
+            2.0,
+        );
+        assert_eq!((width, seconds), (None, None));
+
+        // Over budget at the expected width, but a narrower width fits.
+        let (width, seconds) = gif_analysis_advice(
+            sample_width,
+            1_600_000,
+            sample_seconds,
+            budget,
+            0.92,
+            1280,
+            160,
+            2.0,
+        );
+        let width = width.expect("a width suggestion is expected");
+        assert!(width < 1280 && width >= 160, "got {width}");
+        assert_eq!(seconds, None);
+
+        // Even the floor width cannot fit: suggest a shorter segment instead.
+        let (width, seconds) = gif_analysis_advice(
+            sample_width,
+            8_000_000,
+            sample_seconds,
+            budget,
+            0.92,
+            640,
+            320,
+            10.0,
+        );
+        assert_eq!(width, None);
+        let seconds = seconds.expect("a shorter-segment suggestion is expected");
+        assert!(seconds > 0.1 && seconds < 10.0, "got {seconds}");
+
+        // Degenerate inputs never panic or divide by zero.
+        assert_eq!(
+            gif_analysis_advice(0, 0, 2.0, budget, 0.92, 640, 160, 2.0),
+            (None, None)
+        );
+        assert_eq!(
+            gif_analysis_advice(320, 1_000, 2.0, 0, 0.92, 640, 160, 2.0),
+            (None, None)
+        );
+    }
+
+    /// The sample plan and its signature are shared by the preview and the
+    /// production run: same inputs → same signature, any real change → new one.
+    #[test]
+    fn gif_sample_plan_and_signature_identify_one_sample() {
+        assert_eq!(gif_sample_plan(1920, 10.0), (320, 2.0));
+        assert_eq!(gif_sample_plan(200, 10.0), (200, 2.0));
+        assert_eq!(gif_sample_plan(1920, 0.6), (320, 0.6));
+        assert_eq!(gif_sample_plan(0, 0.0), (1, 0.05));
+
+        let base = gif_sample_signature("/tmp/a.mp4", 1_000, 10, "fast", 0.0, 320, 2.0);
+        assert_eq!(
+            base,
+            gif_sample_signature("/tmp/a.mp4", 1_000, 10, "fast", 0.0, 320, 2.0)
+        );
+        for changed in [
+            gif_sample_signature("/tmp/b.mp4", 1_000, 10, "fast", 0.0, 320, 2.0),
+            gif_sample_signature("/tmp/a.mp4", 1_001, 10, "fast", 0.0, 320, 2.0),
+            gif_sample_signature("/tmp/a.mp4", 1_000, 15, "fast", 0.0, 320, 2.0),
+            gif_sample_signature("/tmp/a.mp4", 1_000, 10, "high", 0.0, 320, 2.0),
+            gif_sample_signature("/tmp/a.mp4", 1_000, 10, "fast", 0.5, 320, 2.0),
+            gif_sample_signature("/tmp/a.mp4", 1_000, 10, "fast", 0.0, 160, 2.0),
+            gif_sample_signature("/tmp/a.mp4", 1_000, 10, "fast", 0.0, 320, 1.5),
+        ] {
+            assert_ne!(base, changed, "signature must change with the sample");
+        }
+    }
+
+    #[test]
+    fn gif_modes_map_to_width_correction_safety_without_touching_fps() {
+        assert_eq!(GIF_MODES, ["balanced", "fps", "quality", "custom"]);
+        assert!(gif_mode_is_valid("balanced"));
+        assert!(gif_mode_is_valid("fps"));
+        assert!(gif_mode_is_valid("quality"));
+        assert!(gif_mode_is_valid("custom"));
+        assert!(!gif_mode_is_valid("clarity"));
+        assert!(!gif_mode_is_valid(""));
+
+        let balanced = gif_correction_safety("balanced");
+        let quality = gif_correction_safety("quality");
+        let fps = gif_correction_safety("fps");
+        assert!(quality > balanced, "quality must protect resolution");
+        assert!(fps < balanced, "fps mode may trade width for the budget");
+        assert_eq!(gif_correction_safety("custom"), balanced);
+        assert_eq!(gif_correction_safety("unknown"), balanced);
+
+        // A more aggressive mode yields a smaller width for the same overshoot.
+        let w_quality = next_gif_width(640, 160, quality, 21_000_000, 7_800_000).unwrap();
+        let w_fps = next_gif_width(640, 160, fps, 21_000_000, 7_800_000).unwrap();
+        assert!(w_fps < w_quality);
+    }
+
+    /// Real FFmpeg: the analysis step produces one real output frame plus an
+    /// estimate for the whole segment, never a single-frame size guess.
+    #[test]
+    fn real_gif_analysis_reports_a_frame_and_a_segment_scaled_estimate() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-分析-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let mp4 = directory.join("分析 样例.mp4");
+        create_large_fixture(&ffmpeg, &mp4);
+
+        let request = gif_request(
+            "real-analysis",
+            &mp4,
+            &directory,
+            Some(480),
+            15,
+            None,
+            Some(2.5),
+            Some(7_800_000),
+            Some(160),
+            "balanced",
+        );
+        let frame_output = directory.join("frame.png");
+        let sample_output = directory.join("sample.gif");
+        let host = Arc::new(RecordingGifHost::default());
+        let host_for_loop: Arc<dyn GifTaskHost> = host.clone();
+
+        let analysis = run_gif_analysis(
+            &ffmpeg,
+            &request,
+            Some(1.0),
+            640,
+            480,
+            2.5,
+            &frame_output,
+            &sample_output,
+            &host_for_loop,
+            "real-analysis",
+        )
+        .expect("analysis must succeed on a valid fixture");
+
+        // One real frame, at the expected output width, decoded from the source.
+        assert!(frame_output.is_file(), "the preview frame must exist");
+        let frame_bytes = fs::read(&frame_output).unwrap();
+        assert_eq!(
+            frame_bytes[..8],
+            [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+            "the preview frame must be a real PNG"
+        );
+        assert_eq!(analysis.frame_path, frame_output.to_string_lossy());
+        assert_eq!(analysis.output_width, 480);
+        assert_eq!(analysis.output_height, 360); // 640×480 at 480 wide → 360
+        assert_eq!(analysis.fps, 15);
+        assert_eq!(analysis.duration_seconds, 2.5);
+        assert_eq!(analysis.budget_bytes, 7_800_000);
+
+        // Size comes from the sample encode, scaled to the whole segment.
+        assert!(analysis.sample_bytes > 0);
+        assert!(analysis.sample_width <= 320);
+        assert!((analysis.sample_seconds - 2.0).abs() < 1e-9);
+        assert!(
+            analysis.estimate_bytes > analysis.sample_bytes,
+            "the 2.5s estimate must exceed the 2s sample: {} vs {}",
+            analysis.estimate_bytes,
+            analysis.sample_bytes
+        );
+        assert!(analysis.estimate_low_bytes < analysis.estimate_bytes);
+        assert!(analysis.estimate_high_bytes > analysis.estimate_bytes);
+        assert_eq!(
+            analysis.likely_fits,
+            analysis.estimate_high_bytes <= analysis.budget_bytes
+        );
+        assert!(!analysis.sample_signature.is_empty());
+
+        // The sampled GIF is an internal artefact: it must be gone, and the
+        // analysis must never write into the user's output directory.
+        assert!(!sample_output.exists(), "the sample must be cleaned up");
+        let leftovers: Vec<_> = fs::read_dir(&directory)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".gif"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "no GIF may be left behind: {leftovers:?}"
+        );
+
+        // The frame is a real decoded frame of the source, not a placeholder.
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&frame_output)
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&probe.stdout).trim(),
+            "480,360",
+            "the frame must be scaled to the expected output size"
+        );
+    }
+
+    #[test]
+    fn real_gif_automatic_analysis_matches_the_first_encode_width() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-auto-size-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mp4 = directory.join("source.mp4");
+        create_large_fixture(&ffmpeg, &mp4);
+        let mut widths = Vec::new();
+        for mode in ["quality", "balanced", "fps"] {
+            let request = gif_request(
+                mode,
+                &mp4,
+                &directory,
+                None,
+                15,
+                None,
+                Some(2.5),
+                Some(1_000_000),
+                Some(160),
+                mode,
+            );
+            let host: Arc<dyn GifTaskHost> = Arc::new(RecordingGifHost::default());
+            let frame = directory.join(format!("{mode}.png"));
+            let analysis = run_gif_analysis(
+                &ffmpeg,
+                &request,
+                Some(0.5),
+                640,
+                480,
+                2.5,
+                &frame,
+                &directory.join("sample.gif"),
+                &host,
+                mode,
+            )
+            .unwrap();
+            let expected = fit_width_for_budget(
+                analysis.sample_width,
+                analysis.sample_bytes,
+                analysis.sample_seconds,
+                1_000_000,
+                gif_correction_safety(mode),
+                160,
+                640,
+                2.5,
+            )
+            .unwrap();
+            assert_eq!(analysis.output_width, expected);
+            assert!(analysis.output_width < 640);
+            let image = fs::read(frame).unwrap();
+            assert_eq!(
+                u32::from_be_bytes(image[16..20].try_into().unwrap()),
+                expected
+            );
+            widths.push(expected);
+            if mode == "balanced" {
+                let run_host = Arc::new(RecordingGifHost::default());
+                let run_host_dyn: Arc<dyn GifTaskHost> = run_host.clone();
+                let preferred = directory.join("automatic.gif");
+                run_gif_task_loop(
+                    &ffmpeg,
+                    &request,
+                    &preferred,
+                    1_000_000,
+                    Some(640),
+                    2.5,
+                    &run_host_dyn,
+                    mode,
+                );
+                let (output, bytes) = completed_output(&run_host);
+                assert!(bytes <= 1_000_000);
+                let gif = fs::read(output).unwrap();
+                let actual_width = u16::from_le_bytes([gif[6], gif[7]]) as u32;
+                assert!(actual_width <= expected && actual_width >= 160);
+            }
+        }
+        assert!(widths[0] >= widths[1] && widths[1] >= widths[2]);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Real FFmpeg: a still-valid analysis sample is reused by the production
+    /// run (one short encode less), and a stale one is ignored.
+    #[test]
+    fn real_gif_loop_reuses_a_matching_analysis_sample_instead_of_re_encoding() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-复用-{}", std::process::id()));
+        let output_directory = directory.join("输出");
+        fs::create_dir_all(&output_directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mp4 = directory.join("复用 样例.mp4");
+        create_large_fixture(&ffmpeg, &mp4);
+
+        let base = gif_request(
+            "real-reuse",
+            &mp4,
+            &output_directory,
+            Some(320),
+            24,
+            None,
+            Some(2.5),
+            Some(7_800_000),
+            Some(160),
+            "balanced",
+        );
+
+        // Analysis first, exactly like the UI's explicit "计算预览".
+        let frame_output = directory.join("reuse-frame.png");
+        let sample_output = directory.join("reuse-sample.gif");
+        let analysis_host = Arc::new(RecordingGifHost::default());
+        let analysis_host_dyn: Arc<dyn GifTaskHost> = analysis_host.clone();
+        let analysis = run_gif_analysis(
+            &ffmpeg,
+            &base,
+            None,
+            640,
+            480,
+            2.5,
+            &frame_output,
+            &sample_output,
+            &analysis_host_dyn,
+            "real-reuse-analysis",
+        )
+        .expect("analysis must succeed");
+
+        // Same parameters + the analysis sample: the loop must not re-sample.
+        let mut reused_request = base.clone();
+        reused_request.options.sample = Some(GifSampleHint {
+            signature: analysis.sample_signature.clone(),
+            width: analysis.sample_width,
+            seconds: analysis.sample_seconds,
+            bytes: analysis.sample_bytes,
+        });
+        let preferred = output_path(&reused_request);
+        let host_reused = Arc::new(RecordingGifHost::default());
+        let host_reused_dyn: Arc<dyn GifTaskHost> = host_reused.clone();
+        run_gif_task_loop(
+            &ffmpeg,
+            &reused_request,
+            &preferred,
+            reused_request.options.target_bytes.unwrap_or(0),
+            None,
+            2.5,
+            &host_reused_dyn,
+            &reused_request.task_id,
+        );
+        let (_, reused_bytes) = completed_output(&host_reused);
+
+        // Same parameters without the sample: one extra short encode.
+        let plain_request = base.clone();
+        let preferred_plain = output_path(&plain_request).with_file_name("复用 样例_2.gif");
+        let host_plain = Arc::new(RecordingGifHost::default());
+        let host_plain_dyn: Arc<dyn GifTaskHost> = host_plain.clone();
+        run_gif_task_loop(
+            &ffmpeg,
+            &plain_request,
+            &preferred_plain,
+            plain_request.options.target_bytes.unwrap_or(0),
+            None,
+            2.5,
+            &host_plain_dyn,
+            &plain_request.task_id,
+        );
+        let (_, plain_bytes) = completed_output(&host_plain);
+
+        assert_eq!(
+            host_reused.encode_count() + 1,
+            host_plain.encode_count(),
+            "reuse must save exactly the short sample encode ({} vs {})",
+            host_reused.encode_count(),
+            host_plain.encode_count()
+        );
+        assert_eq!(
+            reused_bytes, plain_bytes,
+            "reusing the sample must not change the produced bytes"
+        );
+
+        // A stale hint (different FPS = different sample) must be ignored.
+        let mut stale_request = base.clone();
+        stale_request.options.fps = 15;
+        stale_request.options.sample = Some(GifSampleHint {
+            signature: analysis.sample_signature.clone(),
+            width: analysis.sample_width,
+            seconds: analysis.sample_seconds,
+            bytes: analysis.sample_bytes,
+        });
+        let preferred_stale = output_path(&stale_request).with_file_name("复用 样例_3.gif");
+        let host_stale = Arc::new(RecordingGifHost::default());
+        let host_stale_dyn: Arc<dyn GifTaskHost> = host_stale.clone();
+        run_gif_task_loop(
+            &ffmpeg,
+            &stale_request,
+            &preferred_stale,
+            stale_request.options.target_bytes.unwrap_or(0),
+            None,
+            2.5,
+            &host_stale_dyn,
+            &stale_request.task_id,
+        );
+        assert_eq!(
+            host_stale.encode_count(),
+            host_plain.encode_count(),
+            "a stale sample hint must not be reused"
+        );
+    }
+
+    /// The short sample must be the same request as the real encode except for
+    /// its width and duration — same FPS, same trim start, same everything else.
+    #[test]
+    fn gif_sample_request_only_shortens_width_and_duration() {
+        let mut base = request();
+        base.options.start_seconds = Some(1.5);
+        base.options.end_seconds = Some(6.5);
+        base.options.width = Some(1280);
+        base.options.fps = 24;
+
+        let sample = gif_sample_request(&base, 320, 2.0);
+        assert_eq!(sample.options.width, Some(320));
+        assert_eq!(sample.options.start_seconds, Some(1.5));
+        assert_eq!(sample.options.end_seconds, Some(3.5));
+        assert_eq!(sample.options.fps, base.options.fps);
+        assert_eq!(
+            sample.options.output_directory,
+            base.options.output_directory
+        );
+        assert_eq!(sample.input_path, base.input_path);
+        // The original request is untouched.
+        assert_eq!(base.options.width, Some(1280));
+        assert_eq!(base.options.end_seconds, Some(6.5));
+
+        // A sample of the whole video without an explicit end still ends at the
+        // sample window, never at the file end.
+        let mut open = request();
+        open.options.start_seconds = None;
+        open.options.end_seconds = None;
+        let open_sample = gif_sample_request(&open, 320, 2.0);
+        assert_eq!(open_sample.options.end_seconds, Some(2.0));
+    }
+
+    #[test]
+    fn gif_failure_sizes_are_reported_in_decimal_units() {
+        // 8,000,000 B must read as 8.0 MB, not 7.6 MB via 1024 arithmetic.
+        assert_eq!(format_file_size(8_000_000), "8.0 MB");
+        assert_eq!(format_file_size(7_800_000), "7.8 MB");
+        assert_eq!(format_file_size(999_000), "999 KB");
+    }
+
+    #[test]
+    fn gif_failure_message_states_units_fps_and_the_deleted_artefact() {
+        let message = gif_failure_message(
+            GifFailureReason::BudgetUnreachable,
+            8_400_000,
+            7_800_000,
+            24,
+        );
+        assert!(message.contains("8.4 MB"), "{message}");
+        assert!(message.contains("8400000"), "{message}");
+        assert!(message.contains("7800000"), "{message}");
+        // Over the absolute ceiling must be called out explicitly.
+        assert!(message.contains("8000000"), "{message}");
+        // FPS is the user's constraint and was not changed by compression.
+        assert!(message.contains("24 fps"), "{message}");
+        assert!(message.contains("已删除，未写入输出目录"), "{message}");
+
+        // A result under the ceiling but over the soft budget must not claim the
+        // absolute limit was exceeded.
+        let soft = gif_failure_message(
+            GifFailureReason::BudgetUnreachable,
+            7_900_000,
+            7_800_000,
+            12,
+        );
+        assert!(!soft.contains("绝对上限"), "{soft}");
+
+        let floor = gif_failure_message(GifFailureReason::NoRoomToShrink, 9_000_000, 0, 30);
+        assert!(floor.contains("输出宽度已到设定的下限"), "{floor}");
+        assert!(floor.contains("30 fps"), "{floor}");
     }
 
     #[test]
@@ -8769,10 +11209,9 @@ mod tests {
             preset: "fast".into(),
             output_directory: output_directory.to_string_lossy().into_owned(),
             target_bytes: None,
-            compression_preference: None,
+            mode: None,
             min_width: None,
-            min_fps: None,
-            allow_strong_compression: None,
+            sample: None,
         };
         let mp4_request = GifMediaTaskRequest {
             task_id: "mp4".into(),
@@ -8805,6 +11244,684 @@ mod tests {
             .output()
             .unwrap();
         assert!(String::from_utf8_lossy(&probe.stdout).contains("gif"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Records everything the production GIF loop emits, and exposes the same
+    /// cancellation lever `cancel_task` uses. Lets the whole sample → full
+    /// encode → correction → publish sequence run with real FFmpeg while still
+    /// being assertable.
+    #[derive(Default)]
+    struct RecordingGifHost {
+        events: std::sync::Mutex<Vec<MediaTaskEvent>>,
+        children: std::sync::Mutex<Vec<Arc<Mutex<std::process::Child>>>>,
+        cancel: std::sync::atomic::AtomicBool,
+        /// 可选择地把终态事件写进外部槽位，供 `compute_gif_preview_file` 使用。
+        terminal: std::sync::Mutex<Option<Arc<std::sync::Mutex<Option<MediaTaskEvent>>>>>,
+    }
+
+    impl RecordingGifHost {
+        fn events(&self) -> Vec<MediaTaskEvent> {
+            self.events.lock().unwrap().clone()
+        }
+
+        /// Everything except progress: the terminal story of the task.
+        fn terminal(&self) -> Vec<MediaTaskEvent> {
+            self.events()
+                .into_iter()
+                .filter(|event| !matches!(event, MediaTaskEvent::Progress { .. }))
+                .collect()
+        }
+
+        /// One registration per real FFmpeg encode (sample + full encodes).
+        fn encode_count(&self) -> usize {
+            self.children.lock().unwrap().len()
+        }
+
+        /// 创建/取得终态事件槽位：模拟生产 `ComputeGifHost` 的记录行为。
+        fn terminal_slot(&self) -> Arc<std::sync::Mutex<Option<MediaTaskEvent>>> {
+            let mut guard = self.terminal.lock().unwrap();
+            if let Some(slot) = guard.as_ref() {
+                return slot.clone();
+            }
+            let slot = Arc::new(std::sync::Mutex::new(None));
+            *guard = Some(slot.clone());
+            slot
+        }
+
+        /// Mirrors `cancel_task`: signal the flag and terminate the live child.
+        fn cancel_and_kill(&self) {
+            self.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+            let children = self.children.lock().unwrap();
+            for child in children.iter() {
+                if let Ok(mut guard) = child.lock() {
+                    let _ = guard.kill();
+                }
+            }
+        }
+    }
+
+    impl GifTaskHost for RecordingGifHost {
+        fn emit(&self, event: MediaTaskEvent) {
+            if matches!(
+                event,
+                MediaTaskEvent::Completed { .. }
+                    | MediaTaskEvent::Failed { .. }
+                    | MediaTaskEvent::Cancelled { .. }
+            ) {
+                if let Some(slot) = self.terminal.lock().unwrap().as_ref() {
+                    *slot.lock().unwrap() = Some(event.clone());
+                }
+            }
+            self.events.lock().unwrap().push(event);
+        }
+
+        fn insert_child(&self, _task_id: &str, child: Arc<Mutex<std::process::Child>>) {
+            self.children.lock().unwrap().push(child);
+        }
+
+        fn take_cancelled(&self, _task_id: &str) -> bool {
+            self.cancel.swap(false, std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn remove_task(&self, _task_id: &str) {}
+    }
+
+    fn completed_output(host: &RecordingGifHost) -> (String, u64) {
+        for event in host.terminal() {
+            if let MediaTaskEvent::Completed {
+                output_path,
+                output_bytes,
+                ..
+            } = event
+            {
+                return (output_path, output_bytes);
+            }
+        }
+        panic!(
+            "expected a Completed terminal event, got {:?}",
+            host.terminal()
+        );
+    }
+
+    /// `"24000/1001"` → `23.976…`; malformed input → `0.0`.
+    fn parse_rate(rate: &str) -> f64 {
+        match rate.split_once('/') {
+            Some((num, den)) => {
+                let numerator = num.trim().parse::<f64>().unwrap_or(0.0);
+                let denominator = den.trim().parse::<f64>().unwrap_or(0.0);
+                if denominator == 0.0 {
+                    0.0
+                } else {
+                    numerator / denominator
+                }
+            }
+            None => rate.trim().parse::<f64>().unwrap_or(0.0),
+        }
+    }
+
+    fn gif_frame_count(ffprobe: &Path, path: &Path) -> (String, u32) {
+        let output = std::process::Command::new(ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-count_frames",
+                "-show_entries",
+                "stream=avg_frame_rate,nb_read_frames",
+                "-of",
+                "default=noprint_wrappers=1",
+            ])
+            .arg(path)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&output.stdout).into_owned();
+        let rate = text
+            .lines()
+            .find_map(|line| line.strip_prefix("avg_frame_rate="))
+            .unwrap_or("")
+            .to_string();
+        let frames = text
+            .lines()
+            .find_map(|line| line.strip_prefix("nb_read_frames="))
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .unwrap_or(0);
+        (rate, frames)
+    }
+
+    /// A noisy 640×480 @ 24 fps fixture whose first 640px GIF encode is several
+    /// times the decimal ceiling. Used to prove that exceeding 8,000,000 B does
+    /// not end the task while a width correction is still available.
+    fn create_large_fixture(ffmpeg: &Path, path: &Path) {
+        let status = std::process::Command::new(ffmpeg)
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x480:rate=24",
+                "-t",
+                "2.5",
+                "-vf",
+                "noise=alls=35:allf=t",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "libx264",
+                "-crf",
+                "20",
+                "-y",
+            ])
+            .arg(path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "large fixture generation failed");
+    }
+
+    fn gif_request(
+        task_id: &str,
+        input: &Path,
+        output_directory: &Path,
+        width: Option<u32>,
+        fps: u32,
+        start: Option<f64>,
+        end: Option<f64>,
+        target_bytes: Option<u64>,
+        min_width: Option<u32>,
+        mode: &str,
+    ) -> GifMediaTaskRequest {
+        GifMediaTaskRequest {
+            task_id: task_id.into(),
+            input_path: input.to_string_lossy().into_owned(),
+            options: GifMediaOptions {
+                start_seconds: start,
+                end_seconds: end,
+                width,
+                fps,
+                preset: "fast".into(),
+                output_directory: output_directory.to_string_lossy().into_owned(),
+                target_bytes,
+                mode: Some(mode.into()),
+                min_width,
+                sample: None,
+            },
+        }
+    }
+
+    /// Behaviour test for the whole production loop with real FFmpeg: an encode
+    /// far above the decimal ceiling must trigger the width correction (not an
+    /// immediate failure), the corrected encode must be published, and both the
+    /// frame rate and the trimmed duration must survive compression unchanged.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn real_gif_loop_compresses_over_the_ceiling_instead_of_failing_immediately() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-超限-{}", std::process::id()));
+        let output_directory = directory.join("中文 输出");
+        fs::create_dir_all(&output_directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let mp4 = directory.join("大体积 样例.mp4");
+        create_large_fixture(&ffmpeg, &mp4);
+
+        // The user pinned 640px/24fps for a 2.5s clip; the first full encode is
+        // deliberately far over both the soft budget and the decimal ceiling.
+        let request = gif_request(
+            "real-over-ceiling",
+            &mp4,
+            &output_directory,
+            Some(640),
+            24,
+            None,
+            Some(2.5),
+            Some(7_800_000),
+            Some(160),
+            "balanced",
+        );
+        let preferred = output_path(&request);
+        let host = Arc::new(RecordingGifHost::default());
+        let host_for_loop: Arc<dyn GifTaskHost> = host.clone();
+
+        run_gif_task_loop(
+            &ffmpeg,
+            &request,
+            &preferred,
+            request.options.target_bytes.unwrap_or(0),
+            None,
+            2.5,
+            &host_for_loop,
+            &request.task_id,
+        );
+
+        let terminal = host.terminal();
+        assert_eq!(
+            terminal.len(),
+            1,
+            "exactly one terminal event is required, got {terminal:?}"
+        );
+        let (output_path, output_bytes) = completed_output(&host);
+        assert!(
+            output_bytes <= 7_800_000,
+            "the published GIF must respect the budget, got {output_bytes}"
+        );
+        assert!(
+            output_bytes <= MAX_GIF_BYTES,
+            "the published GIF must respect the decimal ceiling, got {output_bytes}"
+        );
+
+        // One sample + at most two full encodes: the first full encode was over
+        // the ceiling and the loop had to run the correction encode.
+        assert_eq!(
+            host.encode_count(),
+            3,
+            "expected sample + first full encode + one correction"
+        );
+
+        let published = Path::new(&output_path);
+        assert!(published.exists());
+        assert_eq!(fs::read(published).unwrap()[..6], *b"GIF89a");
+        assert_eq!(fs::metadata(published).unwrap().len(), output_bytes);
+
+        // FPS and trim survived compression untouched: 2.5s at 24 fps ≈ 60 frames.
+        let (rate, frames) = gif_frame_count(&ffprobe, published);
+        let effective_fps = parse_rate(&rate);
+        assert!(
+            (effective_fps - 24.0).abs() < 0.05,
+            "compression must not change the frame rate, got {rate} ({effective_fps})"
+        );
+        assert!(
+            (59..=61).contains(&frames),
+            "the GIF must cover the 2.5s selection at 24 fps, got {frames} frames"
+        );
+
+        // No temp residue and only the published file in the output directory.
+        let entries: Vec<_> = fs::read_dir(&output_directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "only the published GIF may remain, found {entries:?}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Behaviour test: a budget that this footage can never reach must fail
+    /// explicitly after the allowed encodes, leaving the output directory empty.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn real_gif_loop_unreachable_budget_fails_without_leaving_any_file() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-淘汰-{}", std::process::id()));
+        let output_directory = directory.join("中文 输出");
+        fs::create_dir_all(&output_directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mp4 = directory.join("样例 视频.mp4");
+        create_fixture(&ffmpeg, &mp4);
+
+        let request = gif_request(
+            "real-unreachable",
+            &mp4,
+            &output_directory,
+            Some(320),
+            15,
+            Some(0.25),
+            Some(1.5),
+            Some(40_000),
+            Some(160),
+            "clarity",
+        );
+        let preferred = output_path(&request);
+        let host = Arc::new(RecordingGifHost::default());
+        let host_for_loop: Arc<dyn GifTaskHost> = host.clone();
+
+        run_gif_task_loop(
+            &ffmpeg,
+            &request,
+            &preferred,
+            request.options.target_bytes.unwrap_or(0),
+            None,
+            2.0,
+            &host_for_loop,
+            &request.task_id,
+        );
+
+        let terminal = host.terminal();
+        assert_eq!(
+            terminal.len(),
+            1,
+            "an exhausted task must still end with exactly one event, got {terminal:?}"
+        );
+        match &terminal[0] {
+            MediaTaskEvent::Failed { message, .. } => {
+                assert!(message.contains("已删除，未写入输出目录"), "{message}");
+                assert!(message.contains("15 fps"), "{message}");
+                assert!(message.contains("40000"), "{message}");
+            }
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        // At most two full encodes, plus the analysis sample.
+        assert!(
+            host.encode_count() <= 3,
+            "complete encodes are capped at two, got {} encodes",
+            host.encode_count()
+        );
+        assert!(!preferred.exists());
+        let leftover: Vec<_> = fs::read_dir(&output_directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            leftover.is_empty(),
+            "an exhausted task must not write to the output directory, found {leftover:?}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Behaviour test for the non-overwriting publish: a file the user already
+    /// owns at the preferred name must survive, and the task must land on a
+    /// distinct name instead of replacing it.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn real_gif_loop_never_overwrites_an_existing_output() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-同名-{}", std::process::id()));
+        let output_directory = directory.join("中文 输出");
+        fs::create_dir_all(&output_directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mp4 = directory.join("样例 视频.mp4");
+        create_fixture(&ffmpeg, &mp4);
+
+        let request = gif_request(
+            "real-no-overwrite",
+            &mp4,
+            &output_directory,
+            Some(160),
+            12,
+            Some(0.25),
+            Some(1.5),
+            Some(7_800_000),
+            Some(160),
+            "balanced",
+        );
+        let preferred = output_path(&request);
+        // A file that appeared after `next_available_path` picked this name —
+        // exactly the race the earlier `fs::rename` publish lost.
+        let owned = b"user-owned-content".to_vec();
+        fs::write(&preferred, &owned).unwrap();
+
+        let host = Arc::new(RecordingGifHost::default());
+        let host_for_loop: Arc<dyn GifTaskHost> = host.clone();
+        run_gif_task_loop(
+            &ffmpeg,
+            &request,
+            &preferred,
+            request.options.target_bytes.unwrap_or(0),
+            None,
+            2.0,
+            &host_for_loop,
+            &request.task_id,
+        );
+
+        let (output_path, output_bytes) = completed_output(&host);
+        let published = PathBuf::from(&output_path);
+        assert_ne!(
+            published, preferred,
+            "the publish must not take a name the user already owns"
+        );
+        assert_eq!(
+            fs::read(&preferred).unwrap(),
+            owned,
+            "the pre-existing file must be byte-for-byte untouched"
+        );
+        assert!(published.exists());
+        assert_eq!(fs::read(&published).unwrap()[..6], *b"GIF89a");
+        assert_eq!(fs::metadata(&published).unwrap().len(), output_bytes);
+        assert!(
+            published
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("样例 视频_gif_2"),
+            "expected the _2 fallback name, got {output_path}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Behaviour test for two tasks racing for the same output name: both must
+    /// publish distinct, valid files, and each temp file must stay private.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn real_gif_loop_two_tasks_racing_for_one_name_both_survive() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-竞争-{}", std::process::id()));
+        let output_directory = directory.join("中文 输出");
+        fs::create_dir_all(&output_directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mp4 = directory.join("样例 视频.mp4");
+        create_fixture(&ffmpeg, &mp4);
+
+        let make_request = |task_id: &str| {
+            gif_request(
+                task_id,
+                &mp4,
+                &output_directory,
+                Some(160),
+                12,
+                Some(0.25),
+                Some(1.5),
+                Some(7_800_000),
+                Some(160),
+                "balanced",
+            )
+        };
+        let request_a = make_request("race-a");
+        let request_b = make_request("race-b");
+        // Both tasks resolved the same preferred name before either published.
+        let preferred = output_path(&request_a);
+
+        let host_a = Arc::new(RecordingGifHost::default());
+        let host_b = Arc::new(RecordingGifHost::default());
+        let ffmpeg_a = ffmpeg.clone();
+        let ffmpeg_b = ffmpeg.clone();
+        let preferred_a = preferred.clone();
+        let preferred_b = preferred.clone();
+        let host_a_for_loop: Arc<dyn GifTaskHost> = host_a.clone();
+        let host_b_for_loop: Arc<dyn GifTaskHost> = host_b.clone();
+
+        let thread_a = std::thread::spawn(move || {
+            run_gif_task_loop(
+                &ffmpeg_a,
+                &request_a,
+                &preferred_a,
+                7_800_000,
+                None,
+                2.0,
+                &host_a_for_loop,
+                "race-a",
+            );
+        });
+        let thread_b = std::thread::spawn(move || {
+            run_gif_task_loop(
+                &ffmpeg_b,
+                &request_b,
+                &preferred_b,
+                7_800_000,
+                None,
+                2.0,
+                &host_b_for_loop,
+                "race-b",
+            );
+        });
+        thread_a.join().unwrap();
+        thread_b.join().unwrap();
+
+        let (path_a, bytes_a) = completed_output(&host_a);
+        let (path_b, bytes_b) = completed_output(&host_b);
+        assert_ne!(path_a, path_b, "two tasks must not publish the same file");
+        for (path, bytes) in [(&path_a, bytes_a), (&path_b, bytes_b)] {
+            let published = Path::new(path);
+            assert!(published.exists(), "{path} must exist");
+            assert_eq!(fs::read(published).unwrap()[..6], *b"GIF89a");
+            assert_eq!(fs::metadata(published).unwrap().len(), bytes);
+        }
+        // Exactly the two published files: no temp file leaked from either task.
+        let mut entries: Vec<_> = fs::read_dir(&output_directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        entries.sort();
+        assert_eq!(entries.len(), 2, "unexpected residue: {entries:?}");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Behaviour test for cancellation: the task must end with exactly one
+    /// `Cancelled` event, produce no `Failed`/`Completed` event, and leave the
+    /// output directory clean.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn real_gif_loop_cancel_emits_exactly_one_terminal_state() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-实机-取消-{}", std::process::id()));
+        let output_directory = directory.join("中文 输出");
+        fs::create_dir_all(&output_directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let mp4 = directory.join("大体积 样例.mp4");
+        create_large_fixture(&ffmpeg, &mp4);
+
+        let request = gif_request(
+            "real-cancel",
+            &mp4,
+            &output_directory,
+            Some(640),
+            24,
+            None,
+            Some(2.5),
+            Some(7_800_000),
+            Some(160),
+            "balanced",
+        );
+        let preferred = output_path(&request);
+        let host = Arc::new(RecordingGifHost::default());
+        let host_for_loop: Arc<dyn GifTaskHost> = host.clone();
+
+        let ffmpeg_for_thread = ffmpeg.clone();
+        let request_for_thread = request.clone();
+        let preferred_for_thread = preferred.clone();
+        let worker = std::thread::spawn(move || {
+            run_gif_task_loop(
+                &ffmpeg_for_thread,
+                &request_for_thread,
+                &preferred_for_thread,
+                7_800_000,
+                None,
+                2.5,
+                &host_for_loop,
+                "real-cancel",
+            );
+        });
+
+        // Wait until a real FFmpeg child is running, then cancel like the UI does.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while host.encode_count() == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "no FFmpeg child was registered in time"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        host.cancel_and_kill();
+        worker.join().unwrap();
+
+        let terminal = host.terminal();
+        assert_eq!(
+            terminal.len(),
+            1,
+            "a cancelled task must emit exactly one terminal event, got {terminal:?}"
+        );
+        assert!(
+            matches!(terminal[0], MediaTaskEvent::Cancelled { .. }),
+            "expected Cancelled, got {:?}",
+            terminal[0]
+        );
+        assert!(!preferred.exists(), "a cancelled task must not publish");
+        let leftover: Vec<_> = fs::read_dir(&output_directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            leftover.is_empty(),
+            "a cancelled task must leave no residue, found {leftover:?}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// Documents the historical failure the explicit `-f gif` fixes: FFmpeg
+    /// cannot pick the GIF muxer from a `.gif.part` output name.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn ffmpeg_cannot_infer_the_muxer_from_a_part_suffix() {
+        let directory =
+            std::env::temp_dir().join(format!("brand-media-part-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+
+        let legacy_output = directory.join(".片段.gif.part");
+        let inferred = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=80x60:rate=8",
+                "-t",
+                "0.5",
+                "-y",
+            ])
+            .arg(&legacy_output)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(
+            !inferred.success(),
+            "FFmpeg must not silently guess a muxer for a .gif.part name"
+        );
+        assert!(!legacy_output.exists());
+
+        // The same name works once the format is stated explicitly.
+        let explicit_output = directory.join(".片段.gif.part");
+        let explicit = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=80x60:rate=8",
+                "-t",
+                "0.5",
+                "-f",
+                "gif",
+                "-y",
+            ])
+            .arg(&explicit_output)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(
+            explicit.success(),
+            "-f gif makes the output independent of the name"
+        );
+        assert_eq!(fs::read(&explicit_output).unwrap()[..6], *b"GIF89a");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -8859,10 +11976,9 @@ mod tests {
             preset: "high".into(),
             output_directory: directory.to_string_lossy().into_owned(),
             target_bytes: None,
-            compression_preference: None,
+            mode: None,
             min_width: None,
-            min_fps: None,
-            allow_strong_compression: None,
+            sample: None,
         };
         let failed = GifMediaTaskRequest {
             task_id: "failed".into(),
@@ -8895,17 +12011,8 @@ mod tests {
         assert_eq!(parse_progress_line("progress=continue", 0.0, 4.0), None);
     }
 
-    #[test]
-    fn reduce_gif_params_follows_preference() {
-        let (fps_b, w_b) = reduce_gif_params(24, Some(960), 1, "balanced");
-        assert_eq!(fps_b, 24); // step=1 odd, fps unchanged
-        assert!(w_b.unwrap() < 960); // width reduced
-        let (fps_c, _) = reduce_gif_params(24, Some(960), 1, "clarity");
-        assert!(fps_c < 24);
-        let (fps_s, _) = reduce_gif_params(24, Some(960), 1, "smoothness");
-        assert_eq!(fps_s, 24); // fps unchanged on step 1
-                               // width unchanged on step 1 (only reduces after step > 1)
-    }
+    /// The compression preference no longer touches FPS; it only scales how
+    /// aggressively the single width correction aims at the budget.
 
     #[test]
     fn target_sidecar_name_uses_exe_extension_only_on_windows() {
@@ -11431,6 +14538,259 @@ mod tests {
             .unwrap();
         let text = String::from_utf8_lossy(&probe.stdout);
         assert!(text.contains("\"codec_name\": \"h264\""), "h264: {text}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn prune_computed_gifs_only_removes_expired_gif_results() {
+        let dir = std::env::temp_dir().join(format!("brand-gif-prune-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let gif = dir.join("preview.gif");
+        let png = dir.join("note.png");
+        fs::write(&gif, b"GIF89a-prune").unwrap();
+        fs::write(&png, b"png").unwrap();
+
+        // 时间窗口足够大：刚写入的结果必须保留。
+        super::prune_computed_gifs(&dir, std::time::Duration::from_secs(24 * 60 * 60));
+        assert!(gif.exists(), "fresh result must be kept");
+
+        // 零窗口：只清理 GIF，不动其他类型文件。
+        super::prune_computed_gifs(&dir, std::time::Duration::ZERO);
+        assert!(!gif.exists(), "expired result must be removed");
+        assert!(png.exists(), "non-gif files are not pruned");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn validate_computed_gif_accepts_gif_and_rejects_other_bytes() {
+        let dir = std::env::temp_dir().join(format!("brand-gif-validate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let gif = dir.join("ok.gif");
+        let png = dir.join("not-a-gif.gif");
+        let empty = dir.join("empty.gif");
+        fs::write(&gif, b"GIF89a-payload").unwrap();
+        fs::write(&png, b"\x89PNG\r\n\x1a\n").unwrap();
+        fs::write(&empty, b"").unwrap();
+        assert_eq!(super::validate_computed_gif(&gif).unwrap(), 14);
+        assert!(super::validate_computed_gif(&png).is_err());
+        assert!(super::validate_computed_gif(&empty).is_err());
+        assert!(super::validate_computed_gif(&dir.join("missing.gif")).is_err());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn save_computed_gif_file_appends_suffix_and_keeps_source() {
+        let dir = std::env::temp_dir().join(format!("brand-gif-save-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let results = dir.join("results");
+        let destination = dir.join("导出 目录");
+        fs::create_dir_all(&results).unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        let source = results.join("preview.gif");
+        let payload = b"GIF89a-first".to_vec();
+        fs::write(&source, &payload).unwrap();
+
+        let first =
+            super::save_computed_gif_file(&source, "素材 01_gif.gif", &destination).unwrap();
+        let second =
+            super::save_computed_gif_file(&source, "素材 01_gif.gif", &destination).unwrap();
+
+        assert!(
+            first.path.ends_with("素材 01_gif.gif"),
+            "first save keeps the name"
+        );
+        assert!(
+            second.path.ends_with("素材 01_gif_2.gif"),
+            "second save appends a suffix"
+        );
+        assert_eq!(
+            fs::read(&first.path).unwrap(),
+            payload,
+            "saved bytes are the computed bytes"
+        );
+        assert_eq!(fs::read(&second.path).unwrap(), payload);
+        assert!(
+            source.exists(),
+            "saving must not remove the computed result"
+        );
+        let temp_leftovers: Vec<String> = fs::read_dir(&destination)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with('.'))
+            .collect();
+        assert!(
+            temp_leftovers.is_empty(),
+            "temp files must be cleaned: {temp_leftovers:?}"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn gif_compute_ipc_payload_accepts_omitted_export_directory() {
+        let request: GifMediaTaskRequest = serde_json::from_value(serde_json::json!({
+            "taskId": "gif-preview-1-2-1792410000000",
+            "inputPath": "/素材/视频.mp4",
+            "options": {
+                "endSeconds": 15.1,
+                "fps": 10,
+                "preset": "high",
+                "targetBytes": 7_800_000,
+                "mode": "balanced"
+            }
+        }))
+        .expect("compute IPC must not require an export directory");
+        assert!(request.options.output_directory.is_empty());
+        assert_eq!(request.options.width, None);
+        assert_eq!(request.options.target_bytes, Some(7_800_000));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn real_gif_compute_produces_a_preview_ready_gif_without_an_export_directory() {
+        let dir = std::env::temp_dir().join(format!("brand-gif-compute-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let results = dir.join("results");
+        fs::create_dir_all(&results).unwrap();
+        let ffmpeg = bundled_test_sidecar("ffmpeg");
+        let ffprobe = bundled_test_sidecar("ffprobe");
+        let mp4 = dir.join("源 视频.mp4");
+        create_mp4_fixture(&ffmpeg, &mp4, false);
+        // Match the frontend IPC payload: compute omits outputDirectory entirely.
+        let request: GifMediaTaskRequest = serde_json::from_value(serde_json::json!({
+            "taskId": "real-compute",
+            "inputPath": mp4.to_string_lossy(),
+            "options": {
+                "width": 160,
+                "fps": 10,
+                "startSeconds": 0.0,
+                "endSeconds": 1.0,
+                "preset": "high",
+                "targetBytes": 7_800_000,
+                "minWidth": 80,
+                "mode": "balanced"
+            }
+        }))
+        .unwrap();
+        assert!(request.options.output_directory.is_empty());
+        assert!(super::validate_gif_inputs(&request).is_ok());
+        assert_eq!(
+            super::validate_request(&request).unwrap_err(),
+            "输出文件夹不存在或不可访问"
+        );
+        let host = Arc::new(RecordingGifHost::default());
+        let terminal = host.terminal_slot();
+        let host_dyn: Arc<dyn GifTaskHost> = host.clone();
+
+        let result = super::compute_gif_preview_file(
+            &ffmpeg,
+            Some(&ffprobe),
+            &request,
+            &results,
+            request.options.target_bytes.unwrap_or(0),
+            None,
+            1.0,
+            &host_dyn,
+            &terminal,
+            &request.task_id,
+        )
+        .unwrap();
+
+        let bytes = fs::read(&result.path).unwrap();
+        println!(
+            "computed gif: {}x{} {} bytes, file {}",
+            result.width,
+            result.height,
+            result.bytes,
+            result.path.rsplit('/').next().unwrap_or("")
+        );
+        assert_eq!(&bytes[..3], b"GIF", "preview result must be a real GIF");
+        assert_eq!(bytes.len() as u64, result.bytes);
+        assert!(
+            result.bytes <= super::MAX_GIF_BYTES,
+            "bytes: {}",
+            result.bytes
+        );
+        assert!(
+            result.width > 0 && result.height > 0,
+            "real dims: {}x{}",
+            result.width,
+            result.height
+        );
+        assert!(
+            result.path.starts_with(results.to_string_lossy().as_ref()),
+            "result stays in the managed temp dir"
+        );
+
+        // 保存复用同一份字节，不重新编码。
+        let destination = dir.join("导出 目录");
+        fs::create_dir_all(&destination).unwrap();
+        let encodes_before_save = host.encode_count();
+        assert!(
+            encodes_before_save >= 2,
+            "sample + at least one full encode: {encodes_before_save}"
+        );
+        let saved =
+            super::save_computed_gif_file(Path::new(&result.path), "源 视频_gif.gif", &destination)
+                .unwrap();
+        println!("saved gif: {} bytes at {}", saved.bytes, saved.path);
+        assert_eq!(fs::read(&saved.path).unwrap(), bytes);
+        assert_eq!(
+            host.encode_count(),
+            encodes_before_save,
+            "saving must reuse the computed file without starting another encode"
+        );
+
+        super::cleanup_gif_artifacts(Path::new(&result.path));
+        assert!(
+            !Path::new(&result.path).exists(),
+            "discard removes the temp result"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn accepted_cancellation_discards_a_finished_result_before_registration() {
+        let dir =
+            std::env::temp_dir().join(format!("brand-gif-cancel-register-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let results = dir.join("results");
+        fs::create_dir_all(&results).unwrap();
+        let path = results.join("late.gif");
+        fs::write(&path, b"GIF89a-late").unwrap();
+        let result = super::ComputedGifResult {
+            task_id: "late".into(),
+            path: path.to_string_lossy().into_owned(),
+            bytes: 12,
+            width: 10,
+            height: 10,
+            fps: 10,
+            duration_seconds: 1.0,
+            start_seconds: 0.0,
+            end_seconds: 1.0,
+        };
+        let registry = super::ComputedGifRegistry::default();
+
+        // 取消已在编码完成后被接受：结果不得登记，文件必须清理。
+        let error = super::accept_computed_gif(&registry, true, result.clone(), "a_gif.gif".into())
+            .unwrap_err();
+        assert_eq!(error, super::GIF_COMPUTE_CANCELLED);
+        assert!(!path.exists(), "cancelled result file must be cleaned");
+        assert!(
+            registry.get("late").is_none(),
+            "cancelled result must not be registered"
+        );
+
+        // 未取消时正常登记并保留文件，供保存阶段复用。
+        fs::write(&path, b"GIF89a-late").unwrap();
+        let accepted =
+            super::accept_computed_gif(&registry, false, result, "a_gif.gif".into()).unwrap();
+        assert!(path.exists());
+        assert!(registry.get("late").is_some());
+        assert_eq!(accepted.task_id, "late");
+        super::cleanup_gif_artifacts(Path::new(&accepted.path));
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "brand-material-workbench",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,6 +18,9 @@
     "package:preview": "npm run verify:core && npm test && npm run build && tauri build"
   },
   "dependencies": {
+    "@jsquash/jpeg": "1.3.0",
+    "@jsquash/oxipng": "2.3.0",
+    "@jsquash/webp": "1.5.0",
     "@radix-ui/react-collapsible": "^1.1.20",
     "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-slider": "^1.4.7",

@@ -61,7 +61,8 @@ function describeNavigationTarget(target: AppNavigationTarget): string {
     case 'logo-layout': return 'Logo 与版式';
     case 'watermark': return '水印工具';
     case 'video-watermark': return '视频水印';
-    case 'gif-compress': return 'GIF 压缩';
+    case 'gif-compress': return '视频转 GIF';
+    case 'image-compress': return '图片压缩';
     case 'batch-template-gif': return '批量模板 GIF';
   }
 }
