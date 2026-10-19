@@ -1,9 +1,11 @@
-name: Stage Windows hardware test package
+name: Stage signed compression test packages
 
 on:
   push:
     branches:
-      - test/windows-hardware-encoder
+      - release/0.9.5-compression-tools
+    paths:
+      - .github/workflows/stage-windows-hardware-test.yml
 
 permissions:
   actions: read
@@ -13,8 +15,8 @@ jobs:
   stage-test-package:
     runs-on: ubuntu-latest
     env:
-      SOURCE_RUN_ID: "32716940260"
-      TEST_TAG: windows-hardware-test-0.9.2
+      SOURCE_RUN_ID: "39274314082"
+      TEST_TAG: compression-test-0.9.5
     steps:
       - uses: actions/checkout@v4
       - name: Download the successful Windows artifact
@@ -26,7 +28,11 @@ jobs:
           mkdir -p release
           gh run download "$SOURCE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name windows-x64-hardware-encoder-test \
+            --name signed-preview-windows-x86_64 \
+            --dir release
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name signed-preview-darwin-aarch64 \
             --dir release
       - name: Publish as an isolated draft prerelease
         shell: bash
@@ -38,7 +44,7 @@ jobs:
             gh release create "$TEST_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "Windows hardware encoder test 0.9.2" \
+              --title "Signed compression test 0.9.5" \
               --notes "Isolated manual test package. Not used by the automatic updater." \
               --draft \
               --prerelease
