@@ -1,0 +1,80 @@
+name: Build signed Preview candidates
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PREVIEW_RELEASE_REPOSITORY: ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+            artifact: darwin-aarch64
+          - name: Windows x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            artifact: windows-x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install audited Windows FFmpeg sidecars
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/install-windows-ffmpeg.ps1
+      - run: npm run verify:core && npm test -- --run && npm run build
+      - name: Build signed updater artifacts
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Stage signed packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          ROOT="src-tauri/target/${{ matrix.target }}/release/bundle"
+          SIG=$(find "$ROOT" -type f -name '*.sig' -print -quit)
+          test -n "$SIG"
+          PACKAGE="${SIG%.sig}"
+          test -f "$PACKAGE"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            UPDATER="release/BrandMaterialWorkbench_${VERSION}_windows-x86_64_updater.exe"
+            INSTALLER=$(find "$ROOT/nsis" -type f -name '*.exe' -print -quit)
+            cp "$INSTALLER" "release/BrandMaterialWorkbench_${VERSION}_Windows_x64_Setup.exe"
+          else
+            UPDATER="release/BrandMaterialWorkbench_${VERSION}_darwin-aarch64_updater.tar.gz"
+            INSTALLER=$(find "$ROOT/dmg" -type f -name '*.dmg' -print -quit)
+            cp "$INSTALLER" "release/BrandMaterialWorkbench_${VERSION}_macOS_arm64.dmg"
+          fi
+          cp "$PACKAGE" "$UPDATER"
+          cp "$SIG" "$UPDATER.sig"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-preview-${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7

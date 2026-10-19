@@ -1,0 +1,28 @@
+name: Mirror published Preview to CNB
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download published version assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          mkdir -p release
+          gh release download preview --repo ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-releases --pattern "BrandMaterialWorkbench_${VERSION}_*" --pattern latest-preview.json --dir release
+          node -e "const m=require('./release/latest-preview.json'); const p=require('./package.json'); if(m.version!==p.version) process.exit(1)"
+      - name: Mirror verified release assets
+        shell: bash
+        env:
+          CNB_RELEASE_TOKEN: ${{ secrets.CNB_RELEASE_TOKEN }}
+        run: bash scripts/upload-cnb-preview-manifest.sh release/latest-preview.json release
