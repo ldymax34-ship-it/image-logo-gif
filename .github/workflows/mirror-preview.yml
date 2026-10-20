@@ -3,7 +3,7 @@ name: Mirror published Preview to CNB
 on:
   workflow_dispatch:
   push:
-    tags: [mirror-preview-0.9.5]
+    tags: [mirror-preview-0.9.6]
 
 permissions:
   contents: read

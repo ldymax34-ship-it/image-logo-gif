@@ -11,6 +11,6 @@ describe('Preview updater manifest', () => {
   it('rejects URLs in signature fields', () => expect(() => assertUpdaterSignature('https://example.com/file.sig')).toThrow(/not a URL/));
 
   it('uses the concise Chinese Preview release note', () => {
-    expect(previewReleaseNotes('0.9.5')).toBe('0.9.5：新增单图压缩与细节缩放，重排视频转 GIF 工作区，修复 GIF 计算参数、取消与保存状态。');
+    expect(previewReleaseNotes('0.9.6')).toBe('0.9.6：新增单图压缩与细节缩放，重排视频转 GIF 工作区，修复 GIF 计算参数、取消与保存状态。');
   });
 });

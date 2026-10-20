@@ -3,7 +3,7 @@ name: Build signed Preview candidates
 on:
   workflow_dispatch:
   push:
-    branches: [release/0.9.5-compression-tools]
+    branches: [release/0.9.6-compression-tools]
     paths: [.github/workflows/build-preview-candidates.yml]
 
 permissions:
