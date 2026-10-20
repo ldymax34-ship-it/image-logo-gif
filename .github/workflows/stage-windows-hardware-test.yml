@@ -3,7 +3,7 @@ name: Stage signed compression test packages
 on:
   push:
     branches:
-      - release/0.9.5-compression-tools
+      - release/0.9.6-compression-tools
     paths:
       - .github/workflows/stage-windows-hardware-test.yml
 
@@ -15,8 +15,8 @@ jobs:
   stage-test-package:
     runs-on: ubuntu-latest
     env:
-      SOURCE_RUN_ID: "39274314082"
-      TEST_TAG: compression-test-0.9.5
+      SOURCE_RUN_ID: "39367092407"
+      TEST_TAG: compression-test-0.9.6
     steps:
       - uses: actions/checkout@v4
       - name: Download the successful Windows artifact
@@ -44,7 +44,7 @@ jobs:
             gh release create "$TEST_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "Signed compression test 0.9.5" \
+              --title "Signed compression test 0.9.6" \
               --notes "Isolated manual test package. Not used by the automatic updater." \
               --draft \
               --prerelease
