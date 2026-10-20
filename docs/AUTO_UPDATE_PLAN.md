@@ -2,7 +2,7 @@
 
 ## 当前频道
 
-`0.1.30` 安装后的客户端按顺序读取 Preview：
+当前 `0.9.6` 客户端按顺序读取 Preview：
 
 ```text
 https://cnb.cool/YTT_mgbox/brand-material-workbench-releases/-/releases/download/preview/latest-preview.json
@@ -11,7 +11,7 @@ https://github.com/ldymax34-ship-it/ldymax34-ship-it-brand-material-workbench-re
 
 `0.1.30` 本身仍由 GitHub 清单与 GitHub 安装包完整桥接交付；CNB 不参与 `0.1.29 → 0.1.30` 的下载。
 
-不会读取 `latest.json`；Stable 频道尚未启用。源码仓库保持私有，公开仓库只存安装包、updater artifacts、`.sig`、清单和 Release notes。
+不会读取 `latest.json`；Stable 频道尚未启用。源码与二进制分发仓库分别维护；分发仓库只存安装包、updater artifacts、`.sig`、清单和 Release notes。
 
 ## 签名边界
 
@@ -61,6 +61,8 @@ Preview 清单仅有两个平台：
 - 允许安装时仍需二次确认，然后才调用安装与重启。
 
 ## 实机回归状态
+
+- 2026-10-20：0.9.6 已发布；隔离 macOS 0.9.4 副本实际完成候选检查、下载、验签、安装与重启，安装后版本/签名/进程确认；重启后窗口自动化句柄失效，未追加窗口点验。GitHub/CNB 清单、Range 与签名一致性通过；Windows 实机安装/交互仍未完成。GitHub 主仓库 Latest 另同步为 v0.9.6，不新增 Stable 更新地址。
 
 - macOS Apple Silicon：已完成 `0.1.26 → 0.1.27` 的发现、提示、下载、签名包、安装和重启验证。
 - Windows x64：CI 构建、Preview 资产/清单和 `0.1.26` 测试基线包均已验证；仍需在真实 Windows 设备执行完整更新回归，步骤见 [Windows updater test](WINDOWS_UPDATER_TEST.md)。

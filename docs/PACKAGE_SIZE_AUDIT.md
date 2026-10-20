@@ -242,3 +242,7 @@ DMG 44,218,664 B（42.17 MiB），较上一份交互修正与拖动预览包 +74
 ## 2026-10-19 0.9.5 签名候选包
 
 CI 39274314082 生成：Windows NSIS 314,404,210 B（较 0.9.4 的 312,640,908 B 增加 1,763,302 B）；Mac DMG 44,280,635 B（较 0.9.4 的 43,925,294 B 增加 355,341 B），Mac updater tar.gz 45,536,262 B。两端 updater 公钥签名校验通过，Mac codesign/DMG 完整性通过。无新增运行时依赖；Windows 增量未见异常。安装包与 SHA256SUMS-0.9.5.txt 留在 artifacts/local-packages/2026-10-19，不提交 Git。当前因 Mac 锁屏缺实际升级安装/重启证据，未切换公共更新；Windows 实机交互未验证。
+
+## 2026-10-20 0.9.6 已发布签名包
+
+Windows NSIS/updater 均为 314,409,080 B，较 0.9.5 候选 +4,870 B；Mac DMG 44,281,669 B（+1,034 B），Mac updater 45,536,547 B。两端既有公钥验签通过，Mac DMG 完整性与安装后 codesign 通过。Mac 包内版本 0.9.6、两份媒体 sidecar 与四份 codec 许可证齐全。GitHub 两处发行资产服务端大小/摘要匹配；GitHub/CNB 清单 0.9.6 与匿名 Range 读取均通过。安装包和 SHA256SUMS-0.9.6.txt 保存在 artifacts/local-packages/2026-10-20/，不进入 Git 历史。Windows 实机验收未完成。
